@@ -1,0 +1,77 @@
+# =========================
+# VIRTUAL ENV & SECRETS
+# =========================
+# Ignora le variabili d'ambiente e chiavi segrete (FONDAMENTALE)
+.env
+.env.local
+.env.*
+
+# Ignora gli ambienti virtuali Python
+myenv/
+venv/
+env/
+.venv/
+
+# =========================
+# PYTHON & DJANGO
+# =========================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database SQLite locale (visto che usi PostgreSQL)
+db.sqlite3
+db.sqlite3-journal
+
+# File multimediali e statici di Django
+media/
+staticfiles/
+static/
+
+# Log di Python
+*.log
+
+# =========================
+# REACT NATIVE & NODE.JS
+# =========================
+# Dipendenze Node
+node_modules/
+/.pnp
+.pnp.js
+
+# File di build e cache React Native / Expo
+.expo/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.metro-health-check-id
+
+# iOS & Android build folders (vengono generati in locale)
+ios/build/
+ios/Pods/
+android/app/build/
+android/.gradle/
+.cxx/
+
+# =========================
+# IDE & SISTEMA OPERATIVO
+# =========================
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains / PyCharm / WebStorm
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
