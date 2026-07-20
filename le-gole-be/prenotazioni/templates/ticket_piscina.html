@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Ticket Piscina</title>
+    <style>
+        body { font-family: 'Helvetica', 'Arial', sans-serif; color: #333; margin: 40px; }
+        .ticket-box { border: 2px dashed #005f73; padding: 20px; border-radius: 10px; max-width: 600px; margin: auto; }
+        .header { text-align: center; border-bottom: 2px solid #e9d8a6; padding-bottom: 10px; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: #0a9396; }
+        .info-section { margin-bottom: 15px; }
+        .info-section strong { display: inline-block; width: 120px; }
+        .resources { background-color: #f4f1de; padding: 15px; border-radius: 8px; }
+        .resources ul { list-style-type: none; padding: 0; margin: 0; }
+        .resources li { padding: 5px 0; border-bottom: 1px solid #ddd; }
+        .footer { text-align: center; margin-top: 20px; font-size: 0.8em; color: #777; }
+    </style>
+</head>
+<body>
+    <div class="ticket-box">
+        <div class="header">
+            <h1>Le Gole - Pass Piscina</h1>
+            <p>Biglietto d'ingresso ufficiale</p>
+        </div>
+        
+        <div class="info-section">
+            <p><strong>Cliente:</strong> {{ cliente.nome }}</p>
+            <p><strong>Data:</strong> {{ prenotazione.data|date:"d/m/Y" }}</p>
+            <p><strong>Ora Ingresso:</strong> {{ prenotazione.ora|time:"H:i" }}</p>
+            <p><strong>Ticket ID:</strong> {{ prenotazione.id }}</p>
+        </div>
+
+        <div class="resources">
+            <h3>Riepilogo Risorse Prenotate</h3>
+            <ul>
+                <li>Ingressi: {{ prenotazione.ingressi }}</li>
+                {% if prenotazione.ombrellone > 0 %}<li>Ombrelloni: {{ prenotazione.ombrellone }}</li>{% endif %}
+                {% if prenotazione.gazebo > 0 %}<li>Gazebi: {{ prenotazione.gazebo }}</li>{% endif %}
+                {% if prenotazione.lettino > 0 %}<li>Lettini: {{ prenotazione.lettino }}</li>{% endif %}
+                {% if prenotazione.sdraia > 0 %}<li>Sdraie: {{ prenotazione.sdraia }}</li>{% endif %}
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>Il saldo avverrà in struttura. Mostra questo biglietto all'ingresso.</p>
+        </div>
+    </div>
+</body>
+</html>

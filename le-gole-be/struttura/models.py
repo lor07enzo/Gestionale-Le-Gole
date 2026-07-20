@@ -1,3 +1,70 @@
+import datetime
+import uuid
 from django.db import models
 
-# Create your models here.
+class PiscinaInventario(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nome = models.CharField(max_length=100, help_text="Es. 'Listino Estate 2026'")
+    descrizione = models.TextField(blank=True, default="")
+
+    # Prezzi (DecimalField per precisione valutaria)
+    prezzo_ingresso = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    prezzo_ombrellone = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    prezzo_gazebo = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    prezzo_lettino = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    prezzo_sdraia = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    
+    # Capacità massime disponibili
+    totale_ombrelloni = models.PositiveSmallIntegerField(default=0)
+    totale_gazebi = models.PositiveSmallIntegerField(default=0)
+    totale_lettini = models.PositiveSmallIntegerField(default=0)
+    totale_sdraie = models.PositiveSmallIntegerField(default=0)
+
+    orario_apertura = models.TimeField(default=datetime.time(10, 0), verbose_name="Orario di Apertura")
+    orario_chiusura = models.TimeField(default=datetime.time(19, 0), verbose_name="Orario di Chiusura")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Flag per definire quale listino/inventario interrogare
+    isActive = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Inventario Piscina"
+        verbose_name_plural = "Inventari Piscina"
+
+    def __str__(self):
+        stato = "Attivo" if self.isActive else "Inattivo"
+        return f"{self.nome} ({stato}) - [{self.orario_apertura.strftime('%H:%M')} - {self.orario_chiusura.strftime('%H:%M')}]"
+
+
+class Postazione(models.Model):
+    """
+    Spot fisico (ombrellone o gazebo) posizionato sulla mappa di un inventario.
+    La posizione (pos_x/pos_y) è indipendente dallo zoom del frontend: percentuale 0-100
+    relativa al canvas della mappa.
+    """
+    TIPO_CHOICES = [
+        ('OMBRELLONE', 'Ombrellone'),
+        ('GAZEBO', 'Gazebo'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    inventario = models.ForeignKey(PiscinaInventario, on_delete=models.CASCADE, related_name='postazioni')
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    numero = models.PositiveIntegerField(help_text="Numero identificativo della postazione")
+
+    pos_x = models.FloatField(default=50.0, help_text="Posizione orizzontale in percentuale (0-100) sul canvas")
+    pos_y = models.FloatField(default=50.0, help_text="Posizione verticale in percentuale (0-100) sul canvas")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Postazione"
+        verbose_name_plural = "Postazioni"
+        unique_together = ('inventario', 'numero')
+        ordering = ['numero']
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} #{self.numero} ({self.inventario.nome})"

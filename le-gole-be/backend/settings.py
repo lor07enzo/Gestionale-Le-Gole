@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 import os
 from pathlib import Path
 import environ
@@ -33,7 +34,8 @@ SECRET_KEY = env.str('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+#TODO: in produzione sostituire con l'elenco esplicito degli host consentiti
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -45,6 +47,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
+    'django_filters',
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'menu',
     'prenotazioni',
     'struttura',
@@ -52,6 +59,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -80,6 +88,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
+#TODO: in produzione sostituire con CORS_ALLOWED_ORIGINS = ['https://tuodominio.it']
+CORS_ALLOW_ALL_ORIGINS = True
+
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -95,6 +106,7 @@ DATABASES = {
     }
 }
 
+AUTH_USER_MODEL = 'users.Utente'
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -114,6 +126,29 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
+    ),
+}
+
+# Configurazione personalizzata per far durare la sessione 1 mese
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=60), # Il refresh token dura 2 mesi
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True, # Comodo per vedere nel pannello admin quando l'utente si è loggato l'ultima volta
+    
+    # Intestazione standard per React Native / Axios
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+}
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
