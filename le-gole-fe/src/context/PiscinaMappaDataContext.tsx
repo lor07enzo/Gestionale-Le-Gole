@@ -20,13 +20,19 @@ import {
 } from '../services/struttura';
 import {
   createOccupazione,
+  createPrenotazionePiscina,
   deleteOccupazione,
   deletePrenotazionePiscina,
+  listGiorniPieni,
   listOccupazioni,
   listPrenotazioniPiscina,
+  marcaGiornoPieno,
+  rimuoviGiornoPieno,
   updateOccupazione,
   updatePrenotazionePiscina,
   type CreateOccupazionePayload,
+  type CreatePrenotazionePiscinaPayload,
+  type GiornoPienoPiscina,
   type OccupazionePostazione,
   type PrenotazionePiscina,
   type UpdateOccupazionePayload,
@@ -52,6 +58,7 @@ type PiscinaMappaDataValue = {
   occupazioni: OccupazionePostazione[];
   selectedDate: Date;
   setSelectedDate: Dispatch<SetStateAction<Date>>;
+  isPastDate: boolean;
   isLoading: boolean;
   error: string | null;
   scale: number;
@@ -64,6 +71,12 @@ type PiscinaMappaDataValue = {
   clientiDelGiorno: ClienteDelGiornoEntry[];
   disponibilita: DisponibilitaItem[] | null;
 
+  // "Giorno pieno" (sezione 5 CLAUDE.md): marcatura manuale staff, blocca solo le nuove
+  // prenotazioni self-service pubbliche per la data selezionata — null quando non segnato.
+  giornoPieno: GiornoPienoPiscina | null;
+  isTogglingGiornoPieno: boolean;
+  toggleGiornoPieno: () => Promise<void>;
+
   dragPostazione: (postazione: Postazione, dxLogical: number, dyLogical: number) => void;
   addPostazione: (payload: Omit<CreatePostazionePayload, 'inventario'>) => Promise<Postazione>;
   removePostazione: (id: string) => Promise<void>;
@@ -73,6 +86,7 @@ type PiscinaMappaDataValue = {
     payload: UpdateOccupazionePayload
   ) => Promise<OccupazionePostazione>;
   removeOccupazione: (id: string) => Promise<void>;
+  addPrenotazione: (payload: CreatePrenotazionePiscinaPayload) => Promise<PrenotazionePiscina>;
   editPrenotazione: (
     id: string,
     payload: UpdatePrenotazionePiscinaPayload
@@ -104,6 +118,8 @@ export function PiscinaMappaDataProvider({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
+  const [giornoPieno, setGiornoPieno] = useState<GiornoPienoPiscina | null>(null);
+  const [isTogglingGiornoPieno, setIsTogglingGiornoPieno] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,17 +128,20 @@ export function PiscinaMappaDataProvider({
 
     async function fetchMappaData() {
       try {
-        const [inv, pos, pren, occ] = await Promise.all([
+        const dataSelezionata = toISODate(selectedDate);
+        const [inv, pos, pren, occ, giorniPieni] = await Promise.all([
           getPiscinaInventario(inventarioId),
-          listPostazioni(inventarioId),
-          listPrenotazioniPiscina({ data: toISODate(selectedDate) }),
-          listOccupazioni({ data: toISODate(selectedDate), postazione__inventario: inventarioId }),
+          listPostazioni(inventarioId, dataSelezionata),
+          listPrenotazioniPiscina({ data: dataSelezionata }),
+          listOccupazioni({ data: dataSelezionata, postazione__inventario: inventarioId }),
+          listGiorniPieni({ inventario: inventarioId, data: dataSelezionata }),
         ]);
         if (cancelled) return;
         setInventario(inv);
         setPostazioni(pos);
         setPrenotazioni(filterPrenotazioniAttive(pren, inventarioId));
         setOccupazioni(occ);
+        setGiornoPieno(giorniPieni[0] ?? null);
       } catch {
         if (!cancelled) setError('Impossibile caricare la mappa della piscina.');
       } finally {
@@ -136,6 +155,10 @@ export function PiscinaMappaDataProvider({
       cancelled = true;
     };
   }, [inventarioId, selectedDate]);
+
+  // Confronto per data (non per istante): un giorno passato resta tale per tutta la sua durata,
+  // indipendentemente dall'ora corrente.
+  const isPastDate = toISODate(selectedDate) < toISODate(new Date());
 
   const occupazioneByPostazione = useMemo(
     () => new Map(occupazioni.map((o) => [o.postazione, o])),
@@ -193,7 +216,9 @@ export function PiscinaMappaDataProvider({
 
   // Lista completa dei clienti del giorno (per il pannello "Clienti del giorno"): un cliente è
   // "completo" quando non ha più unità residue di ombrellone/gazebo da assegnare (le prenotazioni
-  // solo-ingresso sono sempre complete, dato che non prevedono postazioni).
+  // solo-ingresso sono sempre complete, dato che non prevedono postazioni). Ordinati prima per
+  // stato di assegnazione (chi è ancora da assegnare in cima, così salta subito all'occhio) e poi
+  // per orario di arrivo crescente all'interno di ciascun gruppo.
   const clientiDelGiorno = useMemo<ClienteDelGiornoEntry[]>(
     () =>
       [...prenotazioni]
@@ -202,7 +227,10 @@ export function PiscinaMappaDataProvider({
           const completo = !residui || (residui.ombrellone === 0 && residui.gazebo === 0);
           return { prenotazione: p, residui, completo };
         })
-        .sort((a, b) => a.prenotazione.cliente_nome.localeCompare(b.prenotazione.cliente_nome)),
+        .sort((a, b) => {
+          if (a.completo !== b.completo) return a.completo ? 1 : -1;
+          return a.prenotazione.ora.localeCompare(b.prenotazione.ora);
+        }),
     [prenotazioni, remainingByPrenotazione]
   );
 
@@ -227,6 +255,9 @@ export function PiscinaMappaDataProvider({
   }, [inventario, prenotazioni]);
 
   const dragPostazione = (postazione: Postazione, dxLogical: number, dyLogical: number) => {
+    // Backstop difensivo: l'interazione di drag è già disabilitata lato UI (PostazioneMarker)
+    // per i giorni passati, ma qui evitiamo comunque qualunque scrittura se richiamata a monte.
+    if (isPastDate) return;
     const newX = clamp(postazione.pos_x + (dxLogical / CANVAS_WIDTH) * 100, 0, 100);
     const newY = clamp(postazione.pos_y + (dyLogical / CANVAS_HEIGHT) * 100, 0, 100);
     setPostazioni((prev) =>
@@ -235,6 +266,8 @@ export function PiscinaMappaDataProvider({
     updatePostazione(postazione.id, { pos_x: newX, pos_y: newY }).catch(() => {
       setPostazioni((prev) => prev.map((p) => (p.id === postazione.id ? postazione : p)));
     });
+    // Il backend registra da sé lo storico posizione per oggi (PostazioneViewSet.perform_update
+    // → registra_posizione_storico), niente da sincronizzare qui lato frontend.
   };
 
   const addPostazione = async (
@@ -272,6 +305,14 @@ export function PiscinaMappaDataProvider({
     setOccupazioni((prev) => prev.filter((o) => o.id !== id));
   };
 
+  const addPrenotazione = async (
+    payload: CreatePrenotazionePiscinaPayload
+  ): Promise<PrenotazionePiscina> => {
+    const created = await createPrenotazionePiscina(payload);
+    setPrenotazioni((prev) => [...prev, created]);
+    return created;
+  };
+
   const editPrenotazione = async (
     id: string,
     payload: UpdatePrenotazionePiscinaPayload
@@ -290,6 +331,21 @@ export function PiscinaMappaDataProvider({
     setOccupazioni((prev) => prev.filter((o) => o.prenotazione !== id));
   };
 
+  const toggleGiornoPieno = async (): Promise<void> => {
+    setIsTogglingGiornoPieno(true);
+    try {
+      if (giornoPieno) {
+        await rimuoviGiornoPieno(giornoPieno.id);
+        setGiornoPieno(null);
+      } else {
+        const created = await marcaGiornoPieno({ inventario: inventarioId, data: toISODate(selectedDate) });
+        setGiornoPieno(created);
+      }
+    } finally {
+      setIsTogglingGiornoPieno(false);
+    }
+  };
+
   const value = useMemo<PiscinaMappaDataValue>(
     () => ({
       inventarioId,
@@ -299,6 +355,7 @@ export function PiscinaMappaDataProvider({
       occupazioni,
       selectedDate,
       setSelectedDate,
+      isPastDate,
       isLoading,
       error,
       scale,
@@ -309,12 +366,16 @@ export function PiscinaMappaDataProvider({
       soloIngresso,
       clientiDelGiorno,
       disponibilita,
+      giornoPieno,
+      isTogglingGiornoPieno,
+      toggleGiornoPieno,
       dragPostazione,
       addPostazione,
       removePostazione,
       assignOccupazione,
       updateOccupazioneEntry,
       removeOccupazione,
+      addPrenotazione,
       editPrenotazione,
       removePrenotazione,
     }),
@@ -325,6 +386,9 @@ export function PiscinaMappaDataProvider({
       prenotazioni,
       occupazioni,
       selectedDate,
+      isPastDate,
+      giornoPieno,
+      isTogglingGiornoPieno,
       isLoading,
       error,
       scale,

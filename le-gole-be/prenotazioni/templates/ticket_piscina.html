@@ -14,6 +14,9 @@
         .resources ul { list-style-type: none; padding: 0; margin: 0; }
         .resources li { padding: 5px 0; border-bottom: 1px solid #ddd; }
         .footer { text-align: center; margin-top: 20px; font-size: 0.8em; color: #777; }
+        .stato-badge { text-align: center; padding: 8px; border-radius: 6px; font-weight: bold; margin-bottom: 15px; }
+        .stato-pending { background-color: #fef3c7; color: #92400e; border: 1px solid #f59e0b; }
+        .stato-confirmed { background-color: #d1fae5; color: #065f46; border: 1px solid #10b981; }
     </style>
 </head>
 <body>
@@ -22,7 +25,13 @@
             <h1>Le Gole - Pass Piscina</h1>
             <p>Biglietto d'ingresso ufficiale</p>
         </div>
-        
+
+        {% if prenotazione.stato == 'PENDING' %}
+        <div class="stato-badge stato-pending">In attesa di conferma dello staff in biglietteria</div>
+        {% else %}
+        <div class="stato-badge stato-confirmed">Prenotazione confermata</div>
+        {% endif %}
+
         <div class="info-section">
             <p><strong>Cliente:</strong> {{ cliente.nome }}</p>
             <p><strong>Data:</strong> {{ prenotazione.data|date:"d/m/Y" }}</p>
@@ -33,7 +42,10 @@
         <div class="resources">
             <h3>Riepilogo Risorse Prenotate</h3>
             <ul>
-                <li>Ingressi: {{ prenotazione.ingressi }}</li>
+                <li>Ingressi interi: {{ prenotazione.ingressi }}</li>
+                {% if prenotazione.ingressi_ridotti > 0 %}<li>Ingressi ridotti (pomeridiani): {{ prenotazione.ingressi_ridotti }}</li>{% endif %}
+                {% if prenotazione.ingressi_bambini > 0 %}<li>Ingressi bambini: {{ prenotazione.ingressi_bambini }}</li>{% endif %}
+                {% if prenotazione.ingressi_gratuiti > 0 %}<li>Ingressi gratuiti: {{ prenotazione.ingressi_gratuiti }}</li>{% endif %}
                 {% if prenotazione.ombrellone > 0 %}<li>Ombrelloni: {{ prenotazione.ombrellone }}</li>{% endif %}
                 {% if prenotazione.gazebo > 0 %}<li>Gazebi: {{ prenotazione.gazebo }}</li>{% endif %}
                 {% if prenotazione.lettino > 0 %}<li>Lettini: {{ prenotazione.lettino }}</li>{% endif %}

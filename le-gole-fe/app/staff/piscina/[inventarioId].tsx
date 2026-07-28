@@ -10,6 +10,7 @@ import { ActionToolbar } from '../../../src/components/staff/piscina-mappa/Actio
 import { DaAssegnarePanel } from '../../../src/components/staff/piscina-mappa/DaAssegnarePanel';
 import { DateNavigator } from '../../../src/components/staff/piscina-mappa/DateNavigator';
 import { DisponibilitaRow } from '../../../src/components/staff/piscina-mappa/DisponibilitaRow';
+import { GiornoPienoToggle } from '../../../src/components/staff/piscina-mappa/GiornoPienoToggle';
 import { MappaCanvas } from '../../../src/components/staff/piscina-mappa/MappaCanvas';
 import { MappaHeader } from '../../../src/components/staff/piscina-mappa/MappaHeader';
 import { SoloIngressoPanel } from '../../../src/components/staff/piscina-mappa/SoloIngressoPanel';
@@ -61,6 +62,7 @@ function PiscinaMappaContent() {
         ) : null}
 
         <DateNavigator />
+        <GiornoPienoToggle />
         <DisponibilitaRow />
         <ZoomControls />
         <MappaCanvas />

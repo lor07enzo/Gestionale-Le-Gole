@@ -16,16 +16,19 @@ export function SoloIngressoPanel() {
         </Text>
       ) : (
         <VStack space="xs">
-          {soloIngresso.map((p) => (
-            <HStack key={p.id} className="items-center justify-between rounded-lg bg-white/60 px-3 py-2">
-              <Text size="sm" className="text-sky-900">
-                {p.cliente_nome}
-              </Text>
-              <Text size="xs" className="text-sky-900/70">
-                {p.ingressi} ingress{p.ingressi === 1 ? 'o' : 'i'}
-              </Text>
-            </HStack>
-          ))}
+          {soloIngresso.map((p) => {
+            const totaleIngressi = p.ingressi + p.ingressi_ridotti + p.ingressi_bambini + p.ingressi_gratuiti;
+            return (
+              <HStack key={p.id} className="items-center justify-between rounded-lg bg-white/60 px-3 py-2">
+                <Text size="sm" className="text-sky-900">
+                  {p.cliente_nome}
+                </Text>
+                <Text size="xs" className="text-sky-900/70">
+                  {totaleIngressi} ingress{totaleIngressi === 1 ? 'o' : 'i'}
+                </Text>
+              </HStack>
+            );
+          })}
         </VStack>
       )}
     </VStack>

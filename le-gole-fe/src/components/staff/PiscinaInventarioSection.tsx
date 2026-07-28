@@ -28,6 +28,7 @@ import {
   type CreatePiscinaInventarioPayload,
   type PiscinaInventario,
 } from '../../services/struttura';
+import { formatOrarioInput } from '../../utils/piscinaMappa';
 
 type TipoInventario = 'PISCINA' | 'ASPORTO' | 'SALA';
 
@@ -56,6 +57,11 @@ type FormState = {
   orarioApertura: string;
   orarioChiusura: string;
   prezzoIngresso: string;
+  prezzoIngressoRidotto: string;
+  prezzoIngressoBambino: string;
+  orarioInizioRidotto: string;
+  etaMinimaBambino: string;
+  etaMassimaBambino: string;
   prezzoOmbrellone: string;
   prezzoGazebo: string;
   prezzoLettino: string;
@@ -73,6 +79,11 @@ const INITIAL_FORM_STATE: FormState = {
   orarioApertura: '10:00',
   orarioChiusura: '19:00',
   prezzoIngresso: '0',
+  prezzoIngressoRidotto: '0',
+  prezzoIngressoBambino: '0',
+  orarioInizioRidotto: '14:00',
+  etaMinimaBambino: '3',
+  etaMassimaBambino: '12',
   prezzoOmbrellone: '0',
   prezzoGazebo: '0',
   prezzoLettino: '0',
@@ -102,6 +113,11 @@ function formStateFromItem(item: PiscinaInventario): FormState {
     orarioApertura: item.orario_apertura.slice(0, 5),
     orarioChiusura: item.orario_chiusura.slice(0, 5),
     prezzoIngresso: item.prezzo_ingresso,
+    prezzoIngressoRidotto: item.prezzo_ingresso_ridotto,
+    prezzoIngressoBambino: item.prezzo_ingresso_bambino,
+    orarioInizioRidotto: item.orario_inizio_ridotto.slice(0, 5),
+    etaMinimaBambino: String(item.eta_minima_bambino),
+    etaMassimaBambino: String(item.eta_massima_bambino),
     prezzoOmbrellone: item.prezzo_ombrellone,
     prezzoGazebo: item.prezzo_gazebo,
     prezzoLettino: item.prezzo_lettino,
@@ -121,6 +137,11 @@ function payloadFromFormState(form: FormState): CreatePiscinaInventarioPayload {
     orario_apertura: form.orarioApertura,
     orario_chiusura: form.orarioChiusura,
     prezzo_ingresso: form.prezzoIngresso,
+    prezzo_ingresso_ridotto: form.prezzoIngressoRidotto,
+    prezzo_ingresso_bambino: form.prezzoIngressoBambino,
+    orario_inizio_ridotto: form.orarioInizioRidotto,
+    eta_minima_bambino: Number.parseInt(form.etaMinimaBambino, 10) || 0,
+    eta_massima_bambino: Number.parseInt(form.etaMassimaBambino, 10) || 0,
     prezzo_ombrellone: form.prezzoOmbrellone,
     prezzo_gazebo: form.prezzoGazebo,
     prezzo_lettino: form.prezzoLettino,
@@ -516,11 +537,69 @@ export function PiscinaInventarioSection() {
                   onChangeText={setField('prezzoLettino')}
                 />
               </HStack>
-              <NumberField
-                label="Sdraia"
-                value={form.prezzoSdraia}
-                onChangeText={setField('prezzoSdraia')}
-              />
+              <HStack space="sm">
+                <NumberField
+                  label="Sdraia"
+                  value={form.prezzoSdraia}
+                  onChangeText={setField('prezzoSdraia')}
+                />
+                <Box className="flex-1" />
+              </HStack>
+
+              <Text size="sm" className="font-semibold text-muted-foreground">
+                Ingressi ridotti (opzionali)
+              </Text>
+              <Text size="xs" className="text-muted-foreground">
+                Lascia il prezzo a 0 per non proporre la tariffa (non appare nei form). Le soglie
+                sotto sono solo un testo guida: nessuna verifica automatica di orario o età.
+              </Text>
+              <HStack space="sm">
+                <NumberField
+                  label="Prezzo ridotto"
+                  value={form.prezzoIngressoRidotto}
+                  onChangeText={setField('prezzoIngressoRidotto')}
+                />
+                <VStack space="xs" className="flex-1">
+                  <Text size="sm" className="font-medium">
+                    Valido dalle
+                  </Text>
+                  <Input>
+                    <InputField
+                      placeholder="Es. 14:00"
+                      keyboardType="numeric"
+                      maxLength={5}
+                      value={form.orarioInizioRidotto}
+                      onChangeText={(text) =>
+                        updateForm('orarioInizioRidotto', formatOrarioInput(form.orarioInizioRidotto, text))
+                      }
+                    />
+                  </Input>
+                </VStack>
+              </HStack>
+              <HStack space="sm">
+                <NumberField
+                  label="Prezzo bambini"
+                  value={form.prezzoIngressoBambino}
+                  onChangeText={setField('prezzoIngressoBambino')}
+                />
+                <Box className="flex-1" />
+              </HStack>
+              <HStack space="sm">
+                <NumberField
+                  label="Età minima"
+                  value={form.etaMinimaBambino}
+                  onChangeText={setField('etaMinimaBambino')}
+                />
+                <NumberField
+                  label="Età massima"
+                  value={form.etaMassimaBambino}
+                  onChangeText={setField('etaMassimaBambino')}
+                />
+              </HStack>
+              <Text size="xs" className="text-muted-foreground">
+                Fascia {form.etaMinimaBambino || '0'}-{form.etaMassimaBambino || '0'} anni: paga il
+                prezzo bambini. Sotto {form.etaMinimaBambino || '0'} anni: ingresso gratuito.
+              </Text>
 
               <Text size="sm" className="font-semibold text-muted-foreground">
                 Quantità disponibili

@@ -1,5 +1,7 @@
+from datetime import datetime
+
 from django.db import transaction
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -11,6 +13,7 @@ from .serializers import PiscinaInventarioSerializer, PostazioneSerializer
 # Import "verticale" da prenotazioni (app transazionale): non crea un ciclo perché
 # prenotazioni.models importa da struttura.models, non da struttura.views.
 from prenotazioni.models import PrenotazionePiscina
+from prenotazioni.utils import posizioni_effettive, registra_posizione_storico
 
 class PiscinaInventarioViewSet(viewsets.ModelViewSet):
     """
@@ -80,7 +83,70 @@ class PostazioneViewSet(viewsets.ModelViewSet):
     """
     Gestione delle postazioni fisiche (ombrelloni/gazebi) sulla mappa di un inventario.
     """
-    queryset = Postazione.objects.all()
     serializer_class = PostazioneSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     filterset_fields = ['inventario', 'tipo']
+
+    def get_queryset(self):
+        # Le postazioni eliminate (soft-delete, vedi destroy()) restano nel DB per preservare lo
+        # storico collegato, ma non devono comparire nelle viste correnti (create/retrieve/
+        # update/list "live"). La vista storica in list(), sotto, interroga invece il modello
+        # direttamente per includerle quando pertinenti a un giorno passato.
+        return Postazione.objects.filter(deleted_at__isnull=True)
+
+    def perform_create(self, serializer):
+        postazione = serializer.save()
+        registra_posizione_storico(postazione)
+
+    def perform_update(self, serializer):
+        postazione = serializer.save()
+        registra_posizione_storico(postazione)
+
+    def destroy(self, request, *args, **kwargs):
+        # Soft delete: non un DELETE reale (vedi il commento su Postazione.deleted_at) —
+        # altrimenti le OccupazionePostazione/PostazionePosizioneStorico dei giorni passati
+        # collegate a questa postazione (CASCADE) andrebbero perse, e la postazione sparirebbe
+        # anche dallo storico dei giorni in cui esisteva davvero.
+        postazione = self.get_object()
+        postazione.deleted_at = timezone.now()
+        postazione.save(update_fields=['deleted_at'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def list(self, request, *args, **kwargs):
+        """
+        Se è presente ?data=YYYY-MM-DD ED è una data passata, ricostruisce la mappa "come era"
+        quel giorno invece di quella attuale:
+        - include anche le postazioni nel frattempo eliminate (soft-delete), se lo sono state
+          DOPO quella data — esistevano ancora allora;
+        - esclude le postazioni create DOPO quella data — non esistevano ancora;
+        - sovrascrive pos_x/pos_y con la posizione storica effettiva in quel giorno (vedi
+          prenotazioni.utils.posizioni_effettive).
+        Per oggi/il futuro (o senza 'data') il comportamento è quello live invariato.
+        """
+        data_str = request.query_params.get('data')
+        if not data_str:
+            return super().list(request, *args, **kwargs)
+
+        try:
+            data_richiesta = datetime.strptime(data_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({"detail": "Formato data non valido, atteso YYYY-MM-DD."}, status=400)
+
+        if data_richiesta >= timezone.localdate():
+            return super().list(request, *args, **kwargs)
+
+        queryset = Postazione.objects.filter(created_at__date__lte=data_richiesta).filter(
+            Q(deleted_at__isnull=True) | Q(deleted_at__date__gt=data_richiesta)
+        )
+        queryset = self.filter_queryset(queryset)
+
+        serializer = self.get_serializer(queryset, many=True)
+        payload = serializer.data
+
+        overrides = posizioni_effettive([item['id'] for item in payload], data_richiesta)
+        for item in payload:
+            pos = overrides.get(str(item['id']))
+            if pos:
+                item['pos_x'], item['pos_y'] = pos
+
+        return Response(payload)

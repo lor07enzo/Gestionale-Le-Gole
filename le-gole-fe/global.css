@@ -92,6 +92,17 @@
   }
 }
 
+/* Il body/html di default (browser) resta bianco: senza queste due regole, qualunque elemento
+   che trabocchi anche di pochi pixel oltre la viewport mostra lo scroll orizzontale della pagina
+   E una striscia bianca (sfondo del body, non dell'app) invece del crema di --background. */
+@layer base {
+  html,
+  body {
+    overflow-x: hidden;
+    background-color: rgb(var(--background));
+  }
+}
+
 @theme inline {
   --color-primary: rgb(var(--primary));
   --color-primary-foreground: rgb(var(--primary-foreground));

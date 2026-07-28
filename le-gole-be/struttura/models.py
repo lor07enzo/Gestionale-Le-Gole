@@ -9,11 +9,24 @@ class PiscinaInventario(models.Model):
 
     # Prezzi (DecimalField per precisione valutaria)
     prezzo_ingresso = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    # Tariffe ingresso alternative alla intera (prezzo_ingresso sopra), entrambe opzionali
+    # (default 0.00 = non configurata, la card/il form la nasconde). Sono solo contatori con
+    # prezzo proprio, come ombrellone/gazebo/lettino/sdraia: il sistema non verifica che
+    # l'orario di arrivo o l'età dichiarati rispettino le soglie sotto, che servono solo come
+    # testo guida per chi compila la prenotazione (staff o cliente self-service).
+    prezzo_ingresso_ridotto = models.DecimalField(
+        max_digits=6, decimal_places=2, default=0.00,
+        verbose_name="Prezzo Ingresso Ridotto Pomeridiano",
+    )
+    prezzo_ingresso_bambino = models.DecimalField(
+        max_digits=6, decimal_places=2, default=0.00,
+        verbose_name="Prezzo Ingresso Bambini",
+    )
     prezzo_ombrellone = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
     prezzo_gazebo = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
     prezzo_lettino = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
     prezzo_sdraia = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
-    
+
     # Capacità massime disponibili
     totale_ombrelloni = models.PositiveSmallIntegerField(default=0)
     totale_gazebi = models.PositiveSmallIntegerField(default=0)
@@ -22,6 +35,27 @@ class PiscinaInventario(models.Model):
 
     orario_apertura = models.TimeField(default=datetime.time(10, 0), verbose_name="Orario di Apertura")
     orario_chiusura = models.TimeField(default=datetime.time(19, 0), verbose_name="Orario di Chiusura")
+
+    # Soglie indicative per le tariffe ingresso alternative sopra — non validate lato server,
+    # solo mostrate come testo guida nei form (vedi commento su prezzo_ingresso_ridotto).
+    orario_inizio_ridotto = models.TimeField(
+        default=datetime.time(14, 0),
+        verbose_name="Orario Inizio Ridotto Pomeridiano",
+        help_text="Da questo orario in poi l'ingresso ridotto pomeridiano è normalmente proposto.",
+    )
+    # Fascia d'età per la tariffa bambini: [eta_minima_bambino, eta_massima_bambino] paga
+    # prezzo_ingresso_bambino, sotto eta_minima_bambino l'ingresso è indicativamente gratuito
+    # (vedi PrenotazionePiscina.ingressi_gratuiti) — entrambe solo testo guida, non validate.
+    eta_minima_bambino = models.PositiveSmallIntegerField(
+        default=3,
+        verbose_name="Età Minima Bambino",
+        help_text="Sotto questa età l'ingresso è indicativamente gratuito.",
+    )
+    eta_massima_bambino = models.PositiveSmallIntegerField(
+        default=12,
+        verbose_name="Età Massima Bambino",
+        help_text="Età massima (inclusa) indicativamente ammessa alla tariffa bambini.",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -57,14 +91,33 @@ class Postazione(models.Model):
     pos_x = models.FloatField(default=50.0, help_text="Posizione orizzontale in percentuale (0-100) sul canvas")
     pos_y = models.FloatField(default=50.0, help_text="Posizione verticale in percentuale (0-100) sul canvas")
 
+    # Soft delete: una Postazione eliminata dallo staff NON viene rimossa dal DB, altrimenti
+    # (a) le OccupazionePostazione/PostazionePosizioneStorico dei giorni passati collegate a
+    # questo id andrebbero perse (Postazione è CASCADE per entrambe), cancellando storico reale,
+    # e (b) una postazione aggiunta o rimossa oggi cambierebbe retroattivamente cosa risulta
+    # "esistito" nei giorni passati già consultati. `PostazioneViewSet` filtra le righe con
+    # deleted_at valorizzato dalle viste correnti; per un giorno passato include invece anche le
+    # postazioni eliminate DOPO quella data (esistevano ancora allora) ed esclude quelle create
+    # DOPO quella data (non esistevano ancora).
+    deleted_at = models.DateTimeField(null=True, blank=True, default=None)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Postazione"
         verbose_name_plural = "Postazioni"
-        unique_together = ('inventario', 'numero')
         ordering = ['numero']
+        constraints = [
+            # Non un semplice unique_together: un numero deve poter essere riutilizzato da una
+            # nuova postazione dopo che la precedente con lo stesso numero è stata eliminata
+            # (soft-delete) — l'unicità vale solo tra le postazioni ancora attive.
+            models.UniqueConstraint(
+                fields=['inventario', 'numero'],
+                condition=models.Q(deleted_at__isnull=True),
+                name='postazione_numero_unico_tra_le_attive',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.get_tipo_display()} #{self.numero} ({self.inventario.nome})"

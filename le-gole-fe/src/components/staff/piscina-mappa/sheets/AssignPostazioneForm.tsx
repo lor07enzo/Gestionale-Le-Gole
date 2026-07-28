@@ -6,22 +6,26 @@ import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
-import { usePiscinaSelection } from '../../../../context/PiscinaSelectionContext';
-import { usePiscinaSheets } from '../../../../context/PiscinaSheetsContext';
+import { ClockIcon, Icon } from '@/components/ui/icon';
+import type { PiscinaSheetsValue } from '../../../../context/PiscinaSheetsContext';
 
-export function AssignPostazioneForm() {
-  const { selectedWalkInCliente } = usePiscinaSelection();
+// Non chiama usePiscinaSheets() da sé: è un figlio di <Actionsheet>, teleportato fuori
+// dall'albero del Provider da gluestack-ui (vedi il commento in PostazioneSheet.tsx).
+export function AssignPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsValue }>) {
   const {
+    isPastDate,
     targetPostazione,
     clientiSelezionabiliPerTarget,
     sheetForm,
-    updateSheetForm,
+    maxLettini,
+    maxSdraie,
     sheetError,
     isSubmittingSheet,
     confirmAssign,
     setIsClientPickerOpen,
     handleDeletePostazione,
-  } = usePiscinaSheets();
+    updateSheetForm,
+  } = sheets;
 
   if (!targetPostazione) return null;
 
@@ -29,21 +33,13 @@ export function AssignPostazioneForm() {
     <>
       <Heading size="md">Assegna postazione #{targetPostazione.numero}</Heading>
 
-      {selectedWalkInCliente ? (
-        <VStack space="xs">
-          <Text size="sm" className="font-medium">
-            Cliente
-          </Text>
-          <Box className="rounded-md border-2 border-emerald-300 bg-emerald-50 px-3 py-2.5">
-            <Text size="sm" className="font-semibold text-sky-900">
-              {selectedWalkInCliente.nome}
-            </Text>
-            <Text size="xs" className="text-muted-foreground">
-              {selectedWalkInCliente.telefono}
-            </Text>
-          </Box>
-        </VStack>
-      ) : clientiSelezionabiliPerTarget.length === 0 ? (
+      {isPastDate ? (
+        <Text size="sm" className="rounded-lg bg-amber-50 px-3 py-2 text-amber-800">
+          Sola lettura: le postazioni non sono modificabili per un giorno passato.
+        </Text>
+      ) : null}
+
+      {clientiSelezionabiliPerTarget.length === 0 ? (
         <Text size="sm" className="text-muted-foreground">
           Nessun cliente in attesa per questa postazione. Seleziona una prenotazione dal pannello "Da
           assegnare", oppure crea un nuovo cliente con "+ Nuovo cliente" prima di toccare la mappa.
@@ -55,7 +51,8 @@ export function AssignPostazioneForm() {
           </Text>
           <Pressable
             onPress={() => setIsClientPickerOpen(true)}
-            className="flex-row items-center justify-between rounded-md border-2 border-sky-300 bg-white px-3 py-2.5"
+            disabled={isPastDate}
+            className={`flex-row items-center justify-between rounded-md border-2 border-sky-300 bg-white px-3 py-2.5 ${isPastDate ? 'opacity-50' : ''}`}
           >
             <VStack>
               <Text
@@ -77,43 +74,47 @@ export function AssignPostazioneForm() {
         </VStack>
       )}
 
-      {selectedWalkInCliente || clientiSelezionabiliPerTarget.length > 0 ? (
+      {clientiSelezionabiliPerTarget.length > 0 ? (
         <>
           <VStack space="xs">
             <Text size="sm" className="font-medium">
               Orario di arrivo previsto
             </Text>
-            <Input>
-              <InputField
-                placeholder="Es. 15:30"
-                value={sheetForm.orarioArrivo}
-                onChangeText={(text) => updateSheetForm({ orarioArrivo: text })}
-              />
-            </Input>
+            <Box className="flex-row items-center gap-2 rounded-md border-2 border-sky-100 bg-sky-50 px-3 py-2.5">
+              <Icon as={ClockIcon} size="sm" className="text-sky-700" />
+              <Text size="sm" className="font-semibold text-sky-900">
+                {sheetForm.orarioArrivo || '—'}
+              </Text>
+            </Box>
+            <Text size="2xs" className="text-muted-foreground">
+              Impostato dall'orario scelto al momento della prenotazione — non modificabile da qui.
+            </Text>
           </VStack>
 
           <HStack space="sm">
             <VStack space="xs" className="flex-1">
               <Text size="sm" className="font-medium">
-                Lettini
+                Lettini{maxLettini !== null ? ` (max ${maxLettini})` : ''}
               </Text>
-              <Input>
+              <Input isDisabled={isPastDate}>
                 <InputField
                   keyboardType="numeric"
                   value={sheetForm.lettini}
                   onChangeText={(text) => updateSheetForm({ lettini: text })}
+                  editable={!isPastDate}
                 />
               </Input>
             </VStack>
             <VStack space="xs" className="flex-1">
               <Text size="sm" className="font-medium">
-                Sdraie
+                Sdraie{maxSdraie !== null ? ` (max ${maxSdraie})` : ''}
               </Text>
-              <Input>
+              <Input isDisabled={isPastDate}>
                 <InputField
                   keyboardType="numeric"
                   value={sheetForm.sdraie}
                   onChangeText={(text) => updateSheetForm({ sdraie: text })}
+                  editable={!isPastDate}
                 />
               </Input>
             </VStack>
@@ -123,7 +124,7 @@ export function AssignPostazioneForm() {
               {sheetError}
             </Text>
           ) : null}
-          <Button onPress={confirmAssign} disabled={isSubmittingSheet}>
+          <Button onPress={confirmAssign} disabled={isSubmittingSheet || isPastDate}>
             {isSubmittingSheet ? <ButtonSpinner /> : <ButtonText>Assegna</ButtonText>}
           </Button>
         </>
@@ -132,6 +133,7 @@ export function AssignPostazioneForm() {
         variant="outline"
         className="border-2 border-destructive bg-destructive/10"
         onPress={() => handleDeletePostazione(targetPostazione)}
+        disabled={isPastDate}
       >
         <ButtonText className="font-semibold text-destructive">Elimina postazione</ButtonText>
       </Button>

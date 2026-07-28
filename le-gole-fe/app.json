@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "le-gole-fe",
+    "name": "Le Gole",
     "slug": "le-gole-fe",
     "version": "1.0.0",
     "scheme": "legole",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo-le-gole-nero.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -13,9 +13,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/logo-le-gole-nero.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -25,7 +23,8 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-router"
+      "expo-router",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

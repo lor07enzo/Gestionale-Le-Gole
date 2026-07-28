@@ -5,6 +5,10 @@ export type PiscinaInventario = {
   nome: string;
   descrizione: string;
   prezzo_ingresso: string;
+  // Tariffe alternative opzionali (0.00 = non configurata): contatori con prezzo proprio, come
+  // ombrellone/gazebo/lettino/sdraia, nessuna verifica automatica di orario/età lato server.
+  prezzo_ingresso_ridotto: string;
+  prezzo_ingresso_bambino: string;
   prezzo_ombrellone: string;
   prezzo_gazebo: string;
   prezzo_lettino: string;
@@ -15,6 +19,12 @@ export type PiscinaInventario = {
   totale_sdraie: number;
   orario_apertura: string;
   orario_chiusura: string;
+  // Soglie indicative (testo guida nei form, non validate) per le due tariffe alternative sopra.
+  orario_inizio_ridotto: string;
+  // Fascia d'età [eta_minima_bambino, eta_massima_bambino] per la tariffa bambini; sotto
+  // eta_minima_bambino l'ingresso è indicativamente gratuito.
+  eta_minima_bambino: number;
+  eta_massima_bambino: number;
   isActive: boolean;
   created_at: string;
   updated_at: string;
@@ -81,10 +91,13 @@ export function deletePiscinaInventario(id: string): Promise<void> {
   return api.delete(`${PISCINA_INVENTARIO_PATH}${id}/`).then(() => undefined);
 }
 
-// GET /v1/struttura/postazioni/?inventario={inventarioId}
-export function listPostazioni(inventarioId: string): Promise<Postazione[]> {
+// GET /v1/struttura/postazioni/?inventario={inventarioId}&data={data}
+// `data` è opzionale: se è una data passata, il backend sovrascrive pos_x/pos_y di ogni
+// postazione con la posizione storica effettiva in quel giorno (PostazionePosizioneStorico) —
+// per oggi/il futuro (o quando omesso) risponde con la posizione live di Postazione.
+export function listPostazioni(inventarioId: string, data?: string): Promise<Postazione[]> {
   return api
-    .get<Postazione[]>(POSTAZIONI_PATH, { params: { inventario: inventarioId } })
+    .get<Postazione[]>(POSTAZIONI_PATH, { params: { inventario: inventarioId, data } })
     .then((response) => response.data);
 }
 

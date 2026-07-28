@@ -17,7 +17,6 @@ class Cliente(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     nome = models.CharField(max_length=255, verbose_name="Nome e Cognome")
     telefono = models.CharField(max_length=20, verbose_name="Numero di Telefono")
-    note = models.TextField(blank=True, default='', verbose_name="Note aggiuntive")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

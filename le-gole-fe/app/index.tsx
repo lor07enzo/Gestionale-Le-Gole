@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Image } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
 import { Box } from '@/components/ui/box';
@@ -7,6 +8,8 @@ import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Button, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+
+const logo = require('../assets/logo-le-gole-nero.png');
 
 export default function RoleSelectionScreen() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -29,6 +32,7 @@ export default function RoleSelectionScreen() {
     <Box className="flex-1 items-center justify-center bg-background px-6">
       <Box className="w-full max-w-sm rounded-3xl border border-border bg-card p-8 shadow-sm">
         <VStack space="xs" className="items-center">
+          <Image source={logo} style={{ width: 96, height: 96 }} resizeMode="contain" accessibilityLabel="Logo Le Gole" />
           <Heading size="4xl">Le Gole</Heading>
           <Text className="text-center text-muted-foreground">
             Benvenuto! Scegli come vuoi accedere.
@@ -40,11 +44,9 @@ export default function RoleSelectionScreen() {
             <ButtonText>Accedi come Staff</ButtonText>
           </Button>
 
-          <VStack space="xs">
-            <Button size="lg" variant="outline" disabled>
-              <ButtonText>Area Cliente</ButtonText>
-            </Button>
-          </VStack>
+          <Button size="lg" variant="outline" onPress={() => router.push('/cliente')}>
+            <ButtonText>Area Cliente</ButtonText>
+          </Button>
         </VStack>
       </Box>
     </Box>

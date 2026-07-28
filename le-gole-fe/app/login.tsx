@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Image } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
 import { Box } from '@/components/ui/box';
@@ -7,6 +8,8 @@ import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
+
+const logo = require('../assets/logo-le-gole-nero.png');
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -36,6 +39,7 @@ export default function LoginScreen() {
     <Box className="flex-1 items-center justify-center bg-background px-6">
       <Box className="w-full max-w-sm rounded-3xl border border-border bg-card p-8 shadow-sm">
         <VStack space="xs" className="items-center">
+          <Image source={logo} style={{ width: 64, height: 64 }} resizeMode="contain" accessibilityLabel="Logo Le Gole" />
           <Heading size="2xl">Login Staff</Heading>
           <Text className="text-center text-muted-foreground">
             Inserisci le tue credenziali per accedere.
@@ -76,6 +80,10 @@ export default function LoginScreen() {
 
           <Button className="mt-2" onPress={handleLogin} disabled={isSubmitting}>
             {isSubmitting ? <ButtonSpinner /> : <ButtonText>Accedi</ButtonText>}
+          </Button>
+
+          <Button variant="link" onPress={() => router.push('/forgot-password')}>
+            <ButtonText>Password dimenticata?</ButtonText>
           </Button>
 
           <Button variant="link" onPress={() => router.back()}>

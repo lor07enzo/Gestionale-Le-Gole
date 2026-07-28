@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
 import { Alert, Platform } from 'react-native';
+import { createCliente } from '../services/clienti';
 import type { Postazione, TipoPostazione } from '../services/struttura';
 import type { PrenotazionePiscina } from '../services/prenotazioni';
 import {
@@ -15,14 +16,26 @@ import {
   computeDefaultOrario,
   formatTime,
   minutesToHHMM,
+  parseHHMMToMinutes,
   remainingForTipo,
   toISODate,
   validateOrarioArrivo,
+  validateOrarioIngressoIntero,
+  validateOrarioIngressoRidotto,
 } from '../utils/piscinaMappa';
 import { usePiscinaMappaData } from './PiscinaMappaDataContext';
 import { usePiscinaSelection } from './PiscinaSelectionContext';
 
-type PiscinaSheetsValue = {
+// Esportato perché i tre form annidati dentro PostazioneSheet (AddPostazioneForm,
+// AssignPostazioneForm, OccupantForm) NON possono chiamare usePiscinaSheets() da sé: sono
+// figli di <Actionsheet>, che gluestack-ui monta tramite un OverlayProvider "teleportato" vicino
+// alla radice dell'app (vedi GluestackUIProvider), fuori dall'albero di PiscinaSheetsProvider.
+// PostazioneSheet stesso resta nella posizione corretta e passa questo valore come prop.
+export type PiscinaSheetsValue = {
+  // Giorno passato: assegnazione/modifica/liberazione postazione disattivate (vedi
+  // PiscinaMappaDataContext.isPastDate), i form la leggono per disabilitare i controlli.
+  isPastDate: boolean;
+
   // Foglio principale: nuova postazione / assegnazione / occupante esistente.
   sheetMode: SheetMode;
   targetPostazione: Postazione | null;
@@ -30,6 +43,13 @@ type PiscinaSheetsValue = {
   sheetError: string | null;
   isSubmittingSheet: boolean;
   updateSheetForm: (patch: Partial<SimpleFormState>) => void;
+  // Massimo di lettini/sdraie assegnabili a QUESTA postazione per il cliente in lavorazione —
+  // null quando non c'è alcun limite (postazione occupata manualmente, senza una prenotazione
+  // reale collegata). Tiene conto di quanto già assegnato altrove per la stessa prenotazione
+  // (assign) o già presente su questa stessa occupazione (occupant, si riaggiunge il suo valore
+  // attuale perché remainingByPrenotazione lo conta già come "usato").
+  maxLettini: number | null;
+  maxSdraie: number | null;
   newTipo: TipoPostazione;
   setNewTipo: (tipo: TipoPostazione) => void;
   newNumero: string;
@@ -54,7 +74,7 @@ type PiscinaSheetsValue = {
   isClientListOpen: boolean;
   setIsClientListOpen: (open: boolean) => void;
 
-  // Foglio "Nuovo cliente" (walk-in).
+  // Foglio "Nuovo cliente": crea l'anagrafica Cliente insieme a una Prenotazione_Piscina reale.
   isNewClienteSheetOpen: boolean;
   newClienteForm: NewClienteFormState;
   newClienteError: string | null;
@@ -62,7 +82,7 @@ type PiscinaSheetsValue = {
   updateNewClienteForm: (patch: Partial<NewClienteFormState>) => void;
   openNewClienteSheet: () => void;
   closeNewClienteSheet: () => void;
-  confirmCreateWalkInCliente: () => Promise<void>;
+  confirmCreateCliente: () => Promise<void>;
 
   // Foglio "Modifica prenotazione".
   editingPrenotazione: PrenotazionePiscina | null;
@@ -74,13 +94,21 @@ type PiscinaSheetsValue = {
   closeEditPrenotazione: () => void;
   confirmEditPrenotazione: () => Promise<void>;
   handleDeletePrenotazione: (p: PrenotazionePiscina) => void;
+
+  // Conferma una prenotazione self-service 'PENDING' (nessun altro punto del flusso staff la
+  // conferma automaticamente — vedi commento su confirmPrenotazione).
+  confirmingPrenotazioneId: string | null;
+  confirmPrenotazione: (p: PrenotazionePiscina) => Promise<void>;
 };
 
 const PiscinaSheetsContext = createContext<PiscinaSheetsValue | undefined>(undefined);
 
 export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNode }>) {
   const {
+    inventarioId,
+    inventario,
     selectedDate,
+    isPastDate,
     occupazioneByPostazione,
     remainingByPrenotazione,
     daAssegnare,
@@ -89,16 +117,11 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     assignOccupazione,
     updateOccupazioneEntry,
     removeOccupazione,
+    addPrenotazione,
     editPrenotazione,
     removePrenotazione,
   } = usePiscinaMappaData();
-  const {
-    selectedPrenotazioneId,
-    selectedWalkInCliente,
-    selectPrenotazioneCandidate,
-    selectWalkInCliente,
-    createWalkInCliente,
-  } = usePiscinaSelection();
+  const { selectedPrenotazioneId, selectPrenotazioneCandidate } = usePiscinaSelection();
 
   const [sheetMode, setSheetMode] = useState<SheetMode>(null);
   const [targetPostazione, setTargetPostazione] = useState<Postazione | null>(null);
@@ -120,6 +143,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
   const [editError, setEditError] = useState<string | null>(null);
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
+  const [confirmingPrenotazioneId, setConfirmingPrenotazioneId] = useState<string | null>(null);
+
   const updateSheetForm = (patch: Partial<SimpleFormState>) =>
     setSheetForm((f) => ({ ...f, ...patch }));
   const updateNewClienteForm = (patch: Partial<NewClienteFormState>) =>
@@ -134,6 +159,27 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         (p) => remainingForTipo(remainingByPrenotazione.get(p.id), targetPostazione.tipo) > 0
       )
     : [];
+
+  // Prenotazione di riferimento per il limite lettini/sdraie del foglio aperto: quella
+  // selezionata in "assign" (non ancora un'occupazione reale), quella collegata all'occupazione
+  // esistente in "occupant". Se l'occupazione non è collegata a nessuna prenotazione (assegnata
+  // manualmente), non c'è alcun limite da applicare.
+  const occupazioneCorrente = targetPostazione ? occupazioneByPostazione.get(targetPostazione.id) : undefined;
+  const prenotazioneRiferimentoId =
+    sheetMode === 'assign'
+      ? selectedPrenotazioneId
+      : sheetMode === 'occupant'
+        ? occupazioneCorrente?.prenotazione ?? null
+        : null;
+  const residuoRiferimento = prenotazioneRiferimentoId
+    ? remainingByPrenotazione.get(prenotazioneRiferimentoId)
+    : undefined;
+  const maxLettini = residuoRiferimento
+    ? residuoRiferimento.lettino + (sheetMode === 'occupant' ? occupazioneCorrente?.numero_lettini ?? 0 : 0)
+    : null;
+  const maxSdraie = residuoRiferimento
+    ? residuoRiferimento.sdraia + (sheetMode === 'occupant' ? occupazioneCorrente?.numero_sdraie ?? 0 : 0)
+    : null;
 
   const closeSheet = () => {
     setSheetMode(null);
@@ -151,18 +197,29 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
 
   const handlePickCliente = (pren: PrenotazionePiscina) => {
     selectPrenotazioneCandidate(pren.id);
+    // Precompila con i RESIDUI (non i totali prenotati): se il cliente ha già una postazione
+    // assegnata con alcuni lettini/sdraie, il resto va proposto qui, altrimenti si potrebbe
+    // assegnare più del prenotato sommando i due fogli.
+    const residuo = remainingByPrenotazione.get(pren.id);
     updateSheetForm({
       clienteNome: pren.cliente_nome,
       clienteTelefono: pren.cliente_telefono,
-      lettini: String(pren.lettino),
-      sdraie: String(pren.sdraia),
-      orarioArrivo: computeDefaultOrario(pren.ora, selectedDate),
+      lettini: String(residuo?.lettino ?? pren.lettino),
+      sdraie: String(residuo?.sdraia ?? pren.sdraia),
+      // Il campo orario nel foglio di assegnazione è di sola visualizzazione (AssignPostazioneForm):
+      // rispecchia sempre esattamente Prenotazione.ora, senza ricadere su "adesso" se quell'orario
+      // è già passato — altrimenti la postazione mostrerebbe un orario diverso da quello della
+      // prenotazione (es. prenotato per le 14:30, assegnato alle 14:35: prima diventava "14:35" qui
+      // ma restava "14:30" nella lista clienti). L'orario è già garantito valido (campo obbligatorio
+      // sia lato self-service che staff, con la soglia del ridotto pomeridiano già verificata alla
+      // creazione/modifica della prenotazione), quindi non serve ricalcolarlo né clampare qui.
+      orarioArrivo: formatTime(pren.ora),
     });
     setIsClientPickerOpen(false);
   };
 
   const openNewClienteSheet = () => {
-    setNewClienteForm(EMPTY_NEW_CLIENTE_FORM);
+    setNewClienteForm({ ...EMPTY_NEW_CLIENTE_FORM, orarioArrivo: computeDefaultOrario(null, selectedDate) });
     setNewClienteError(null);
     setIsNewClienteSheetOpen(true);
   };
@@ -172,22 +229,82 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     setNewClienteError(null);
   };
 
-  const confirmCreateWalkInCliente = async () => {
+  const confirmCreateCliente = async () => {
+    if (isPastDate) {
+      setNewClienteError('Non è possibile creare un cliente per un giorno passato.');
+      return;
+    }
     if (!newClienteForm.nome.trim() || !newClienteForm.telefono.trim()) {
       setNewClienteError('Inserisci nome e telefono del cliente.');
       return;
     }
+    const orarioCheck = validateOrarioArrivo(newClienteForm.orarioArrivo, selectedDate);
+    if (!orarioCheck.valid) {
+      setNewClienteError(orarioCheck.error);
+      return;
+    }
+    if (inventario) {
+      const ridottoError = validateOrarioIngressoRidotto(
+        minutesToHHMM(orarioCheck.minutes),
+        Number.parseInt(newClienteForm.ingressiRidotti, 10) || 0,
+        inventario.orario_inizio_ridotto
+      );
+      if (ridottoError) {
+        setNewClienteError(ridottoError);
+        return;
+      }
+      if (Number.parseFloat(inventario.prezzo_ingresso_ridotto) > 0) {
+        const interoError = validateOrarioIngressoIntero(
+          minutesToHHMM(orarioCheck.minutes),
+          Number.parseInt(newClienteForm.ingressi, 10) || 0,
+          inventario.orario_inizio_ridotto
+        );
+        if (interoError) {
+          setNewClienteError(interoError);
+          return;
+        }
+      }
+    }
     setIsSubmittingNewCliente(true);
     setNewClienteError(null);
     try {
-      await createWalkInCliente({
+      const cliente = await createCliente({
         nome: newClienteForm.nome.trim(),
         telefono: newClienteForm.telefono.trim(),
-        note: newClienteForm.note.trim(),
       });
+      const created = await addPrenotazione({
+        cliente_id: cliente.id,
+        data: toISODate(selectedDate),
+        ora: minutesToHHMM(orarioCheck.minutes),
+        // Creata direttamente dallo staff (non self-service): nasce già confermata a prescindere
+        // dall'orario di arrivo scelto, che può essere "adesso" per un walk-in fisicamente
+        // presente oppure un orario successivo dello stesso giorno.
+        stato: 'CONFIRMED',
+        inventario: inventarioId,
+        note: newClienteForm.note.trim(),
+        ingressi: Number.parseInt(newClienteForm.ingressi, 10) || 0,
+        ingressi_ridotti: Number.parseInt(newClienteForm.ingressiRidotti, 10) || 0,
+        ingressi_bambini: Number.parseInt(newClienteForm.ingressiBambini, 10) || 0,
+        ingressi_gratuiti: Number.parseInt(newClienteForm.ingressiGratuiti, 10) || 0,
+        ombrellone: Number.parseInt(newClienteForm.ombrellone, 10) || 0,
+        gazebo: Number.parseInt(newClienteForm.gazebo, 10) || 0,
+        lettino: Number.parseInt(newClienteForm.lettino, 10) || 0,
+        sdraia: Number.parseInt(newClienteForm.sdraia, 10) || 0,
+      });
+      // Selezionata subito come candidata solo se ha unità ombrellone/gazebo da piazzare sulla
+      // mappa: una prenotazione "solo ingresso" non ha nulla da assegnare (finirebbe comunque
+      // esclusa da ogni postazione, vedi remainingForTipo).
+      if (created.ombrellone > 0 || created.gazebo > 0) {
+        selectPrenotazioneCandidate(created.id);
+      }
       setIsNewClienteSheetOpen(false);
-    } catch {
-      setNewClienteError('Impossibile creare il cliente.');
+    } catch (err: any) {
+      const detail = err?.response?.data;
+      const message =
+        detail && typeof detail === 'object'
+          ? Object.values(detail).flat().join(' ')
+          : 'Impossibile creare il cliente e la prenotazione.';
+      setNewClienteError(message || 'Impossibile creare il cliente e la prenotazione.');
     } finally {
       setIsSubmittingNewCliente(false);
     }
@@ -210,20 +327,6 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       return;
     }
 
-    // Un cliente walk-in appena creato (vedi "+ Nuovo cliente") non ha vincoli di tipo
-    // ombrellone/gazebo (nessuna prenotazione da rispettare): va bene su qualunque postazione libera.
-    if (selectedWalkInCliente) {
-      setSheetForm({
-        clienteNome: selectedWalkInCliente.nome,
-        clienteTelefono: selectedWalkInCliente.telefono,
-        lettini: '0',
-        sdraie: '0',
-        orarioArrivo: computeDefaultOrario(null, selectedDate),
-      });
-      setSheetMode('assign');
-      return;
-    }
-
     // Il cliente pre-selezionato dal pannello "Da assegnare" vale solo se ha ancora unità
     // residue del tipo corrispondente a QUESTA postazione (es. selezionato per errore su un
     // gazebo mentre ha solo ombrelloni residui non viene precompilato).
@@ -236,12 +339,16 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       : undefined;
 
     if (pren) {
+      // Stesso motivo di handlePickCliente: precompila con i residui, non i totali prenotati.
+      // Orario: stesso motivo di handlePickCliente, rispecchia sempre Prenotazione.ora esattamente
+      // (il campo è di sola visualizzazione in AssignPostazioneForm, non serve clampare/ricalcolare).
+      const residuo = remainingByPrenotazione.get(pren.id);
       setSheetForm({
         clienteNome: pren.cliente_nome,
         clienteTelefono: pren.cliente_telefono,
-        lettini: String(pren.lettino),
-        sdraie: String(pren.sdraia),
-        orarioArrivo: computeDefaultOrario(pren.ora, selectedDate),
+        lettini: String(residuo?.lettino ?? pren.lettino),
+        sdraie: String(residuo?.sdraia ?? pren.sdraia),
+        orarioArrivo: formatTime(pren.ora),
       });
     } else {
       setSheetForm({ ...EMPTY_FORM, orarioArrivo: computeDefaultOrario(null, selectedDate) });
@@ -251,14 +358,34 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
 
   const confirmAssign = async () => {
     if (!targetPostazione) return;
+    if (isPastDate) {
+      setSheetError('Non è possibile assegnare postazioni per un giorno passato.');
+      return;
+    }
 
-    if (!selectedWalkInCliente && !selectedPrenotazioneId) {
+    if (!selectedPrenotazioneId) {
       setSheetError('Seleziona un cliente tra quelli in attesa, oppure crea un nuovo cliente con "+ Nuovo cliente".');
       return;
     }
-    const orarioCheck = validateOrarioArrivo(sheetForm.orarioArrivo, selectedDate);
-    if (!orarioCheck.valid) {
-      setSheetError(orarioCheck.error);
+    // Il campo orario è di sola visualizzazione qui (AssignPostazioneForm): rispecchia sempre
+    // Prenotazione.ora, quindi NON va rifiutato se già "nel passato" rispetto ad adesso — è
+    // normalissimo assegnare una postazione qualche minuto dopo l'orario dichiarato dal cliente,
+    // e in quel caso l'orario deve restare quello della prenotazione, non essere respinto (a
+    // differenza del foglio "occupant", dove l'orario è scelto manualmente in tempo reale e
+    // validateOrarioArrivo resta corretto). Basta verificare che sia un formato HH:MM valido.
+    const arrivoMinuti = parseHHMMToMinutes(sheetForm.orarioArrivo);
+    if (arrivoMinuti === null) {
+      setSheetError('Orario di arrivo non valido.');
+      return;
+    }
+    const lettiniRichiesti = Number.parseInt(sheetForm.lettini, 10) || 0;
+    const sdraieRichieste = Number.parseInt(sheetForm.sdraie, 10) || 0;
+    if (maxLettini !== null && lettiniRichiesti > maxLettini) {
+      setSheetError(`Lettini superiori a quelli ancora da assegnare per questo cliente (massimo ${maxLettini}).`);
+      return;
+    }
+    if (maxSdraie !== null && sdraieRichieste > maxSdraie) {
+      setSheetError(`Sdraie superiori a quelle ancora da assegnare per questo cliente (massimo ${maxSdraie}).`);
       return;
     }
 
@@ -270,27 +397,20 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         data: toISODate(selectedDate),
         prenotazione: selectedPrenotazioneId,
         cliente_nome: sheetForm.clienteNome.trim(),
-        numero_lettini: Number.parseInt(sheetForm.lettini, 10) || 0,
-        numero_sdraie: Number.parseInt(sheetForm.sdraie, 10) || 0,
-        orario_arrivo_previsto: minutesToHHMM(orarioCheck.minutes),
+        numero_lettini: lettiniRichiesti,
+        numero_sdraie: sdraieRichieste,
+        orario_arrivo_previsto: minutesToHHMM(arrivoMinuti),
       });
 
-      if (selectedWalkInCliente) {
-        // Un walk-in non ha "unità residue": una volta assegnato a una postazione, la selezione
-        // si chiude da sola (per un'altra unità basta creare un nuovo cliente, o già ce n'è
-        // un'altra istanza reale se il gruppo ha più persone).
-        selectWalkInCliente(null);
-      } else if (selectedPrenotazioneId) {
-        // Se questo cliente aveva prenotato più unità dello stesso tipo (es. 2 ombrelloni),
-        // resta selezionato dopo l'assegnazione così lo staff può subito toccare la prossima
-        // postazione libera per lui, senza doverlo riselezionare dal pannello "Da assegnare".
-        const residuiPrimaDiQuestaAssegnazione = remainingForTipo(
-          remainingByPrenotazione.get(selectedPrenotazioneId),
-          targetPostazione.tipo
-        );
-        if (residuiPrimaDiQuestaAssegnazione <= 1) {
-          selectPrenotazioneCandidate(null);
-        }
+      // Se questo cliente aveva prenotato più unità dello stesso tipo (es. 2 ombrelloni), resta
+      // selezionato dopo l'assegnazione così lo staff può subito toccare la prossima postazione
+      // libera per lui, senza doverlo riselezionare dal pannello "Da assegnare".
+      const residuiPrimaDiQuestaAssegnazione = remainingForTipo(
+        remainingByPrenotazione.get(selectedPrenotazioneId),
+        targetPostazione.tipo
+      );
+      if (residuiPrimaDiQuestaAssegnazione <= 1) {
+        selectPrenotazioneCandidate(null);
       }
       closeSheet();
     } catch {
@@ -304,9 +424,23 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     if (!targetPostazione) return;
     const occ = occupazioneByPostazione.get(targetPostazione.id);
     if (!occ) return;
+    if (isPastDate) {
+      setSheetError('Non è possibile modificare l\'assegnazione di un giorno passato.');
+      return;
+    }
     const orarioCheck = validateOrarioArrivo(sheetForm.orarioArrivo, selectedDate);
     if (!orarioCheck.valid) {
       setSheetError(orarioCheck.error);
+      return;
+    }
+    const lettiniRichiesti = Number.parseInt(sheetForm.lettini, 10) || 0;
+    const sdraieRichieste = Number.parseInt(sheetForm.sdraie, 10) || 0;
+    if (maxLettini !== null && lettiniRichiesti > maxLettini) {
+      setSheetError(`Lettini superiori a quelli ancora da assegnare per questo cliente (massimo ${maxLettini}).`);
+      return;
+    }
+    if (maxSdraie !== null && sdraieRichieste > maxSdraie) {
+      setSheetError(`Sdraie superiori a quelle ancora da assegnare per questo cliente (massimo ${maxSdraie}).`);
       return;
     }
     setIsSubmittingSheet(true);
@@ -314,8 +448,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     try {
       await updateOccupazioneEntry(occ.id, {
         cliente_nome: sheetForm.clienteNome.trim(),
-        numero_lettini: Number.parseInt(sheetForm.lettini, 10) || 0,
-        numero_sdraie: Number.parseInt(sheetForm.sdraie, 10) || 0,
+        numero_lettini: lettiniRichiesti,
+        numero_sdraie: sdraieRichieste,
         orario_arrivo_previsto: minutesToHHMM(orarioCheck.minutes),
       });
       closeSheet();
@@ -330,6 +464,10 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     if (!targetPostazione) return;
     const occ = occupazioneByPostazione.get(targetPostazione.id);
     if (!occ) return;
+    if (isPastDate) {
+      setSheetError('Non è possibile liberare una postazione di un giorno passato.');
+      return;
+    }
     setIsSubmittingSheet(true);
     try {
       await removeOccupazione(occ.id);
@@ -351,6 +489,10 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
   };
 
   const handleDeletePostazione = (postazione: Postazione) => {
+    if (isPastDate) {
+      setSheetError('Non è possibile eliminare una postazione da un giorno passato.');
+      return;
+    }
     const message = `La postazione #${postazione.numero} verrà eliminata definitivamente.`;
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
@@ -365,6 +507,10 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
   };
 
   const confirmAddPostazione = async () => {
+    if (isPastDate) {
+      setSheetError('Non è possibile aggiungere postazioni per un giorno passato.');
+      return;
+    }
     const numero = Number.parseInt(newNumero, 10);
     if (!numero || numero <= 0) {
       setSheetError('Inserisci un numero di postazione valido.');
@@ -389,10 +535,14 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     setEditForm({
       ora: formatTime(p.ora),
       ingressi: String(p.ingressi),
+      ingressiRidotti: String(p.ingressi_ridotti),
+      ingressiBambini: String(p.ingressi_bambini),
+      ingressiGratuiti: String(p.ingressi_gratuiti),
       ombrellone: String(p.ombrellone),
       gazebo: String(p.gazebo),
       lettino: String(p.lettino),
       sdraia: String(p.sdraia),
+      note: p.note,
     });
     setEditError(null);
   };
@@ -404,16 +554,46 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
 
   const confirmEditPrenotazione = async () => {
     if (!editingPrenotazione) return;
+    if (isPastDate) {
+      setEditError('Non è possibile modificare una prenotazione di un giorno passato.');
+      return;
+    }
     if (!editForm.ora.trim()) {
       setEditError('Inserisci un orario valido.');
       return;
+    }
+    if (inventario) {
+      const ridottoError = validateOrarioIngressoRidotto(
+        editForm.ora,
+        Number.parseInt(editForm.ingressiRidotti, 10) || 0,
+        inventario.orario_inizio_ridotto
+      );
+      if (ridottoError) {
+        setEditError(ridottoError);
+        return;
+      }
+      if (Number.parseFloat(inventario.prezzo_ingresso_ridotto) > 0) {
+        const interoError = validateOrarioIngressoIntero(
+          editForm.ora,
+          Number.parseInt(editForm.ingressi, 10) || 0,
+          inventario.orario_inizio_ridotto
+        );
+        if (interoError) {
+          setEditError(interoError);
+          return;
+        }
+      }
     }
     setIsSubmittingEdit(true);
     setEditError(null);
     try {
       await editPrenotazione(editingPrenotazione.id, {
         ora: editForm.ora.trim(),
+        note: editForm.note.trim(),
         ingressi: Number.parseInt(editForm.ingressi, 10) || 0,
+        ingressi_ridotti: Number.parseInt(editForm.ingressiRidotti, 10) || 0,
+        ingressi_bambini: Number.parseInt(editForm.ingressiBambini, 10) || 0,
+        ingressi_gratuiti: Number.parseInt(editForm.ingressiGratuiti, 10) || 0,
         ombrellone: Number.parseInt(editForm.ombrellone, 10) || 0,
         gazebo: Number.parseInt(editForm.gazebo, 10) || 0,
         lettino: Number.parseInt(editForm.lettino, 10) || 0,
@@ -432,6 +612,22 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     }
   };
 
+  // Le prenotazioni self-service (Area Cliente) nascono 'PENDING' (sezione 7 CLAUDE.md): senza
+  // un'azione esplicita per confermarle restano in attesa a tempo indeterminato, dato che nessun
+  // altro punto del flusso staff cambia lo stato automaticamente (assegnare una postazione o
+  // modificare la prenotazione non la conferma).
+  const confirmPrenotazione = async (p: PrenotazionePiscina) => {
+    if (isPastDate || p.stato !== 'PENDING') return;
+    setConfirmingPrenotazioneId(p.id);
+    try {
+      await editPrenotazione(p.id, { stato: 'CONFIRMED' });
+    } catch {
+      Alert.alert('Errore', 'Impossibile confermare la prenotazione.');
+    } finally {
+      setConfirmingPrenotazioneId(null);
+    }
+  };
+
   const confirmDeletePrenotazione = async (p: PrenotazionePiscina) => {
     try {
       await removePrenotazione(p.id);
@@ -444,6 +640,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
   };
 
   const handleDeletePrenotazione = (p: PrenotazionePiscina) => {
+    if (isPastDate) return;
     const message = `La prenotazione di ${p.cliente_nome} verrà eliminata definitivamente insieme alle postazioni già assegnate, che torneranno libere sulla mappa.`;
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
@@ -471,12 +668,15 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
           : 'Gestione postazione';
 
   const value: PiscinaSheetsValue = {
+    isPastDate,
     sheetMode,
     targetPostazione,
     sheetForm,
     sheetError,
     isSubmittingSheet,
     updateSheetForm,
+    maxLettini,
+    maxSdraie,
     newTipo,
     setNewTipo,
     newNumero,
@@ -503,7 +703,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     updateNewClienteForm,
     openNewClienteSheet,
     closeNewClienteSheet,
-    confirmCreateWalkInCliente,
+    confirmCreateCliente,
     editingPrenotazione,
     editForm,
     editError,
@@ -513,6 +713,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     closeEditPrenotazione,
     confirmEditPrenotazione,
     handleDeletePrenotazione,
+    confirmingPrenotazioneId,
+    confirmPrenotazione,
   };
 
   return <PiscinaSheetsContext.Provider value={value}>{children}</PiscinaSheetsContext.Provider>;

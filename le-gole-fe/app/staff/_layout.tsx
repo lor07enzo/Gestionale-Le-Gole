@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable } from 'react-native';
+import { Image, Pressable } from 'react-native';
 import { router, Slot } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { Box } from '@/components/ui/box';
@@ -8,6 +8,7 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Spinner } from '@/components/ui/spinner';
+import { Icon, SearchIcon } from '@/components/ui/icon';
 import {
   Actionsheet,
   ActionsheetBackdrop,
@@ -17,6 +18,8 @@ import {
   ActionsheetItem,
   ActionsheetItemText,
 } from '@/components/ui/actionsheet';
+
+const logo = require('../../assets/logo-le-gole-nero.png');
 
 export default function StaffLayout() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -54,14 +57,29 @@ export default function StaffLayout() {
             accessibilityRole="button"
             accessibilityLabel="Apri profilo account"
           >
-            <Box className="h-9 w-9 items-center justify-center rounded-full bg-primary md:h-10 md:w-10">
-              <Text size="sm" className="font-bold text-primary-foreground">
-                LG
-              </Text>
+            <Box className="h-9 w-9 items-center justify-center overflow-hidden rounded-full md:h-10 md:w-10">
+              <Image
+                source={logo}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+                accessibilityLabel="Logo Le Gole"
+              />
             </Box>
             <Heading size="md" className="md:text-xl">
               Le Gole
             </Heading>
+          </Pressable>
+
+          <Pressable
+            className="h-9 flex-row items-center gap-1 md:h-10"
+            onPress={() => router.push('/staff/clienti')}
+            accessibilityRole="button"
+            accessibilityLabel="Cerca clienti"
+          >
+            <Icon as={SearchIcon} size="md" className="text-sky-700" />
+            <Text size="sm" className="font-medium text-sky-700 md:text-base">
+              Cerca
+            </Text>
           </Pressable>
         </HStack>
       </Box>

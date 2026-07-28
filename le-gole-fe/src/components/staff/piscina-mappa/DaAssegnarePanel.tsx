@@ -4,15 +4,15 @@ import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Button, ButtonText } from '@/components/ui/button';
+import { Button, ButtonIcon, ButtonText } from '@/components/ui/button';
+import { CalendarDaysIcon, ChevronRightIcon } from '@/components/ui/icon';
 import { usePiscinaMappaData } from '../../../context/PiscinaMappaDataContext';
 import { usePiscinaSelection } from '../../../context/PiscinaSelectionContext';
 import { usePiscinaSheets } from '../../../context/PiscinaSheetsContext';
 
 export function DaAssegnarePanel() {
   const { daAssegnare, remainingByPrenotazione } = usePiscinaMappaData();
-  const { selectedPrenotazioneId, selectedWalkInCliente, selectPrenotazioneCandidate, selectWalkInCliente } =
-    usePiscinaSelection();
+  const { selectedPrenotazioneId, selectPrenotazioneCandidate } = usePiscinaSelection();
   const { setIsClientListOpen } = usePiscinaSheets();
 
   return (
@@ -22,30 +22,20 @@ export function DaAssegnarePanel() {
         <Button
           size="sm"
           variant="outline"
-          className="border-2 border-sky-300 bg-white shadow-sm"
+          className="rounded-full border-2 border-sky-300 bg-sky-50 shadow-sm active:bg-sky-100"
           onPress={() => setIsClientListOpen(true)}
         >
-          <ButtonText className="text-xs font-semibold text-sky-900">Clienti del giorno →</ButtonText>
+          <ButtonIcon as={CalendarDaysIcon} className="text-sky-900" />
+          <ButtonText className="text-xs font-semibold text-sky-900">Clienti del giorno</ButtonText>
+          <ButtonIcon as={ChevronRightIcon} className="text-sky-900" />
         </Button>
       </HStack>
-      {daAssegnare.length === 0 && !selectedWalkInCliente ? (
+      {daAssegnare.length === 0 ? (
         <Text size="sm" className="text-muted-foreground">
           Nessuna prenotazione con ombrellone/gazebo in attesa per questa data.
         </Text>
       ) : (
         <HStack space="sm" className="flex-wrap">
-          {selectedWalkInCliente ? (
-            <Pressable onPress={() => selectWalkInCliente(null)}>
-              <Box className="rounded-full border border-emerald-500 bg-emerald-100 px-3 py-2">
-                <Text size="sm" className="font-medium text-emerald-900">
-                  🆕 {selectedWalkInCliente.nome}
-                </Text>
-                <Text size="2xs" className="text-emerald-900/70">
-                  nuovo cliente
-                </Text>
-              </Box>
-            </Pressable>
-          ) : null}
           {daAssegnare.map((p) => {
             const residui = remainingByPrenotazione.get(p.id);
             return (
@@ -73,7 +63,7 @@ export function DaAssegnarePanel() {
           })}
         </HStack>
       )}
-      {selectedPrenotazioneId || selectedWalkInCliente ? (
+      {selectedPrenotazioneId ? (
         <Text size="2xs" className="text-amber-700">
           Tocca una postazione libera sulla mappa per assegnarla.
         </Text>

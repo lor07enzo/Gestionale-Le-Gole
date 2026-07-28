@@ -4,9 +4,11 @@ import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
-import { usePiscinaSheets } from '../../../../context/PiscinaSheetsContext';
+import type { PiscinaSheetsValue } from '../../../../context/PiscinaSheetsContext';
 
-export function AddPostazioneForm() {
+// Non chiama usePiscinaSheets() da sé: è un figlio di <Actionsheet>, teleportato fuori
+// dall'albero del Provider da gluestack-ui (vedi il commento in PostazioneSheet.tsx).
+export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsValue }>) {
   const {
     newTipo,
     setNewTipo,
@@ -15,7 +17,7 @@ export function AddPostazioneForm() {
     sheetError,
     isSubmittingSheet,
     confirmAddPostazione,
-  } = usePiscinaSheets();
+  } = sheets;
 
   return (
     <>

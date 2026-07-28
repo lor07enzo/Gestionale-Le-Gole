@@ -4,6 +4,7 @@ import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
+import { ArrowLeftIcon, Icon } from '@/components/ui/icon';
 
 export function MappaHeader({ nome }: Readonly<{ nome: string | undefined }>) {
   return (
@@ -11,11 +12,9 @@ export function MappaHeader({ nome }: Readonly<{ nome: string | undefined }>) {
       <Pressable
         onPress={() => router.back()}
         accessibilityLabel="Torna indietro"
-        className="h-9 w-9 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm"
+        className="h-11 w-11 items-center justify-center rounded-full bg-sky-200 active:bg-sky-300"
       >
-        <Text size="md" className="font-bold text-sky-900">
-          ←
-        </Text>
+        <Icon as={ArrowLeftIcon} size="lg" className="text-sky-700" />
       </Pressable>
       <VStack className="flex-1">
         <Heading size="xl">{nome ?? 'Mappa Piscina'}</Heading>

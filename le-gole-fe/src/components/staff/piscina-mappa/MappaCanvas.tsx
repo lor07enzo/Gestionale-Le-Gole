@@ -7,9 +7,9 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH, remainingForTipo } from '../../../utils/pi
 import { PostazioneMarker } from './PostazioneMarker';
 
 export function MappaCanvas() {
-  const { postazioni, occupazioneByPostazione, remainingByPrenotazione, scale, dragPostazione } =
+  const { postazioni, occupazioneByPostazione, remainingByPrenotazione, scale, dragPostazione, isPastDate } =
     usePiscinaMappaData();
-  const { selectedPrenotazioneId, selectedWalkInCliente } = usePiscinaSelection();
+  const { selectedPrenotazioneId } = usePiscinaSelection();
   const { handleMarkerPress } = usePiscinaSheets();
 
   return (
@@ -18,10 +18,14 @@ export function MappaCanvas() {
         <ScrollView contentContainerStyle={{ height: CANVAS_HEIGHT * scale }}>
           <Box
             style={{
-              width: CANVAS_WIDTH,
-              height: CANVAS_HEIGHT,
-              transform: [{ scale }],
-              transformOrigin: 'top left',
+              // Le dimensioni sono scalate direttamente (niente `transform: scale`): così la
+              // dimensione LAYOUT del box coincide sempre con quella reale/dipinta, ed è la
+              // stessa unità di misura usata dai marker per calcolare la propria posizione
+              // durante il drag — nessuna conversione ambigua tra coordinate "logiche" e
+              // coordinate CSS trasformate (che in precedenza faceva perdere l'aggancio tra
+              // dito/puntatore e icona quando lo zoom non era al 100%).
+              width: CANVAS_WIDTH * scale,
+              height: CANVAS_HEIGHT * scale,
             }}
             className="bg-sky-50"
           >
@@ -31,15 +35,16 @@ export function MappaCanvas() {
                 postazione={postazione}
                 scale={scale}
                 isOccupied={occupazioneByPostazione.has(postazione.id)}
+                clienteNome={occupazioneByPostazione.get(postazione.id)?.cliente_nome}
                 isSelectable={
                   !occupazioneByPostazione.has(postazione.id) &&
-                  (Boolean(selectedWalkInCliente) ||
-                    (Boolean(selectedPrenotazioneId) &&
-                      remainingForTipo(
-                        remainingByPrenotazione.get(selectedPrenotazioneId ?? ''),
-                        postazione.tipo
-                      ) > 0))
+                  Boolean(selectedPrenotazioneId) &&
+                  remainingForTipo(
+                    remainingByPrenotazione.get(selectedPrenotazioneId ?? ''),
+                    postazione.tipo
+                  ) > 0
                 }
+                readOnly={isPastDate}
                 onPress={() => handleMarkerPress(postazione)}
                 onDragEnd={(dx, dy) => dragPostazione(postazione, dx, dy)}
               />

@@ -32,7 +32,7 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 SECRET_KEY = env.str('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env.bool('DEBUG', default=False)
 
 #TODO: in produzione sostituire con l'elenco esplicito degli host consentiti
 ALLOWED_HOSTS = ['*']
@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'anymail',
     'menu',
     'prenotazioni',
     'struttura',
@@ -149,6 +150,17 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
+
+FRONTEND_ACTIVATION_URL = env.str('FRONTEND_ACTIVATION_URL', default='legole://activate')
+FRONTEND_RESET_URL = env.str('FRONTEND_RESET_URL', default='legole://reset-password')
+
+EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+
+ANYMAIL = {
+    "RESEND_API_KEY": env("RESEND_API_KEY"),  # da variabile d'ambiente, mai hardcoded
+}
+
+DEFAULT_FROM_EMAIL = "delivered@resend.dev" # Email di test. Deve corrispondere al dominio verificato su Resend
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/

@@ -4,6 +4,7 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { PiscinaInventarioSection } from '../../src/components/staff/PiscinaInventarioSection';
+import { StaffManagementSection } from '../../src/components/staff/StaffManagementSection';
 
 function saluto(): string {
   const ora = new Date().getHours();
@@ -36,6 +37,7 @@ export default function StaffHomeScreen() {
         </VStack>
 
         <PiscinaInventarioSection />
+        <StaffManagementSection />
       </VStack>
     </ScrollView>
   );
