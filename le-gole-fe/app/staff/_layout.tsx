@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable } from 'react-native';
 import { router, Slot } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
+import { StaffNotificationsProvider } from '../../src/context/StaffNotificationsContext';
+import { NotificationsBanner, NotificationsBell } from '../../src/components/staff/NotificationsBell';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
@@ -48,77 +50,84 @@ export default function StaffLayout() {
   };
 
   return (
-    <Box className="flex-1 bg-background">
-      <Box className="border-b border-border/80 bg-background/70 web:backdrop-blur-md">
-        <HStack className="mx-auto w-full max-w-4xl items-center justify-between px-4 py-3 md:px-8 md:py-4">
-          <Pressable
-            className="flex-row items-center gap-2"
-            onPress={() => setIsAccountSheetOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Apri profilo account"
-          >
-            <Box className="h-9 w-9 items-center justify-center overflow-hidden rounded-full md:h-10 md:w-10">
-              <Image
-                source={logo}
-                style={{ width: '100%', height: '100%' }}
-                resizeMode="cover"
-                accessibilityLabel="Logo Le Gole"
-              />
-            </Box>
-            <Heading size="md" className="md:text-xl">
-              Le Gole
-            </Heading>
-          </Pressable>
+    <StaffNotificationsProvider>
+      <Box className="flex-1 bg-background">
+        <Box className="border-b border-border/80 bg-background/70 web:backdrop-blur-md">
+          <HStack className="mx-auto w-full max-w-4xl items-center justify-between px-4 py-3 md:px-8 md:py-4">
+            <Pressable
+              className="flex-row items-center gap-2"
+              onPress={() => setIsAccountSheetOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Apri profilo account"
+            >
+              <Box className="h-9 w-9 items-center justify-center overflow-hidden rounded-full md:h-10 md:w-10">
+                <Image
+                  source={logo}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                  accessibilityLabel="Logo Le Gole"
+                />
+              </Box>
+              <Heading size="md" className="md:text-xl">
+                Le Gole
+              </Heading>
+            </Pressable>
 
-          <Pressable
-            className="h-9 flex-row items-center gap-1 md:h-10"
-            onPress={() => router.push('/staff/clienti')}
-            accessibilityRole="button"
-            accessibilityLabel="Cerca clienti"
-          >
-            <Icon as={SearchIcon} size="md" className="text-sky-700" />
-            <Text size="sm" className="font-medium text-sky-700 md:text-base">
-              Cerca
-            </Text>
-          </Pressable>
-        </HStack>
-      </Box>
+            <HStack space="md" className="items-center">
+              <Pressable
+                className="h-9 flex-row items-center gap-1 md:h-10"
+                onPress={() => router.push('/staff/clienti')}
+                accessibilityRole="button"
+                accessibilityLabel="Cerca clienti"
+              >
+                <Icon as={SearchIcon} size="md" className="text-sky-700" />
+                <Text size="sm" className="font-medium text-sky-700 md:text-base">
+                  Cerca
+                </Text>
+              </Pressable>
+              <NotificationsBell />
+            </HStack>
+          </HStack>
+        </Box>
 
-      <Box className="mx-auto w-full max-w-4xl flex-1">
-        <Slot />
-      </Box>
+        <NotificationsBanner />
 
-      <Actionsheet isOpen={isAccountSheetOpen} onClose={() => setIsAccountSheetOpen(false)}>
-        <ActionsheetBackdrop />
-        <ActionsheetContent>
-          <ActionsheetDragIndicatorWrapper>
-            <ActionsheetDragIndicator />
-          </ActionsheetDragIndicatorWrapper>
+        <Box className="mx-auto w-full max-w-4xl flex-1">
+          <Slot />
+        </Box>
 
-          <VStack space="sm" className="w-full items-center pb-4 pt-1">
-            <Box className="h-16 w-16 items-center justify-center rounded-full bg-primary">
-              <Text className="text-xl font-bold text-primary-foreground">{initials}</Text>
-            </Box>
-            <VStack space="xs" className="items-center">
-              <Heading size="md">{user.username}</Heading>
-              <Text size="sm" className="text-muted-foreground">
-                {user.email}
-              </Text>
+        <Actionsheet isOpen={isAccountSheetOpen} onClose={() => setIsAccountSheetOpen(false)}>
+          <ActionsheetBackdrop />
+          <ActionsheetContent>
+            <ActionsheetDragIndicatorWrapper>
+              <ActionsheetDragIndicator />
+            </ActionsheetDragIndicatorWrapper>
+
+            <VStack space="sm" className="w-full items-center pb-4 pt-1">
+              <Box className="h-16 w-16 items-center justify-center rounded-full bg-primary">
+                <Text className="text-xl font-bold text-primary-foreground">{initials}</Text>
+              </Box>
+              <VStack space="xs" className="items-center">
+                <Heading size="md">{user.username}</Heading>
+                <Text size="sm" className="text-muted-foreground">
+                  {user.email}
+                </Text>
+              </VStack>
             </VStack>
-          </VStack>
 
-          <Box className="my-3 h-px w-full bg-border" />
+            <Box className="my-3 h-px w-full bg-border" />
 
-          <ActionsheetItem
-            onPress={handleLogout}
-            className="mb-5 rounded-lg bg-destructive/10 data-[hover=true]:bg-destructive/20 data-[active=true]:bg-destructive/20"
-          >
-            <ActionsheetItemText className="w-full text-center font-semibold text-destructive">
-              Logout
-            </ActionsheetItemText>
-          </ActionsheetItem>
-        </ActionsheetContent>
-      </Actionsheet>
-    </Box>
+            <ActionsheetItem
+              onPress={handleLogout}
+              className="mb-5 rounded-lg bg-destructive/10 data-[hover=true]:bg-destructive/20 data-[active=true]:bg-destructive/20"
+            >
+              <ActionsheetItemText className="w-full text-center font-semibold text-destructive">
+                Logout
+              </ActionsheetItemText>
+            </ActionsheetItem>
+          </ActionsheetContent>
+        </Actionsheet>
+      </Box>
+    </StaffNotificationsProvider>
   );
 }

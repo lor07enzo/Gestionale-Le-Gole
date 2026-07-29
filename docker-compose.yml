@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    # .env.prod, non .env: database "produzione" separato da quello di sviluppo/test (Postgres
+    # nativo in locale, ispezionabile con pgAdmin) — nomi/utente/password diversi, non solo
+    # un'istanza condivisa con due credenziali. Vedi CLAUDE.md sezione 10.
+    env_file:
+      - ./le-gole-be/.env.prod
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Host 5433, non 5432: in questo progetto Postgres gira normalmente anche in locale
+      # fuori da Docker (sezione 1 di CLAUDE.md, DB_HOST=localhost) — mappare 5432:5432
+      # fallirebbe se quell'istanza è già in ascolto. Il backend nel container comunica
+      # comunque con "db" sulla porta interna 5432 (DB_PORT, invariato); 5433 serve solo per
+      # ispezionare il DB containerizzato da un client sull'host, se necessario.
+      - "5433:5432"
+    healthcheck:
+      # $$ (non $) per far arrivare il riferimento alla variabile d'ambiente dentro il
+      # container invece di farlo interpolare subito da Docker Compose.
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./le-gole-be
+    restart: unless-stopped
+    # Ordine rilevante: .env fornisce la base (SECRET_KEY, RESEND_API_KEY, DEBUG, ecc. — non
+    # legate al DB), .env.prod è caricato dopo e sovrascrive le sole chiavi DB_* con le
+    # credenziali del database "produzione" containerizzato (sezione 10 di CLAUDE.md) — senza
+    # .env.prod il backend erediterebbe DB_HOST=localhost/DB_NAME=le_gole_db da .env, che dentro
+    # il container non è né raggiungibile né il database corretto.
+    env_file:
+      - ./le-gole-be/.env
+      - ./le-gole-be/.env.prod
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # Bind mount per lo sviluppo: il codice sorgente sull'host è la fonte di verità, le
+      # modifiche si riflettono subito nel container senza dover ricostruire l'immagine.
+      - ./le-gole-be:/app
+
+volumes:
+  postgres_data:

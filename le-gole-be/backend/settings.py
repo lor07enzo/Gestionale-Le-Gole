@@ -34,8 +34,10 @@ SECRET_KEY = env.str('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=False)
 
-#TODO: in produzione sostituire con l'elenco esplicito degli host consentiti
-ALLOWED_HOSTS = ['*']
+# Letto da env (lista separata da virgole, es. "le-gole-backend.onrender.com,.onrender.com"):
+# default '*' per non rompere lo sviluppo locale/Docker, dove non viene impostato. In produzione
+# (Render, sezione 12) va valorizzato con l'host reale.
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['*'])
 
 
 # Application definition
@@ -53,7 +55,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'anymail',
-    'menu',
+    # 'menu',
     'prenotazioni',
     'struttura',
     'users',
@@ -96,6 +98,13 @@ CORS_ALLOW_ALL_ORIGINS = True
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# DB_SSLMODE/DB_CONN_HEALTH_CHECKS: non impostate né in .env (locale) né in .env.prod (Docker,
+# sezione 10) — restano invariati per quei due casi. Neon (sezione 12) le richiede: sslmode
+# 'require' (il DB è raggiungibile solo via TLS) e i health check di connessione perché il
+# compute Neon si sospende dopo inattività sul piano free, e senza health check Django potrebbe
+# riusare una connessione ormai chiusa dal lato server.
+DB_SSLMODE = env('DB_SSLMODE', default=None)
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -104,6 +113,8 @@ DATABASES = {
         'PASSWORD': env('DB_PASSWORD'),
         'HOST': env('DB_HOST', default='localhost'),
         'PORT': env('DB_PORT', default='5432'),
+        'CONN_HEALTH_CHECKS': env.bool('DB_CONN_HEALTH_CHECKS', default=False),
+        'OPTIONS': {'sslmode': DB_SSLMODE} if DB_SSLMODE else {},
     }
 }
 

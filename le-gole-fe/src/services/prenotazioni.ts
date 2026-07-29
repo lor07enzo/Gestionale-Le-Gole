@@ -124,6 +124,15 @@ export function listPrenotazioniPiscinaByCliente(clienteId: string): Promise<Pre
     .then((response) => response.data);
 }
 
+// GET /v1/prenotazioni/piscina/?stato=PENDING — tutte le prenotazioni self-service in attesa di
+// conferma, su qualsiasi piscina/data (a differenza di listPrenotazioniPiscina, non filtrata per
+// giorno) — usato dal pannello notifiche staff (StaffNotificationsContext) per il polling.
+export function listPrenotazioniPendenti(): Promise<PrenotazionePiscina[]> {
+  return api
+    .get<PrenotazionePiscina[]>(PRENOTAZIONI_PISCINA_PATH, { params: { stato: 'PENDING' } })
+    .then((response) => response.data);
+}
+
 // GET /v1/prenotazioni/piscina/disponibilita/?inventario={id}&data={data} — pubblico, nessuna auth richiesta
 export function getDisponibilitaPiscina(params: {
   inventario: string;

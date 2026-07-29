@@ -1,0 +1,51 @@
+# Blueprint Render per il solo backend (Django + gunicorn, sezione 10 di CLAUDE.md) — il
+# database è Neon (Postgres gestito esterno, non un servizio Render), il frontend Expo/React
+# Native non è coperto da questo file (sezione 12 di CLAUDE.md). Import come "Blueprint" dalla
+# dashboard Render puntando a questo repo.
+services:
+  - name: le-gole-backend
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./le-gole-be/Dockerfile
+    dockerContext: ./le-gole-be
+    healthCheckPath: /api/v1/struttura/inventario-piscina/
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      # Wildcard sul dominio Render: qualunque sottodominio *.onrender.com assegnato al
+      # servizio combacia (Django supporta il pattern ".dominio" per un host jolly). Va
+      # ristretto all'host esatto (o aggiunto un dominio custom) quando si esce dalla sola
+      # fase di test.
+      - key: ALLOWED_HOSTS
+        value: .onrender.com
+      # Credenziali Neon (sezione 12) — da inserire manualmente in dashboard dopo aver creato
+      # il progetto Neon, mai salvate in questo file.
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_SSLMODE
+        value: require
+      - key: DB_CONN_HEALTH_CHECKS
+        value: "True"
+      # Piano free: RAM limitata, meno worker gunicorn del default Docker locale (3, sezione 10).
+      - key: GUNICORN_WORKERS
+        value: "2"
+      - key: RESEND_API_KEY
+        sync: false
+      # Placeholder finché il frontend non ha un URL web reale (sezione 7/12) — i deep link
+      # legole://... non risolvono in un browser, vanno sostituiti con l'URL https effettivo
+      # non appena il frontend viene ospitato da qualche parte.
+      - key: FRONTEND_ACTIVATION_URL
+        sync: false
+      - key: FRONTEND_RESET_URL
+        sync: false

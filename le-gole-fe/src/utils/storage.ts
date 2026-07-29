@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 
 const ACCESS_TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
+const NOTIFICHE_LAST_SEEN_KEY = 'staffNotificheLastSeenAt';
 
 // expo-secure-store non ha alcuna implementazione sul web (Keychain/Keystore non esistono nel browser):
 // su web usiamo localStorage come fallback, accettabile perché lì non esiste comunque uno storage "sicuro" via JS.
@@ -47,4 +48,15 @@ export function saveAccessToken(accessToken: string): Promise<void> {
 
 export async function clearTokens(): Promise<void> {
   await Promise.all([deleteItem(ACCESS_TOKEN_KEY), deleteItem(REFRESH_TOKEN_KEY)]);
+}
+
+// Timestamp ISO dell'ultima volta che lo staff ha aperto il pannello notifiche prenotazioni
+// (StaffNotificationsContext) — persistito perché un refresh della pagina (frequente su web,
+// il target attuale, sezione 8) non deve far ricomparire come "nuove" prenotazioni già viste.
+export function getNotificheLastSeenAt(): Promise<string | null> {
+  return getItem(NOTIFICHE_LAST_SEEN_KEY);
+}
+
+export function saveNotificheLastSeenAt(isoTimestamp: string): Promise<void> {
+  return setItem(NOTIFICHE_LAST_SEEN_KEY, isoTimestamp);
 }
