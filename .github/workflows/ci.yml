@@ -71,6 +71,29 @@ jobs:
       - name: Run pytest with coverage
         run: pytest --cov-report=xml:coverage.xml
 
+      # coverage.py (con relative_files=True, .coveragerc) scrive i <source> come percorsi
+      # relativi alla cwd di pytest (questa working-directory, "le-gole-be") — es.
+      # <source>prenotazioni</source>. SonarQube però li risolve relativi alla project base dir
+      # (la root del repo, un livello sopra: sonar.sources=le-gole-be,..., sezione 13 di
+      # CLAUDE.md), quindi senza questo step cerca "prenotazioni/models.py" invece di
+      # "le-gole-be/prenotazioni/models.py" e non trova quasi nessun file (coverage riportata
+      # vicina allo 0% invece del ~99% reale, bug noto lato Sonar per progetti in una
+      # sottocartella del repo). Corretto anteponendo "le-gole-be/" a ogni <source>.
+      - name: Fix coverage.xml source paths for SonarQube (repo monorepo, backend in sottocartella)
+        run: |
+          python -c "
+          import re
+          with open('coverage.xml') as f:
+              content = f.read()
+          def fix(m):
+              path = m.group(1)
+              path = 'le-gole-be' if path == '.' else f'le-gole-be/{path}'
+              return f'<source>{path}</source>'
+          content = re.sub(r'<source>([^<]*)</source>', fix, content)
+          with open('coverage.xml', 'w') as f:
+              f.write(content)
+          "
+
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:

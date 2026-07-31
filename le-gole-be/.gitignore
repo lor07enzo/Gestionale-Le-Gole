@@ -39,6 +39,7 @@ static/
 .pytest_cache/
 .coverage
 htmlcov/
+coverage.xml
 
 # =========================
 # REACT NATIVE & NODE.JS
