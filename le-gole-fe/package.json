@@ -50,7 +50,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "deploy:web": "expo export -p web && eas-cli deploy --prod --non-interactive"
+    "deploy:web": "expo export -p web && node scripts/fix-html-lang.js && eas-cli deploy --prod --non-interactive"
   },
   "private": true,
   "overrides": {

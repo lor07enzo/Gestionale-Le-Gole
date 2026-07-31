@@ -13,16 +13,16 @@ const logo = require('../../../assets/logo-le-gole-bianco.png');
 
 // TODO: sostituire con i recapiti e i link social reali de Le Gole prima del rilascio.
 const CONTATTI = {
-  telefono: '+39 000 000 0000',
-  telefonoHref: 'tel:+390000000000',
-  email: 'info@legole.it',
-  emailHref: 'mailto:info@legole.it',
+  telefono: '+39 333 452 8903',
+  telefonoHref: 'tel:+393334528903',
+  email: 'osterialegole@icloud.com',
+  emailHref: 'mailto:osterialegole@icloud.com',
 };
 
 const SOCIAL_LINKS = [
-  { key: 'instagram', label: 'Instagram', Icon: InstagramIcon, url: 'https://instagram.com/legole' },
-  { key: 'facebook', label: 'Facebook', Icon: FacebookIcon, url: 'https://facebook.com/legole' },
-  { key: 'whatsapp', label: 'WhatsApp', Icon: WhatsAppIcon, url: 'https://wa.me/390000000000' },
+  { key: 'instagram', label: 'Instagram', Icon: InstagramIcon, url: 'https://instagram.com/osteria_legole' },
+  { key: 'facebook', label: 'Facebook', Icon: FacebookIcon, url: 'https://facebook.com/Le Gole' },
+  { key: 'whatsapp', label: 'WhatsApp', Icon: WhatsAppIcon, url: 'https://wa.me/393334528903' },
 ];
 
 function openLink(url: string) {

@@ -40,6 +40,14 @@ jobs:
       - name: Export static web build
         run: npx expo export -p web
 
+      # expo export genera sempre <html lang="en"> anche se l'app è interamente in italiano
+      # (web.output non è "static" — passarci introdurrebbe un regresso, il <title> della scheda
+      # sparirebbe, sezione 14 di CLAUDE.md) — un lang errato fa sì che Google Traduttore rilevi
+      # la pagina come inglese e traduca/storpi singole parole italiane. Corretto in lang="it" +
+      # meta notranslate come doppia protezione, riusando lo stesso script di deploy:web.
+      - name: Fix HTML lang + notranslate meta
+        run: node scripts/fix-html-lang.js
+
       # eas-cli è una devDependency pinnata (package.json), non npx eas-cli@latest: in CI serve
       # una versione riproducibile, non l'ultima disponibile al momento della run.
       - name: Deploy to EAS Hosting (production)
