@@ -1,0 +1,48 @@
+name: Deploy Frontend (EAS Hosting)
+
+# Solo su push a main, e solo quando cambia davvero qualcosa sotto le-gole-fe/ — a differenza di
+# ci.yml (test backend, sezione 9 di CLAUDE.md), qui non ha senso ripubblicare un identico
+# artefatto statico ad ogni commit che tocca solo il backend.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "le-gole-fe/**"
+      - ".github/workflows/deploy-frontend.yml"
+
+jobs:
+  deploy:
+    name: Export + deploy to EAS Hosting (produzione)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: le-gole-fe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: le-gole-fe/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # EXPO_PUBLIC_API_BASE_URL viene letta da le-gole-fe/.env.production (tracciato in git,
+      # sezione 14 di CLAUDE.md — non un segreto, è solo l'URL pubblico del backend Render).
+      # expo export gira in modalità production di default, quindi la legge senza bisogno di
+      # impostare nulla qui.
+      - name: Export static web build
+        run: npx expo export -p web
+
+      # eas-cli è una devDependency pinnata (package.json), non npx eas-cli@latest: in CI serve
+      # una versione riproducibile, non l'ultima disponibile al momento della run.
+      - name: Deploy to EAS Hosting (production)
+        run: npx eas-cli deploy --prod --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

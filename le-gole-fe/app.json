@@ -28,6 +28,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a5c474f6-9d6a-4121-a83a-0d01d204c661"
+      }
+    },
+    "owner": "lorenz58"
   }
 }
