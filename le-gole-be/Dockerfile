@@ -80,4 +80,11 @@ EXPOSE 8000
 # Bind su ${PORT:-8000}, non un 8000 fisso: Render (sezione 12) assegna dinamicamente la porta
 # di ascolto tramite la variabile d'ambiente PORT — in locale/Docker Compose, dove PORT non è
 # impostata, il fallback a 8000 lascia invariato il comportamento di sempre.
-CMD ["sh", "-c", "python manage.py migrate && gunicorn backend.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-3} --timeout 60"]
+# --no-control-socket: gunicorn 25+ crea di default un "control socket" per la gestione runtime
+# via gunicornc (non usata qui) in $HOME/.gunicorn/gunicorn.ctl — con appuser il cui $HOME è
+# /app (sopra) e /app di sola lettura per lui (docker:S6504, niente --chown sul codice), la
+# creazione fallisce con "Control server error: [Errno 13] Permission denied: '/app/.gunicorn'"
+# non appena l'immagine gira senza un bind mount scrivibile a coprire /app (riscontrato in
+# produzione su Render, non in locale con Docker Compose — lì il bind mount di sviluppo rende
+# /app scrivibile indipendentemente dal proprietario). Disattivata perché non serve.
+CMD ["sh", "-c", "python manage.py migrate && gunicorn backend.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-3} --timeout 60 --no-control-socket"]
