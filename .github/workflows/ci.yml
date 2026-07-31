@@ -69,36 +69,45 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run pytest with coverage
-        run: pytest --cov-report=xml:coverage.xml
+        run: pytest
 
-      # coverage.py (con relative_files=True, .coveragerc) scrive i <source> come percorsi
-      # relativi alla cwd di pytest (questa working-directory, "le-gole-be") — es.
-      # <source>prenotazioni</source>. SonarQube però li risolve relativi alla project base dir
-      # (la root del repo, un livello sopra: sonar.sources=le-gole-be,..., sezione 13 di
-      # CLAUDE.md), quindi senza questo step cerca "prenotazioni/models.py" invece di
-      # "le-gole-be/prenotazioni/models.py" e non trova quasi nessun file (coverage riportata
-      # vicina allo 0% invece del ~99% reale, bug noto lato Sonar per progetti in una
-      # sottocartella del repo). Corretto anteponendo "le-gole-be/" a ogni <source>.
-      - name: Fix coverage.xml source paths for SonarQube (repo monorepo, backend in sottocartella)
+      # coverage.py, quando misura più app Django sorelle nella stessa passata (users, struttura,
+      # prenotazioni — ciascuna un package Python di primo livello, nessun __init__.py comune le
+      # unisce), scrive nell'XML combinato un "package" vuoto (".") IDENTICO per ognuna: il writer
+      # Cobertura tiene le classi in un dict chiavato solo sul nome file, quindi file omonimi tra
+      # un'app e l'altra (models.py/views.py/serializers.py/urls.py/__init__.py esistono in tutte
+      # e tre) si sovrascrivono a vicenda — nell'XML finale sopravvive un solo "models.py" su tre,
+      # gli altri due scompaiono silenziosamente (bug di coverage.py stesso, non di SonarQube: il
+      # report testuale term-missing è corretto, solo lo scrittore XML perde dati). Root-caused
+      # osservando che l'unico file con nome davvero unico nell'intero backend (users/permissions.py)
+      # era l'unico a comparire con un dato di coverage sensato su SonarQube Cloud.
+      # Fix: un file XML separato per app, rigenerato dagli stessi dati già raccolti da pytest
+      # sopra (nessun secondo run dei test) filtrando con --include — ogni file misura una sola
+      # app alla volta, quindi non c'è alcuna collisione di nomi e i path restano pienamente
+      # qualificati (verificato: 255+158+226=639 statement, 255+156+226=637 coperti, combaciano
+      # esattamente con l'unico XML combinato... quando quello non perdeva dati).
+      - name: Generate one coverage XML per app (avoids coverage.py's same-filename collision)
         run: |
-          python -c "
-          import re
-          with open('coverage.xml') as f:
-              content = f.read()
-          def fix(m):
-              path = m.group(1)
-              path = 'le-gole-be' if path == '.' else f'le-gole-be/{path}'
-              return f'<source>{path}</source>'
-          content = re.sub(r'<source>([^<]*)</source>', fix, content)
-          with open('coverage.xml', 'w') as f:
-              f.write(content)
-          "
+          coverage xml --data-file=.coverage --include="prenotazioni/*" -o coverage-prenotazioni.xml
+          coverage xml --data-file=.coverage --include="struttura/*" -o coverage-struttura.xml
+          coverage xml --data-file=.coverage --include="users/*" -o coverage-users.xml
 
-      - name: Upload coverage report
+      # Ognuno dei tre XML ha filename già qualificati rispetto alla cwd di pytest (le-gole-be,
+      # es. "prenotazioni/models.py") ma un <source></source> vuoto — SonarQube risolve i path
+      # relativi alla project base dir (la root del repo, sonar.sources=le-gole-be,..., sezione 13
+      # di CLAUDE.md), quindi senza questo step cercherebbe "prenotazioni/models.py" invece di
+      # "le-gole-be/prenotazioni/models.py". Corretto valorizzando <source> su "le-gole-be".
+      - name: Fix coverage XML source paths for SonarQube (backend in una sottocartella del repo)
+        run: sed -i 's#<source></source>#<source>le-gole-be</source>#' coverage-*.xml
+
+      - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml
-          path: le-gole-be/coverage.xml
+          path: |
+            le-gole-be/coverage-prenotazioni.xml
+            le-gole-be/coverage-struttura.xml
+            le-gole-be/coverage-users.xml
 
   sonarqube:
     name: SonarQube Cloud analysis
