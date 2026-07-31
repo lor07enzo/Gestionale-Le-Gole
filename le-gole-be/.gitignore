@@ -27,6 +27,11 @@ __pycache__/
 db.sqlite3
 db.sqlite3-journal
 
+# Socket di controllo di gunicorn (sh -c "... gunicorn ...", Dockerfile) — creato dentro /app,
+# quindi finisce sul host in questa cartella grazie al bind mount di sviluppo (docker-compose.yml,
+# sezione 10 di CLAUDE.md) ogni volta che si lancia `docker compose up` in locale.
+.gunicorn/
+
 # File multimediali e statici di Django
 media/
 staticfiles/
