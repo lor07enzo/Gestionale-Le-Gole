@@ -181,7 +181,7 @@ ANYMAIL = {
     "RESEND_API_KEY": env("RESEND_API_KEY"),  # da variabile d'ambiente, mai hardcoded
 }
 
-DEFAULT_FROM_EMAIL = "delivered@resend.dev" # Email di test. Deve corrispondere al dominio verificato su Resend
+DEFAULT_FROM_EMAIL = "seniority55@outlook.it" # Email di test. Deve corrispondere al dominio verificato su Resend
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/

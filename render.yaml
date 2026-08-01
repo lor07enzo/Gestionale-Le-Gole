@@ -24,7 +24,7 @@ services:
       # Frontend in produzione (EAS Hosting, sezione 14) — unica origine autorizzata a chiamare
       # l'API da un browser. Sostituisce CORS_ALLOW_ALL_ORIGINS (era True, TODO da tempo).
       - key: CORS_ALLOWED_ORIGINS
-        value: https://le-gole-fe.expo.app
+        value: https://legole.expo.app
       # Credenziali Neon (sezione 12) — da inserire manualmente in dashboard dopo aver creato
       # il progetto Neon, mai salvate in questo file.
       - key: DB_NAME

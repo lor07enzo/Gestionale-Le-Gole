@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Le Gole",
-    "slug": "le-gole-fe",
+    "slug": "legole",
     "version": "1.0.0",
     "scheme": "legole",
     "orientation": "portrait",
@@ -32,7 +32,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "a5c474f6-9d6a-4121-a83a-0d01d204c661"
+        "projectId": "4d902ed4-2295-428d-b979-e4de853e3c76"
       }
     },
     "owner": "lorenz58"
