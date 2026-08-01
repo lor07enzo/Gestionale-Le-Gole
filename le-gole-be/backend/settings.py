@@ -97,6 +97,13 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # non hardcoded qui, per non dover toccare questo file ad ogni cambio di dominio.
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:8081'])
 
+# Deployment di preview di EAS Hosting (es. https://legole--f975mx76x0.expo.app, un hash diverso
+# ad ogni `eas deploy` senza --prod, sezione 14) — CORS_ALLOWED_ORIGINS da solo non li copre
+# (hash imprevedibile), quindi un pattern separato via regex. Opzionale: se CORS_ALLOWED_ORIGIN_REGEX
+# non è impostata (locale/Docker), nessuna regex aggiuntiva.
+_cors_preview_regex = env.str('CORS_ALLOWED_ORIGIN_REGEX', default=None)
+CORS_ALLOWED_ORIGIN_REGEXES = [_cors_preview_regex] if _cors_preview_regex else []
+
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases

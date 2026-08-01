@@ -25,6 +25,11 @@ services:
       # l'API da un browser. Sostituisce CORS_ALLOW_ALL_ORIGINS (era True, TODO da tempo).
       - key: CORS_ALLOWED_ORIGINS
         value: https://legole.expo.app
+      # Deployment di preview di EAS Hosting (hash casuale ad ogni `eas deploy` senza --prod,
+      # es. legole--f975mx76x0.expo.app) — utile per verificare un deploy prima di promuoverlo a
+      # produzione senza incappare in errori CORS.
+      - key: CORS_ALLOWED_ORIGIN_REGEX
+        value: ^https://legole--[a-zA-Z0-9]+\.expo\.app$
       # Credenziali Neon (sezione 12) — da inserire manualmente in dashboard dopo aver creato
       # il progetto Neon, mai salvate in questo file.
       - key: DB_NAME
