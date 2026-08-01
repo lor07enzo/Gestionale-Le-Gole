@@ -91,18 +91,27 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
-#TODO: in produzione sostituire con CORS_ALLOWED_ORIGINS = ['https://tuodominio.it']
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOWED_ORIGINS letto da env come lista separata da virgole — default: solo il dev
+# server Expo web in locale (porta 8081, coerente con FRONTEND_ACTIVATION_URL in .env.example,
+# sezione 1). Il frontend di produzione (sezione 14) va aggiunto esplicitamente in render.yaml,
+# non hardcoded qui, per non dover toccare questo file ad ogni cambio di dominio.
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:8081'])
 
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# DB_SSLMODE/DB_CONN_HEALTH_CHECKS: non impostate né in .env (locale) né in .env.prod (Docker,
-# sezione 10) — restano invariati per quei due casi. Neon (sezione 12) le richiede: sslmode
-# 'require' (il DB è raggiungibile solo via TLS) e i health check di connessione perché il
-# compute Neon si sospende dopo inattività sul piano free, e senza health check Django potrebbe
-# riusare una connessione ormai chiusa dal lato server.
+# DB_SSLMODE/DB_CONN_HEALTH_CHECKS/DB_CONN_MAX_AGE: non impostate né in .env (locale) né in
+# .env.prod (Docker, sezione 10) — restano invariati per quei due casi (CONN_MAX_AGE resta 0,
+# nessun impatto su Postgres nativo/containerizzato in locale). Neon (sezione 12) le richiede:
+# sslmode 'require' (il DB è raggiungibile solo via TLS) e i health check di connessione perché
+# il compute Neon si sospende dopo inattività sul piano free, e senza health check Django
+# potrebbe riusare una connessione ormai chiusa dal lato server. CONN_MAX_AGE=0 (default Django)
+# apre e chiude una connessione TLS nuova ad ogni singola richiesta — misurato empiricamente
+# ~1,5s costanti per query banali anche a backend "caldo" (nessun cold start), causa principale
+# di lentezza percepita nell'app. Impostato a 60s (sotto ai 300s di scale-to-zero di default di
+# Neon, raccomandazione ufficiale Neon per Django: CONN_MAX_AGE + CONN_HEALTH_CHECKS abilita il
+# riuso delle connessioni tra richieste senza rischiare di riusarne una chiusa nel frattempo).
 DB_SSLMODE = env('DB_SSLMODE', default=None)
 
 DATABASES = {
@@ -113,6 +122,7 @@ DATABASES = {
         'PASSWORD': env('DB_PASSWORD'),
         'HOST': env('DB_HOST', default='localhost'),
         'PORT': env('DB_PORT', default='5432'),
+        'CONN_MAX_AGE': env.int('DB_CONN_MAX_AGE', default=0),
         'CONN_HEALTH_CHECKS': env.bool('DB_CONN_HEALTH_CHECKS', default=False),
         'OPTIONS': {'sslmode': DB_SSLMODE} if DB_SSLMODE else {},
     }
