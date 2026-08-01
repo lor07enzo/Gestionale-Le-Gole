@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Box } from '@/components/ui/box';
@@ -26,7 +26,14 @@ import {
   LockIcon,
   PhoneIcon,
 } from '@/components/ui/icon';
-import { TimePickerModal } from 'react-native-paper-dates';
+// Caricato dinamicamente, non importato in cima al file — stesso motivo del layout genitore
+// (app/cliente/_layout.tsx): un bug noto di react-native-paper-dates fa sì che il suo
+// riferimento a FlatList di React Native risulti a volte `undefined` a seconda dell'ordine con
+// cui Metro impacchetta i moduli, e un import statico qui lo rendeva parte del bundle valutato
+// eagerly su ogni pagina dell'app, non solo su questa.
+const TimePickerModal = lazy(() =>
+  import('react-native-paper-dates').then((m) => ({ default: m.TimePickerModal }))
+);
 import { getPiscinaInventario, type PiscinaInventario } from '../../../src/services/struttura';
 import {
   createPrenotazionePiscina,
@@ -580,22 +587,24 @@ export default function ClientePiscinaBookingScreen() {
               </VStack>
             </VStack>
 
-            <TimePickerModal
-              visible={isTimePickerOpen}
-              onDismiss={() => setIsTimePickerOpen(false)}
-              onConfirm={({ hours, minutes }) => {
-                setIsTimePickerOpen(false);
-                setField('orario')(minutesToHHMM(hours * 60 + minutes));
-              }}
-              hours={orarioMinutiCorrenti !== null ? Math.floor(orarioMinutiCorrenti / 60) : undefined}
-              minutes={orarioMinutiCorrenti !== null ? orarioMinutiCorrenti % 60 : undefined}
-              use24HourClock
-              locale="it"
-              label="Orario di arrivo previsto"
-              cancelLabel="Annulla"
-              confirmLabel="OK"
-              animationType="fade"
-            />
+            <Suspense fallback={null}>
+              <TimePickerModal
+                visible={isTimePickerOpen}
+                onDismiss={() => setIsTimePickerOpen(false)}
+                onConfirm={({ hours, minutes }) => {
+                  setIsTimePickerOpen(false);
+                  setField('orario')(minutesToHHMM(hours * 60 + minutes));
+                }}
+                hours={orarioMinutiCorrenti !== null ? Math.floor(orarioMinutiCorrenti / 60) : undefined}
+                minutes={orarioMinutiCorrenti !== null ? orarioMinutiCorrenti % 60 : undefined}
+                use24HourClock
+                locale="it"
+                label="Orario di arrivo previsto"
+                cancelLabel="Annulla"
+                confirmLabel="OK"
+                animationType="fade"
+              />
+            </Suspense>
 
             <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
               <Heading size="sm">Cosa vuoi prenotare</Heading>

@@ -1,21 +1,18 @@
+import { useEffect, useState } from 'react';
 import { Slot } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { MD3LightTheme, PaperProvider } from 'react-native-paper';
-import type { IconProps } from 'react-native-paper/lib/typescript/components/MaterialCommunityIcon';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { it, registerTranslation } from 'react-native-paper-dates';
+import type { IconProps } from 'react-native-paper/lib/typescript/components/MaterialCommunityIcon';
+import { Box } from '@/components/ui/box';
+import { Spinner } from '@/components/ui/spinner';
 
-// Traduzione italiana per TimePickerModal (usato dal flusso di prenotazione piscina, sezione 7
-// CLAUDE.md) — va registrata una sola volta, a livello di modulo.
-registerTranslation('it', it);
+type PaperModule = typeof import('react-native-paper');
 
-// Accento sky-600 (stesso blu usato in tutta l'Area Cliente, es. i pulsanti/bordi di
-// DateNav/RisorsaField) al posto del viola di default di Material Design 3 — il modale resta
-// comunque visivamente "Paper", non gluestack-ui, ma almeno non stona con il resto della pagina.
-const paperTheme = {
-  ...MD3LightTheme,
-  colors: { ...MD3LightTheme.colors, primary: '#0284c7' },
-};
+// registerTranslation va chiamata una sola volta a livello di modulo (commento originale) — ma
+// ora che il modulo si carica dinamicamente (sotto) potrebbe montare/smontare più volte durante
+// una sessione (navigazione avanti/indietro da /cliente/* verso altre rotte e ritorno), quindi il
+// guardrail è esplicito qui invece che implicito nell'ordine di esecuzione del modulo.
+let translationRegistered = false;
 
 // Definita fuori dal componente (non inline nella prop `settings`): altrimenti verrebbe
 // ricreata ad ogni render di ClienteLayout, invalidando inutilmente il context di PaperProvider.
@@ -23,17 +20,57 @@ function renderPaperIcon(props: IconProps) {
   return <MaterialCommunityIcons {...props} />;
 }
 
-// react-native-paper (usata solo per il TimePickerModal di react-native-paper-dates, non per il
-// resto della UI, che resta gluestack-ui + NativeWind) richiede un PaperProvider come antenato
-// per i suoi componenti "Portal" (il modale del time picker), e SafeAreaProvider per gli insets
-// usati internamente dal modale. Limitati a questo gruppo di rotte (`/cliente/*`), non al layout
-// radice, per non introdurre il secondo design system nel resto dell'app.
+// react-native-paper/react-native-paper-dates (usate solo per il TimePickerModal della
+// prenotazione piscina, sezione 7 di CLAUDE.md) caricate dinamicamente al montaggio di questo
+// layout, non importate in cima al file come in precedenza — un bug noto della libreria fa sì
+// che il suo riferimento a FlatList di React Native risulti a volte `undefined` a seconda
+// dell'ordine con cui Metro impacchetta i moduli (diverso tra build, es. Windows locale vs Linux
+// CI, riscontrato in produzione). Con un import statico qui, quel codice diventava parte del
+// bundle valutato eagerly su OGNI pagina dell'app (anche fuori da /cliente/*, il bundle web è
+// unico, sezione 8), mandando in crash l'intera applicazione quando il bug si manifestava.
+// Caricandola solo quando si naviga davvero in /cliente/*, un'eventuale build sfortunata rompe al
+// più il flusso di prenotazione (vedi anche il lazy() su TimePickerModal nella pagina di
+// prenotazione), non più l'intera app.
 export default function ClienteLayout() {
+  const [Paper, setPaper] = useState<PaperModule | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([import('react-native-paper'), import('react-native-paper-dates')]).then(
+      ([paperModule, paperDatesModule]) => {
+        if (!translationRegistered) {
+          paperDatesModule.registerTranslation('it', paperDatesModule.it);
+          translationRegistered = true;
+        }
+        if (!cancelled) setPaper(paperModule);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <SafeAreaProvider>
-      <PaperProvider theme={paperTheme} settings={{ icon: renderPaperIcon }}>
-        <Slot />
-      </PaperProvider>
+      {Paper ? (
+        <Paper.PaperProvider
+          theme={{
+            ...Paper.MD3LightTheme,
+            // Accento sky-600 (stesso blu usato in tutta l'Area Cliente, es. i pulsanti/bordi di
+            // DateNav/RisorsaField) al posto del viola di default di Material Design 3 — il
+            // modale resta comunque visivamente "Paper", non gluestack-ui, ma almeno non stona
+            // con il resto della pagina.
+            colors: { ...Paper.MD3LightTheme.colors, primary: '#0284c7' },
+          }}
+          settings={{ icon: renderPaperIcon }}
+        >
+          <Slot />
+        </Paper.PaperProvider>
+      ) : (
+        <Box className="flex-1 items-center justify-center bg-background">
+          <Spinner size="large" />
+        </Box>
+      )}
     </SafeAreaProvider>
   );
 }
