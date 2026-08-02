@@ -35,9 +35,14 @@ type PostazioneMarkerProps = {
   clienteNome?: string;
   scale: number;
   // Giorno passato: il tap resta attivo (per consultare l'occupante), ma il trascinamento è
-  // disattivato — la posizione è un dato strutturale condiviso da tutte le date, non ha senso
-  // spostarla mentre si sta consultando lo storico.
+  // sempre disattivato — la posizione è un dato strutturale condiviso da tutte le date, non ha
+  // senso spostarla mentre si sta consultando lo storico (a prescindere da `editMode`).
   readOnly: boolean;
+  // Modalità modifica posizioni (mappa staff, sezione 5 CLAUDE.md): quando true il marker è
+  // trascinabile ma il tap non assegna/consulta più nulla (nessuna onPress) — l'assegnazione
+  // cliente e la modifica posizione sono due interazioni mutuamente esclusive sullo stesso gesto
+  // di tap, quindi non possono restare entrambe attive sullo stesso marker.
+  editMode: boolean;
   onPress: () => void;
   onDragEnd: (dxLogical: number, dyLogical: number) => void;
 };
@@ -59,35 +64,41 @@ export function PostazioneMarker({
   clienteNome,
   scale,
   readOnly,
+  editMode,
   onPress,
   onDragEnd,
 }: Readonly<PostazioneMarkerProps>) {
   const [drag, setDrag] = useState({ dx: 0, dy: 0 });
   const dragStateRef = useRef({ startX: 0, startY: 0, moved: false });
 
+  // Trascinabile solo in modalità modifica e mai su un giorno passato. Quando NON è trascinabile
+  // (mappa in modalità assegnazione normale, oppure consultazione di sola lettura) il tap apre
+  // sempre onPress: non essendoci alcun drag possibile, non serve distinguere tap da spostamento.
+  const draggable = editMode && !readOnly;
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => Platform.OS !== 'web',
       onMoveShouldSetPanResponder: (_, gesture) =>
         Platform.OS !== 'web' &&
-        !readOnly &&
+        draggable &&
         (Math.abs(gesture.dx) > TAP_MOVE_THRESHOLD_PX || Math.abs(gesture.dy) > TAP_MOVE_THRESHOLD_PX),
       onPanResponderMove: (_, gesture) => {
-        if (readOnly) return;
+        if (!draggable) return;
         setDrag({ dx: gesture.dx, dy: gesture.dy });
       },
       onPanResponderRelease: (_, gesture) => {
-        if (readOnly) {
+        if (!draggable) {
           onPress();
           return;
         }
         const moved =
           Math.abs(gesture.dx) > TAP_MOVE_THRESHOLD_PX || Math.abs(gesture.dy) > TAP_MOVE_THRESHOLD_PX;
         setDrag({ dx: 0, dy: 0 });
+        // In modalità modifica un tap senza spostamento non fa nulla (niente assegnazione): il
+        // marker non è "in consultazione", è "in editing", e qui non c'è nulla da consultare.
         if (moved) {
           onDragEnd(gesture.dx / scale, gesture.dy / scale);
-        } else {
-          onPress();
         }
       },
     })
@@ -99,7 +110,7 @@ export function PostazioneMarker({
     dragStateRef.current = { startX: event.clientX, startY: event.clientY, moved: false };
 
     const handleMove = (moveEvent: PointerEvent) => {
-      if (readOnly) return;
+      if (!draggable) return;
       const dx = moveEvent.clientX - dragStateRef.current.startX;
       const dy = moveEvent.clientY - dragStateRef.current.startY;
       if (Math.abs(dx) > TAP_MOVE_THRESHOLD_PX || Math.abs(dy) > TAP_MOVE_THRESHOLD_PX) {
@@ -110,7 +121,7 @@ export function PostazioneMarker({
     const handleUp = (upEvent: PointerEvent) => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
-      if (readOnly) {
+      if (!draggable) {
         onPress();
         return;
       }
@@ -119,9 +130,8 @@ export function PostazioneMarker({
       setDrag({ dx: 0, dy: 0 });
       if (dragStateRef.current.moved) {
         onDragEnd(dx / scale, dy / scale);
-      } else {
-        onPress();
       }
+      // Nessun else: in modalità modifica un tap senza spostamento non deve assegnare nulla.
     };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
@@ -131,6 +141,22 @@ export function PostazioneMarker({
   const left = (postazione.pos_x / 100) * CANVAS_WIDTH * scale - iconSize / 2 + drag.dx;
   const top = (postazione.pos_y / 100) * CANVAS_HEIGHT * scale - iconSize / 2 + drag.dy;
   const icon = postazione.tipo === 'GAZEBO' ? '⛺' : '⛱️';
+
+  let borderClassName = 'border-sky-300';
+  if (isOccupied) {
+    borderClassName = 'border-emerald-500 bg-emerald-50';
+  } else if (isSelectable) {
+    borderClassName = 'border-amber-400 bg-amber-50';
+  }
+  // In modalità modifica il marker diventa trascinabile: un bordo tratteggiato distingue a colpo
+  // d'occhio le postazioni "in editing" da quelle normali, senza dover leggere alcun testo.
+  if (draggable) {
+    borderClassName += ' border-dashed';
+  }
+  // I tipi di RN per `cursor` ammettono solo 'auto' | 'pointer' (react-native-web supporta in
+  // realtà qualunque valore CSS, es. 'grab', ma non è tipizzato) — il bordo tratteggiato sopra
+  // resta l'indicatore principale di "questo marker è trascinabile ora".
+  const webCursor: 'pointer' | undefined = Platform.OS === 'web' ? 'pointer' : undefined;
 
   return (
     <>
@@ -143,16 +169,10 @@ export function PostazioneMarker({
           top,
           width: iconSize,
           height: iconSize,
-          cursor: Platform.OS === 'web' ? 'pointer' : undefined,
+          cursor: webCursor,
           touchAction: Platform.OS === 'web' ? 'none' : undefined,
         }}
-        className={`items-center justify-center rounded-full border-2 bg-white ${
-          isOccupied
-            ? 'border-emerald-500 bg-emerald-50'
-            : isSelectable
-              ? 'border-amber-400 bg-amber-50'
-              : 'border-sky-300'
-        }`}
+        className={`items-center justify-center rounded-full border-2 bg-white ${borderClassName}`}
       >
         {/* pointer-events-none + select-none: senza, un mousedown che parte esattamente sopra
             l'emoji/testo può innescare la selezione/trascinamento nativo del browser invece del

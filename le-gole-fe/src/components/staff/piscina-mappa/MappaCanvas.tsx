@@ -4,16 +4,35 @@ import { usePiscinaMappaData } from '../../../context/PiscinaMappaDataContext';
 import { usePiscinaSelection } from '../../../context/PiscinaSelectionContext';
 import { usePiscinaSheets } from '../../../context/PiscinaSheetsContext';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, remainingForTipo } from '../../../utils/piscinaMappa';
+import { EditModeToggle } from './EditModeToggle';
 import { PostazioneMarker } from './PostazioneMarker';
+import { ZoomControls } from './ZoomControls';
 
 export function MappaCanvas() {
-  const { postazioni, occupazioneByPostazione, remainingByPrenotazione, scale, dragPostazione, isPastDate } =
-    usePiscinaMappaData();
+  const {
+    postazioni,
+    occupazioneByPostazione,
+    remainingByPrenotazione,
+    scale,
+    dragPostazione,
+    isPastDate,
+    isEditMode,
+  } = usePiscinaMappaData();
   const { selectedPrenotazioneId } = usePiscinaSelection();
   const { handleMarkerPress } = usePiscinaSheets();
 
   return (
-    <Box className="h-105 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50">
+    <Box className="relative h-105 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50">
+      {/* Overlay assoluti, non righe separate sopra il canvas: il Box esterno è `relative` e questi
+          controlli sono figli successivi alle ScrollView, quindi restano sempre sopra il contenuto
+          scrollabile senza bisogno di uno z-index esplicito. Zoom in alto a sinistra, modalità
+          modifica in alto a destra — angoli opposti per non sovrapporsi. */}
+      <Box className="absolute left-2 top-2 z-10">
+        <ZoomControls />
+      </Box>
+      <Box className="absolute right-2 top-2 z-10">
+        <EditModeToggle />
+      </Box>
       <ScrollView horizontal contentContainerStyle={{ width: CANVAS_WIDTH * scale }}>
         <ScrollView contentContainerStyle={{ height: CANVAS_HEIGHT * scale }}>
           <Box
@@ -37,6 +56,7 @@ export function MappaCanvas() {
                 isOccupied={occupazioneByPostazione.has(postazione.id)}
                 clienteNome={occupazioneByPostazione.get(postazione.id)?.cliente_nome}
                 isSelectable={
+                  !isEditMode &&
                   !occupazioneByPostazione.has(postazione.id) &&
                   Boolean(selectedPrenotazioneId) &&
                   remainingForTipo(
@@ -45,6 +65,7 @@ export function MappaCanvas() {
                   ) > 0
                 }
                 readOnly={isPastDate}
+                editMode={isEditMode}
                 onPress={() => handleMarkerPress(postazione)}
                 onDragEnd={(dx, dy) => dragPostazione(postazione, dx, dy)}
               />

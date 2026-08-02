@@ -64,6 +64,14 @@ type PiscinaMappaDataValue = {
   scale: number;
   setScale: Dispatch<SetStateAction<number>>;
 
+  // Modalità modifica posizioni: quando attiva le postazioni sono trascinabili ma NON assegnabili
+  // a un cliente (tap sul marker non apre più il foglio di assegnazione/occupante); quando
+  // disattiva vale l'opposto (postazioni ferme, assegnabili col tap). Disattivata automaticamente
+  // ad ogni cambio di data (sezione 5 CLAUDE.md) e comunque priva di effetto sui giorni passati,
+  // dove il drag resta bloccato da `isPastDate` a prescindere.
+  isEditMode: boolean;
+  setIsEditMode: Dispatch<SetStateAction<boolean>>;
+
   occupazioneByPostazione: Map<string, OccupazionePostazione>;
   remainingByPrenotazione: Map<string, ResiduiPrenotazione>;
   daAssegnare: PrenotazionePiscina[];
@@ -120,6 +128,14 @@ export function PiscinaMappaDataProvider({
   const [scale, setScale] = useState(1);
   const [giornoPieno, setGiornoPieno] = useState<GiornoPienoPiscina | null>(null);
   const [isTogglingGiornoPieno, setIsTogglingGiornoPieno] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  // Cambiare data esce sempre dalla modalità modifica: evita di lasciarla accesa per errore
+  // navigando su un altro giorno (le postazioni sono comunque una risorsa strutturale condivisa
+  // da tutte le date, non ha senso restare "in modifica" attraversando giorni diversi).
+  useEffect(() => {
+    setIsEditMode(false);
+  }, [selectedDate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -360,6 +376,8 @@ export function PiscinaMappaDataProvider({
       error,
       scale,
       setScale,
+      isEditMode,
+      setIsEditMode,
       occupazioneByPostazione,
       remainingByPrenotazione,
       daAssegnare,
@@ -392,6 +410,7 @@ export function PiscinaMappaDataProvider({
       isLoading,
       error,
       scale,
+      isEditMode,
       occupazioneByPostazione,
       remainingByPrenotazione,
       daAssegnare,

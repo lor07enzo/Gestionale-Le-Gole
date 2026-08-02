@@ -14,7 +14,6 @@ import { GiornoPienoToggle } from '../../../src/components/staff/piscina-mappa/G
 import { MappaCanvas } from '../../../src/components/staff/piscina-mappa/MappaCanvas';
 import { MappaHeader } from '../../../src/components/staff/piscina-mappa/MappaHeader';
 import { SoloIngressoPanel } from '../../../src/components/staff/piscina-mappa/SoloIngressoPanel';
-import { ZoomControls } from '../../../src/components/staff/piscina-mappa/ZoomControls';
 import { ClientPickerSheet } from '../../../src/components/staff/piscina-mappa/sheets/ClientPickerSheet';
 import { ClientiDelGiornoSheet } from '../../../src/components/staff/piscina-mappa/sheets/ClientiDelGiornoSheet';
 import { EditPrenotazioneSheet } from '../../../src/components/staff/piscina-mappa/sheets/EditPrenotazioneSheet';
@@ -64,7 +63,6 @@ function PiscinaMappaContent() {
         <DateNavigator />
         <GiornoPienoToggle />
         <DisponibilitaRow />
-        <ZoomControls />
         <MappaCanvas />
         <ActionToolbar />
         <DaAssegnarePanel />
