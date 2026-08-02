@@ -48,6 +48,21 @@ jobs:
       - name: Fix HTML lang + notranslate meta
         run: node scripts/fix-html-lang.js
 
+      # Chromium per il browser reale usato da scripts/verify-web-build.js. --with-deps installa
+      # anche le librerie di sistema richieste dal runner ubuntu-latest (altrimenti Chromium non
+      # parte affatto in CI).
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Blocca il deploy se il bundle appena esportato va in crash su una qualunque delle pagine
+      # chiave (bug di non-determinismo di Metro sull'ordine dei moduli tra ambienti diversi,
+      # sezione 14 di CLAUDE.md — a volte il getter lazy di FlatList risolve a `undefined` e
+      # l'intera app mostra una pagina bianca). Il fallimento di questo step interrompe la run
+      # PRIMA che lo step di deploy sottostante venga eseguito: mai più una build rotta pubblicata
+      # senza che nessuno se ne accorga.
+      - name: Verify exported build has no crash on load
+        run: node scripts/verify-web-build.js
+
       # eas-cli è una devDependency pinnata (package.json), non npx eas-cli@latest: in CI serve
       # una versione riproducibile, non l'ultima disponibile al momento della run.
       - name: Deploy to EAS Hosting (production)
