@@ -1,5 +1,5 @@
 # Blueprint Render per il solo backend (Django + gunicorn, sezione 10 di CLAUDE.md) — il
-# database è Neon (Postgres gestito esterno, non un servizio Render), il frontend Expo/React
+# database è Supabase (Postgres gestito esterno, non un servizio Render), il frontend Expo/React
 # Native non è coperto da questo file (sezione 12 di CLAUDE.md). Import come "Blueprint" dalla
 # dashboard Render puntando a questo repo.
 services:
@@ -30,8 +30,12 @@ services:
       # produzione senza incappare in errori CORS.
       - key: CORS_ALLOWED_ORIGIN_REGEX
         value: ^https://legole--[a-zA-Z0-9]+\.expo\.app$
-      # Credenziali Neon (sezione 12) — da inserire manualmente in dashboard dopo aver creato
-      # il progetto Neon, mai salvate in questo file.
+      # Credenziali Supabase (sezione 12) — da inserire manualmente in dashboard dopo aver
+      # creato il progetto Supabase, mai salvate in questo file. Se la connessione diretta
+      # (porta 5432, host db.<ref>.supabase.co) non funziona da Render, è quasi certamente
+      # perché quell'host è raggiungibile solo via IPv6 — usare invece il Session Pooler di
+      # Supabase (host aws-0-<regione>.pooler.supabase.com, porta 5432, IPv4), con DB_USER nel
+      # formato postgres.<project-ref> invece del semplice "postgres".
       - key: DB_NAME
         sync: false
       - key: DB_USER
@@ -46,11 +50,10 @@ services:
         value: require
       - key: DB_CONN_HEALTH_CHECKS
         value: "True"
-      # Riusa la connessione TLS a Neon tra richieste invece di riaprirla ogni volta (default
-      # Django CONN_MAX_AGE=0) — senza, ogni singola richiesta paga per intero l'handshake TLS
-      # verso un DB remoto, misurato ~1,5s costanti anche a backend caldo (causa principale di
-      # lentezza percepita). 60s, sotto ai 300s di scale-to-zero di default di Neon, come da
-      # raccomandazione ufficiale Neon per Django (CONN_MAX_AGE + CONN_HEALTH_CHECKS).
+      # Riusa la connessione TLS al DB tra richieste invece di riaprirla ogni volta (default
+      # Django CONN_MAX_AGE=0) — senza, ogni richiesta paga per intero l'handshake TLS verso un
+      # DB remoto (misurato ~1,5s costanti su Neon anche a backend caldo). Vale a prescindere dal
+      # provider, mantenuto passando a Supabase.
       - key: DB_CONN_MAX_AGE
         value: "60"
       # Piano free: RAM limitata, meno worker gunicorn del default Docker locale (3, sezione 10).

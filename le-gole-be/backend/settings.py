@@ -104,9 +104,9 @@ CORS_ALLOWED_ORIGIN_REGEXES = [_cors_preview_regex] if _cors_preview_regex else 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# Non impostate in locale/Docker (nessun impatto). Neon (sezione 12) richiede TLS e i health
-# check di connessione (il compute si sospende dopo inattività); CONN_MAX_AGE=60s evita di
-# riaprire una connessione TLS ad ogni richiesta (misurato ~1,5s di latenza costante senza).
+# Non impostate in locale/Docker (nessun impatto). Il DB gestito di produzione (Supabase,
+# sezione 12) richiede TLS; CONN_MAX_AGE=60s evita di riaprire una connessione TLS ad ogni
+# richiesta (misurato ~1,5s di latenza costante senza, su un DB remoto).
 DB_SSLMODE = env('DB_SSLMODE', default=None)
 
 DATABASES = {
