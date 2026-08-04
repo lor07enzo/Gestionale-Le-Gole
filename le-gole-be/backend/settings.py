@@ -91,16 +91,12 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
-# CORS_ALLOWED_ORIGINS letto da env come lista separata da virgole — default: solo il dev
-# server Expo web in locale (porta 8081, coerente con FRONTEND_ACTIVATION_URL in .env.example,
-# sezione 1). Il frontend di produzione (sezione 14) va aggiunto esplicitamente in render.yaml,
-# non hardcoded qui, per non dover toccare questo file ad ogni cambio di dominio.
+# Letto da env (default: dev server Expo locale); il dominio di produzione va in render.yaml,
+# non hardcoded qui.
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:8081'])
 
-# Deployment di preview di EAS Hosting (es. https://legole--f975mx76x0.expo.app, un hash diverso
-# ad ogni `eas deploy` senza --prod, sezione 14) — CORS_ALLOWED_ORIGINS da solo non li copre
-# (hash imprevedibile), quindi un pattern separato via regex. Opzionale: se CORS_ALLOWED_ORIGIN_REGEX
-# non è impostata (locale/Docker), nessuna regex aggiuntiva.
+# Regex opzionale per i deploy di preview EAS (hash imprevedibile nel dominio, non copribile da
+# CORS_ALLOWED_ORIGINS).
 _cors_preview_regex = env.str('CORS_ALLOWED_ORIGIN_REGEX', default=None)
 CORS_ALLOWED_ORIGIN_REGEXES = [_cors_preview_regex] if _cors_preview_regex else []
 
@@ -108,17 +104,9 @@ CORS_ALLOWED_ORIGIN_REGEXES = [_cors_preview_regex] if _cors_preview_regex else 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# DB_SSLMODE/DB_CONN_HEALTH_CHECKS/DB_CONN_MAX_AGE: non impostate né in .env (locale) né in
-# .env.prod (Docker, sezione 10) — restano invariati per quei due casi (CONN_MAX_AGE resta 0,
-# nessun impatto su Postgres nativo/containerizzato in locale). Neon (sezione 12) le richiede:
-# sslmode 'require' (il DB è raggiungibile solo via TLS) e i health check di connessione perché
-# il compute Neon si sospende dopo inattività sul piano free, e senza health check Django
-# potrebbe riusare una connessione ormai chiusa dal lato server. CONN_MAX_AGE=0 (default Django)
-# apre e chiude una connessione TLS nuova ad ogni singola richiesta — misurato empiricamente
-# ~1,5s costanti per query banali anche a backend "caldo" (nessun cold start), causa principale
-# di lentezza percepita nell'app. Impostato a 60s (sotto ai 300s di scale-to-zero di default di
-# Neon, raccomandazione ufficiale Neon per Django: CONN_MAX_AGE + CONN_HEALTH_CHECKS abilita il
-# riuso delle connessioni tra richieste senza rischiare di riusarne una chiusa nel frattempo).
+# Non impostate in locale/Docker (nessun impatto). Neon (sezione 12) richiede TLS e i health
+# check di connessione (il compute si sospende dopo inattività); CONN_MAX_AGE=60s evita di
+# riaprire una connessione TLS ad ogni richiesta (misurato ~1,5s di latenza costante senza).
 DB_SSLMODE = env('DB_SSLMODE', default=None)
 
 DATABASES = {
@@ -164,10 +152,9 @@ REST_FRAMEWORK = {
     ),
 }
 
-# Configurazione personalizzata per far durare la sessione 1 mese
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=60), # Il refresh token dura 2 mesi
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=60),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True, # Comodo per vedere nel pannello admin quando l'utente si è loggato l'ultima volta

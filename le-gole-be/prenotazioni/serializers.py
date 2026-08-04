@@ -40,11 +40,8 @@ class PrenotazionePiscinaSerializer(serializers.ModelSerializer):
                     "ora": f"La piscina è aperta dalle {inventario.orario_apertura.strftime('%H:%M')} alle {inventario.orario_chiusura.strftime('%H:%M')}."
                 })
 
-            # A differenza delle altre soglie ingresso (età bambini: solo testo guida, non
-            # validate — il sistema non ha un'anagrafica età per persona), l'orario ridotto
-            # pomeridiano lega due campi già presenti sulla stessa prenotazione (ora e
-            # ingressi_ridotti), quindi è verificabile davvero: un ingresso "ridotto pomeridiano"
-            # non ha senso con un orario di arrivo precedente alla soglia configurata.
+            # A differenza dell'età bambini (solo testo guida, non validata), l'orario ridotto
+            # pomeridiano lega due campi della stessa prenotazione ed è verificabile davvero.
             ingressi_ridotti_richiesti = data.get(
                 'ingressi_ridotti', instance.ingressi_ridotti if instance else 0
             )
@@ -53,11 +50,9 @@ class PrenotazionePiscinaSerializer(serializers.ModelSerializer):
                     "ingressi_ridotti": f"L'ingresso ridotto pomeridiano è disponibile dalle {inventario.orario_inizio_ridotto.strftime('%H:%M')}."
                 })
 
-            # Complementare del controllo sopra: una volta raggiunta la soglia del ridotto
-            # pomeridiano, un nuovo ingresso a tariffa intera non ha più senso economico (andrebbe
-            # venduto come ridotto). Si applica solo se la tariffa ridotta è effettivamente
-            # configurata su questo inventario (prezzo > 0) — altrimenti orario_inizio_ridotto è
-            # solo il valore di default del campo, non un'alternativa realmente disponibile.
+            # Complementare al controllo sopra: dalla soglia in poi un ingresso intero andrebbe
+            # venduto come ridotto. Si applica solo se la tariffa ridotta è configurata (prezzo >
+            # 0), altrimenti la soglia è solo un default non realmente disponibile.
             ingressi_interi_richiesti = data.get('ingressi', instance.ingressi if instance else 0)
             if (
                 ingressi_interi_richiesti

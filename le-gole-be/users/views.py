@@ -136,10 +136,8 @@ class ClienteViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        # Ricerca staff (app/staff/clienti.tsx): un'unica query testuale che matcha sia nome sia
-        # telefono, così lo staff non deve sapere in anticipo se sta cercando un nome o un numero.
-        # Nessun filterset_fields dedicato perché qui serve un OR tra i due campi, non un AND per
-        # campo come fa DjangoFilterBackend di default.
+        # Ricerca staff: un'unica query testuale su nome O telefono — niente filterset_fields
+        # perché qui serve un OR tra i due campi, non l'AND di default di DjangoFilterBackend.
         queryset = super().get_queryset()
         search = self.request.query_params.get('search', '').strip()
         if search:
@@ -152,10 +150,8 @@ class ClienteViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data
 
         with transaction.atomic():
-            # 'telefono' non ha un vincolo unique a livello di DB (vedi Cliente): get_or_create()
-            # userebbe .get(), che solleva MultipleObjectsReturned (-> 500 non gestito) se più
-            # righe combaciano già. filter().first() tollera duplicati pre-esistenti, aggiornando
-            # deterministicamente il più vecchio invece di andare in errore.
+            # 'telefono' non è unique a livello di DB: get_or_create() userebbe .get(), a rischio
+            # di MultipleObjectsReturned; filter().first() tollera duplicati pre-esistenti.
             cliente = Cliente.objects.filter(telefono=data['telefono']).order_by('created_at').first()
             created = cliente is None
             if created:

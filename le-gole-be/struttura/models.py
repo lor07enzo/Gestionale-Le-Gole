@@ -9,11 +9,8 @@ class PiscinaInventario(models.Model):
 
     # Prezzi (DecimalField per precisione valutaria)
     prezzo_ingresso = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
-    # Tariffe ingresso alternative alla intera (prezzo_ingresso sopra), entrambe opzionali
-    # (default 0.00 = non configurata, la card/il form la nasconde). Sono solo contatori con
-    # prezzo proprio, come ombrellone/gazebo/lettino/sdraia: il sistema non verifica che
-    # l'orario di arrivo o l'età dichiarati rispettino le soglie sotto, che servono solo come
-    # testo guida per chi compila la prenotazione (staff o cliente self-service).
+    # Tariffe alternative alla intera, opzionali (default 0.00 = non configurata, nascosta nei
+    # form); soglie sotto sono solo testo guida, non validate lato server.
     prezzo_ingresso_ridotto = models.DecimalField(
         max_digits=6, decimal_places=2, default=0.00,
         verbose_name="Prezzo Ingresso Ridotto Pomeridiano",
@@ -91,14 +88,10 @@ class Postazione(models.Model):
     pos_x = models.FloatField(default=50.0, help_text="Posizione orizzontale in percentuale (0-100) sul canvas")
     pos_y = models.FloatField(default=50.0, help_text="Posizione verticale in percentuale (0-100) sul canvas")
 
-    # Soft delete: una Postazione eliminata dallo staff NON viene rimossa dal DB, altrimenti
-    # (a) le OccupazionePostazione/PostazionePosizioneStorico dei giorni passati collegate a
-    # questo id andrebbero perse (Postazione è CASCADE per entrambe), cancellando storico reale,
-    # e (b) una postazione aggiunta o rimossa oggi cambierebbe retroattivamente cosa risulta
-    # "esistito" nei giorni passati già consultati. `PostazioneViewSet` filtra le righe con
-    # deleted_at valorizzato dalle viste correnti; per un giorno passato include invece anche le
-    # postazioni eliminate DOPO quella data (esistevano ancora allora) ed esclude quelle create
-    # DOPO quella data (non esistevano ancora).
+    # Soft delete: eliminare per davvero cancellerebbe lo storico (CASCADE su
+    # OccupazionePostazione/PostazionePosizioneStorico) e altererebbe retroattivamente cosa
+    # risultava "esistito" nei giorni passati. PostazioneViewSet filtra di conseguenza in base
+    # alla data consultata (vedi views.py).
     deleted_at = models.DateTimeField(null=True, blank=True, default=None)
 
     created_at = models.DateTimeField(auto_now_add=True)

@@ -8,10 +8,8 @@ import { Spinner } from '@/components/ui/spinner';
 
 type PaperModule = typeof import('react-native-paper');
 
-// registerTranslation va chiamata una sola volta a livello di modulo (commento originale) — ma
-// ora che il modulo si carica dinamicamente (sotto) potrebbe montare/smontare più volte durante
-// una sessione (navigazione avanti/indietro da /cliente/* verso altre rotte e ritorno), quindi il
-// guardrail è esplicito qui invece che implicito nell'ordine di esecuzione del modulo.
+// Guardrail esplicito: col caricamento dinamico sotto, il modulo può montare/smontare più volte
+// per sessione (navigazione avanti/indietro), quindi registerTranslation va protetta qui.
 let translationRegistered = false;
 
 // Definita fuori dal componente (non inline nella prop `settings`): altrimenti verrebbe
@@ -20,17 +18,9 @@ function renderPaperIcon(props: IconProps) {
   return <MaterialCommunityIcons {...props} />;
 }
 
-// react-native-paper/react-native-paper-dates (usate solo per il TimePickerModal della
-// prenotazione piscina, sezione 7 di CLAUDE.md) caricate dinamicamente al montaggio di questo
-// layout, non importate in cima al file come in precedenza — un bug noto della libreria fa sì
-// che il suo riferimento a FlatList di React Native risulti a volte `undefined` a seconda
-// dell'ordine con cui Metro impacchetta i moduli (diverso tra build, es. Windows locale vs Linux
-// CI, riscontrato in produzione). Con un import statico qui, quel codice diventava parte del
-// bundle valutato eagerly su OGNI pagina dell'app (anche fuori da /cliente/*, il bundle web è
-// unico, sezione 8), mandando in crash l'intera applicazione quando il bug si manifestava.
-// Caricandola solo quando si naviga davvero in /cliente/*, un'eventuale build sfortunata rompe al
-// più il flusso di prenotazione (vedi anche il lazy() su TimePickerModal nella pagina di
-// prenotazione), non più l'intera app.
+// react-native-paper/-dates caricate dinamicamente (non in cima al file): un bug noto di Metro
+// può rendere `undefined` il riferimento a FlatList (sezione 14 CLAUDE.md) — con un import
+// statico l'intera app crasherebbe su ogni pagina; così al più si rompe solo /cliente/*.
 export default function ClienteLayout() {
   const [Paper, setPaper] = useState<PaperModule | null>(null);
 
@@ -56,10 +46,7 @@ export default function ClienteLayout() {
         <Paper.PaperProvider
           theme={{
             ...Paper.MD3LightTheme,
-            // Accento sky-600 (stesso blu usato in tutta l'Area Cliente, es. i pulsanti/bordi di
-            // DateNav/RisorsaField) al posto del viola di default di Material Design 3 — il
-            // modale resta comunque visivamente "Paper", non gluestack-ui, ma almeno non stona
-            // con il resto della pagina.
+            // Accento sky-600 (coerente con l'Area Cliente) al posto del viola di default MD3.
             colors: { ...Paper.MD3LightTheme.colors, primary: '#0284c7' },
           }}
           settings={{ icon: renderPaperIcon }}

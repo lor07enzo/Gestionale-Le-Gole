@@ -1,4 +1,5 @@
 import { Image, Linking, Pressable } from 'react-native';
+import { router } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
@@ -11,7 +12,6 @@ import { FacebookIcon, InstagramIcon, WhatsAppIcon } from './SocialIcons';
 // differenza della variante nera usata ovunque altrove nell'app (sfondi chiari).
 const logo = require('../../../assets/logo-le-gole-bianco.png');
 
-// TODO: sostituire con i recapiti e i link social reali de Le Gole prima del rilascio.
 const CONTATTI = {
   telefono: '+39 333 452 8903',
   telefonoHref: 'tel:+393334528903',
@@ -109,9 +109,16 @@ export function ClienteFooter() {
 
         <Box className="h-px w-full bg-white/10" />
 
-        <Text size="2xs" className="text-amber-200/50">
-          © {anno} Le Gole
-        </Text>
+        <HStack space="sm" className="items-center justify-between flex-wrap">
+          <Text size="2xs" className="text-amber-200/50">
+            © {anno} Le Gole
+          </Text>
+          <Pressable onPress={() => router.push('/privacy')} accessibilityRole="link">
+            <Text size="2xs" className="text-amber-200/50 underline">
+              Privacy e Cookie
+            </Text>
+          </Pressable>
+        </HStack>
       </VStack>
     </Box>
   );

@@ -28,10 +28,9 @@ class PiscinaInventarioViewSet(viewsets.ModelViewSet):
         inventario = self.get_object()
         oggi = timezone.localdate()
 
-        # Un listino con prenotazioni odierne o future non può essere eliminato: chi ha già
-        # prenotato conta su quella disponibilità/prezzo. Le prenotazioni passate, invece,
-        # sono solo storico e vengono ripulite automaticamente per permettere l'eliminazione
-        # (PrenotazionePiscina.inventario è PROTECT).
+        # Prenotazioni odierne/future bloccano l'eliminazione (chi ha prenotato conta su quella
+        # disponibilità); quelle passate sono solo storico e vengono ripulite per liberare il
+        # PROTECT su PrenotazionePiscina.inventario.
         ha_prenotazioni_correnti_o_future = PrenotazionePiscina.objects.filter(
             inventario=inventario, data__gte=oggi
         ).exists()
@@ -88,10 +87,8 @@ class PostazioneViewSet(viewsets.ModelViewSet):
     filterset_fields = ['inventario', 'tipo']
 
     def get_queryset(self):
-        # Le postazioni eliminate (soft-delete, vedi destroy()) restano nel DB per preservare lo
-        # storico collegato, ma non devono comparire nelle viste correnti (create/retrieve/
-        # update/list "live"). La vista storica in list(), sotto, interroga invece il modello
-        # direttamente per includerle quando pertinenti a un giorno passato.
+        # Le postazioni soft-deleted (vedi destroy()) non compaiono nelle viste "live" — la
+        # vista storica in list(), sotto, interroga il modello direttamente quando serve.
         return Postazione.objects.filter(deleted_at__isnull=True)
 
     def perform_create(self, serializer):
@@ -103,10 +100,7 @@ class PostazioneViewSet(viewsets.ModelViewSet):
         registra_posizione_storico(postazione)
 
     def destroy(self, request, *args, **kwargs):
-        # Soft delete: non un DELETE reale (vedi il commento su Postazione.deleted_at) —
-        # altrimenti le OccupazionePostazione/PostazionePosizioneStorico dei giorni passati
-        # collegate a questa postazione (CASCADE) andrebbero perse, e la postazione sparirebbe
-        # anche dallo storico dei giorni in cui esisteva davvero.
+        # Soft delete, non un DELETE reale — vedi il commento su Postazione.deleted_at.
         postazione = self.get_object()
         postazione.deleted_at = timezone.now()
         postazione.save(update_fields=['deleted_at'])

@@ -29,10 +29,8 @@ class PrenotazionePiscina(Prenotazione):
     # Colleghiamo la prenotazione al listino/inventario attivo nel momento in cui viene effettuata
     inventario = models.ForeignKey(PiscinaInventario, on_delete=models.PROTECT, related_name='prenotazioni')
     
-    # Risorse specifiche prenotate. `ingressi` è la tariffa intera; le altre due sono contatori
-    # indipendenti per le tariffe alternative (PiscinaInventario.prezzo_ingresso_ridotto/bambino)
-    # — nessun vincolo tra loro, nessuna verifica di orario/età lato server (vedi commento su
-    # PiscinaInventario.prezzo_ingresso_ridotto).
+    # `ingressi` è la tariffa intera; le altre sono contatori indipendenti per le tariffe
+    # alternative (PiscinaInventario.prezzo_ingresso_ridotto/bambino), senza vincoli tra loro.
     ingressi = models.PositiveSmallIntegerField(default=1)
     ingressi_ridotti = models.PositiveSmallIntegerField(default=0, verbose_name="Ingressi Ridotti Pomeridiani")
     ingressi_bambini = models.PositiveSmallIntegerField(default=0, verbose_name="Ingressi Bambini")
@@ -55,13 +53,9 @@ class PrenotazionePiscina(Prenotazione):
 
 class GiornoPienoPiscina(models.Model):
     """
-    Marcatura manuale, per inventario+giorno, "tutto prenotato": permette allo staff di chiudere
-    le nuove prenotazioni self-service (Area Cliente) per una data anche quando i conteggi
-    ombrellone/gazebo/lettino/sdraia avrebbero ancora residuo — es. evento privato, giornata di
-    chiusura straordinaria, o semplicemente per non accettare altre richieste online quel giorno.
-    Non blocca lo staff: la mappa e la creazione da mappa (walk-in/"+ Nuovo cliente") restano
-    sempre disponibili, perché lo staff ha visibilità diretta sulla reale disponibilità fisica —
-    vedi PrenotazionePiscinaSerializer.validate().
+    Marcatura manuale "tutto prenotato" per inventario+giorno: chiude le nuove prenotazioni
+    self-service anche con conteggi ancora disponibili (evento privato, chiusura straordinaria).
+    Non blocca lo staff (mappa/walk-in) — vedi PrenotazionePiscinaSerializer.validate().
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -122,12 +116,9 @@ class OccupazionePostazione(models.Model):
 
 class PostazionePosizioneStorico(models.Model):
     """
-    Storico delle posizioni di una Postazione nel tempo. Postazione.pos_x/pos_y (struttura) è
-    condiviso da tutte le date: senza questo storico, spostare fisicamente un ombrellone/gazebo
-    oggi farebbe "saltare" retroattivamente anche la sua posizione nei giorni passati già
-    consultati/assegnati. Una riga per ogni giorno in cui la posizione è cambiata (creazione
-    inclusa) — non una riga per postazione per giorno: se una postazione non viene mai spostata,
-    resta una sola riga per sempre.
+    Storico delle posizioni di una Postazione: senza di esso, spostarla oggi farebbe "saltare"
+    retroattivamente la sua posizione nei giorni passati già consultati. Una riga per ogni giorno
+    in cui la posizione è cambiata, non una riga per postazione per giorno.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 

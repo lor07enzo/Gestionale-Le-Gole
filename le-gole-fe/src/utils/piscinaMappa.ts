@@ -21,10 +21,8 @@ export const ICON_SIZE = 56;
 export const MIN_SCALE = 0.6;
 export const MAX_SCALE = 2.4;
 export const SCALE_STEP = 0.2;
-// Un click reale raramente ha 0px di movimento tra mousedown e mouseup (tremore della mano,
-// mouse/trackpad poco precisi): una soglia troppo stretta classifica il tap come "drag" e il
-// form di assegnazione non si apre mai. Va confrontata con lo spostamento in pixel reali sullo
-// schermo (prima di dividere per `scale`), non con quello in unità logiche del canvas.
+// Una soglia troppo stretta classifica un tap reale (mai a 0px esatti) come drag. Va confrontata
+// con lo spostamento in pixel reali sullo schermo, non con le unità logiche del canvas.
 export const TAP_MOVE_THRESHOLD_PX = 8;
 
 export function clamp(value: number, min: number, max: number): number {
@@ -90,14 +88,10 @@ export function parseHHMMToMinutes(value: string): number | null {
   return h * 60 + m;
 }
 
-// Default per "orario di arrivo previsto": se c'è una prenotazione con un orario ancora valido
-// (>= adesso, quando si sta operando su oggi) lo si usa; altrimenti si ricade sull'orario attuale.
-// Per date diverse da oggi il confronto con "adesso" non ha senso: si usa l'orario della
-// prenotazione se presente, altrimenti si lascia vuoto (compilazione manuale obbligatoria).
-// `orarioMinimo` (opzionale): se il cliente ha ingressi ridotti pomeridiani, il chiamante passa
-// qui la soglia dell'inventario (orario_inizio_ridotto) — il default proposto non scende mai
-// sotto questa soglia, anche quando il ramo sopra ricadrebbe altrimenti su un orario precedente
-// (es. "adesso" prima delle 14:00, o l'orario della prenotazione se anteriore alla soglia).
+// Default per "orario di arrivo previsto": usa l'orario della prenotazione se ancora valido
+// (>= adesso, solo per oggi), altrimenti ricade sull'orario attuale (o vuoto per altre date).
+// `orarioMinimo` (opzionale): soglia sotto cui il default non deve mai scendere (es.
+// orario_inizio_ridotto, per un cliente con ingressi ridotti pomeridiani).
 export function computeDefaultOrario(
   baseOra: string | null | undefined,
   selectedDate: Date,
@@ -126,12 +120,9 @@ export function computeDefaultOrario(
   return risultato;
 }
 
-// Maschera "solo cifre, ':' inserito da solo" per i campi orario testuali (es. "orario di arrivo
-// previsto" nel form di prenotazione cliente): l'utente digita solo numeri, il separatore compare
-// automaticamente dopo la seconda cifra. Richiede il valore precedente per gestire correttamente
-// il backspace: se l'utente cancella proprio il ':' (le cifre restano invariate), viene rimossa
-// anche l'ultima cifra — altrimenti il ':' si "ri-materializza" subito dopo, dando l'impressione
-// che il tasto canc non abbia avuto alcun effetto.
+// Maschera "solo cifre, ':' automatico" per i campi orario testuali. Richiede il valore
+// precedente per il backspace: se l'utente cancella il ':' (cifre invariate), rimuove anche
+// l'ultima cifra, altrimenti il ':' si "ri-materializzerebbe" subito dopo.
 export function formatOrarioInput(previous: string, rawNext: string): string {
   let digits = rawNext.replace(/\D/g, '').slice(0, 4);
   const previousDigits = previous.replace(/\D/g, '');
@@ -143,12 +134,9 @@ export function formatOrarioInput(previous: string, rawNext: string): string {
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
 }
 
-// A differenza delle altre soglie ingresso (età bambini: solo testo guida, non validate — il
-// sistema non ha un'anagrafica età per persona), l'orario ridotto pomeridiano lega due campi già
-// presenti sulla stessa prenotazione (orario e ingressi_ridotti), quindi è verificabile davvero
-// — stessa validazione replicata lato backend in PrenotazionePiscinaSerializer.validate() come
-// rete di sicurezza. Ritorna il messaggio d'errore, o null se non c'è nulla da validare/l'orario
-// rispetta la soglia.
+// A differenza dell'età bambini (solo testo guida), l'orario ridotto pomeridiano lega due campi
+// della stessa prenotazione ed è verificabile davvero — stessa regola replicata lato backend.
+// Ritorna il messaggio d'errore, o null se l'orario rispetta la soglia.
 export function validateOrarioIngressoRidotto(
   orario: string,
   ingressiRidotti: number,
@@ -164,12 +152,9 @@ export function validateOrarioIngressoRidotto(
   return null;
 }
 
-// Complementare di validateOrarioIngressoRidotto: dalla soglia del ridotto pomeridiano in poi, un
-// nuovo ingresso a tariffa intera non ha più senso (andrebbe venduto come ridotto) — stessa
-// validazione replicata lato backend in PrenotazionePiscinaSerializer.validate(). Il chiamante deve
-// invocarla solo quando la tariffa ridotta è effettivamente configurata sull'inventario (prezzo >
-// 0): altrimenti `orarioInizioRidotto` è solo il valore di default del campo, non un'alternativa
-// realmente disponibile a cui dirottare il cliente.
+// Complementare a validateOrarioIngressoRidotto: dalla soglia in poi un ingresso intero andrebbe
+// venduto come ridotto. Il chiamante deve invocarla solo se la tariffa ridotta è configurata
+// (prezzo > 0), altrimenti la soglia è solo un default non realmente disponibile.
 export function validateOrarioIngressoIntero(
   orario: string,
   ingressiInteri: number,

@@ -92,9 +92,7 @@ export function deletePiscinaInventario(id: string): Promise<void> {
 }
 
 // GET /v1/struttura/postazioni/?inventario={inventarioId}&data={data}
-// `data` è opzionale: se è una data passata, il backend sovrascrive pos_x/pos_y di ogni
-// postazione con la posizione storica effettiva in quel giorno (PostazionePosizioneStorico) —
-// per oggi/il futuro (o quando omesso) risponde con la posizione live di Postazione.
+// `data` opzionale: se passata, il backend sovrascrive pos_x/pos_y con la posizione storica.
 export function listPostazioni(inventarioId: string, data?: string): Promise<Postazione[]> {
   return api
     .get<Postazione[]>(POSTAZIONI_PATH, { params: { inventario: inventarioId, data } })

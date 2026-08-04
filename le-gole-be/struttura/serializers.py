@@ -23,10 +23,8 @@ class PostazioneSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        # Il vincolo di unicità DB è condizionale (UniqueConstraint con condition=deleted_at
-        # is NULL, vedi Postazione.Meta): DRF non genera automaticamente un validator per i
-        # UniqueConstraint condizionali, quindi lo replichiamo qui per avere un 400 leggibile
-        # invece di un IntegrityError grezzo.
+        # DRF non genera un validator per i UniqueConstraint condizionali (vedi Postazione.Meta),
+        # quindi lo replichiamo qui per un 400 leggibile invece di un IntegrityError grezzo.
         inventario = data.get('inventario', self.instance.inventario if self.instance else None)
         numero = data.get('numero', self.instance.numero if self.instance else None)
         if inventario is not None and numero is not None:

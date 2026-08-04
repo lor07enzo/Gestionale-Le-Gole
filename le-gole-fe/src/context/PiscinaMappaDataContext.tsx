@@ -64,11 +64,8 @@ type PiscinaMappaDataValue = {
   scale: number;
   setScale: Dispatch<SetStateAction<number>>;
 
-  // Modalità modifica posizioni: quando attiva le postazioni sono trascinabili ma NON assegnabili
-  // a un cliente (tap sul marker non apre più il foglio di assegnazione/occupante); quando
-  // disattiva vale l'opposto (postazioni ferme, assegnabili col tap). Disattivata automaticamente
-  // ad ogni cambio di data (sezione 5 CLAUDE.md) e comunque priva di effetto sui giorni passati,
-  // dove il drag resta bloccato da `isPastDate` a prescindere.
+  // Modalità modifica posizioni: attiva = postazioni trascinabili ma non assegnabili; disattiva
+  // = l'opposto. Si disattiva ad ogni cambio data e non ha effetto sui giorni passati.
   isEditMode: boolean;
   setIsEditMode: Dispatch<SetStateAction<boolean>>;
 
@@ -230,11 +227,8 @@ export function PiscinaMappaDataProvider({
     [prenotazioni]
   );
 
-  // Lista completa dei clienti del giorno (per il pannello "Clienti del giorno"): un cliente è
-  // "completo" quando non ha più unità residue di ombrellone/gazebo da assegnare (le prenotazioni
-  // solo-ingresso sono sempre complete, dato che non prevedono postazioni). Ordinati prima per
-  // stato di assegnazione (chi è ancora da assegnare in cima, così salta subito all'occhio) e poi
-  // per orario di arrivo crescente all'interno di ciascun gruppo.
+  // "Completo" = nessuna unità ombrellone/gazebo residua (solo-ingresso sempre completo).
+  // Ordinati: da assegnare in cima, poi per orario di arrivo crescente.
   const clientiDelGiorno = useMemo<ClienteDelGiornoEntry[]>(
     () =>
       [...prenotazioni]

@@ -26,14 +26,11 @@ import {
 import { usePiscinaMappaData } from './PiscinaMappaDataContext';
 import { usePiscinaSelection } from './PiscinaSelectionContext';
 
-// Esportato perché i tre form annidati dentro PostazioneSheet (AddPostazioneForm,
-// AssignPostazioneForm, OccupantForm) NON possono chiamare usePiscinaSheets() da sé: sono
-// figli di <Actionsheet>, che gluestack-ui monta tramite un OverlayProvider "teleportato" vicino
-// alla radice dell'app (vedi GluestackUIProvider), fuori dall'albero di PiscinaSheetsProvider.
-// PostazioneSheet stesso resta nella posizione corretta e passa questo valore come prop.
+// Esportato perché i form annidati in PostazioneSheet (figli di <Actionsheet>, montato da
+// gluestack-ui fuori dall'albero di PiscinaSheetsProvider) non possono chiamare usePiscinaSheets()
+// da sé: PostazioneSheet passa questo valore come prop.
 export type PiscinaSheetsValue = {
-  // Giorno passato: assegnazione/modifica/liberazione postazione disattivate (vedi
-  // PiscinaMappaDataContext.isPastDate), i form la leggono per disabilitare i controlli.
+  // Giorno passato: assegnazione/modifica/liberazione postazione disattivate.
   isPastDate: boolean;
 
   // Foglio principale: nuova postazione / assegnazione / occupante esistente.
@@ -43,11 +40,8 @@ export type PiscinaSheetsValue = {
   sheetError: string | null;
   isSubmittingSheet: boolean;
   updateSheetForm: (patch: Partial<SimpleFormState>) => void;
-  // Massimo di lettini/sdraie assegnabili a QUESTA postazione per il cliente in lavorazione —
-  // null quando non c'è alcun limite (postazione occupata manualmente, senza una prenotazione
-  // reale collegata). Tiene conto di quanto già assegnato altrove per la stessa prenotazione
-  // (assign) o già presente su questa stessa occupazione (occupant, si riaggiunge il suo valore
-  // attuale perché remainingByPrenotazione lo conta già come "usato").
+  // Massimo lettini/sdraie assegnabili a questa postazione — null se nessun limite (occupazione
+  // manuale senza prenotazione collegata). Tiene conto di quanto già assegnato altrove.
   maxLettini: number | null;
   maxSdraie: number | null;
   newTipo: TipoPostazione;
@@ -160,10 +154,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       )
     : [];
 
-  // Prenotazione di riferimento per il limite lettini/sdraie del foglio aperto: quella
-  // selezionata in "assign" (non ancora un'occupazione reale), quella collegata all'occupazione
-  // esistente in "occupant". Se l'occupazione non è collegata a nessuna prenotazione (assegnata
-  // manualmente), non c'è alcun limite da applicare.
+  // Prenotazione di riferimento per il limite lettini/sdraie: quella selezionata in "assign",
+  // quella collegata all'occupazione in "occupant" (nessun limite se assegnata manualmente).
   const occupazioneCorrente = targetPostazione ? occupazioneByPostazione.get(targetPostazione.id) : undefined;
   const prenotazioneRiferimentoId =
     sheetMode === 'assign'
@@ -206,13 +198,9 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       clienteTelefono: pren.cliente_telefono,
       lettini: String(residuo?.lettino ?? pren.lettino),
       sdraie: String(residuo?.sdraia ?? pren.sdraia),
-      // Il campo orario nel foglio di assegnazione è di sola visualizzazione (AssignPostazioneForm):
-      // rispecchia sempre esattamente Prenotazione.ora, senza ricadere su "adesso" se quell'orario
-      // è già passato — altrimenti la postazione mostrerebbe un orario diverso da quello della
-      // prenotazione (es. prenotato per le 14:30, assegnato alle 14:35: prima diventava "14:35" qui
-      // ma restava "14:30" nella lista clienti). L'orario è già garantito valido (campo obbligatorio
-      // sia lato self-service che staff, con la soglia del ridotto pomeridiano già verificata alla
-      // creazione/modifica della prenotazione), quindi non serve ricalcolarlo né clampare qui.
+      // Il campo orario in AssignPostazioneForm è di sola visualizzazione: rispecchia sempre
+      // Prenotazione.ora esatta, senza ricadere su "adesso" se già passata — altrimenti la
+      // postazione mostrerebbe un orario diverso da quello della prenotazione stessa.
       orarioArrivo: formatTime(pren.ora),
     });
     setIsClientPickerOpen(false);
@@ -367,12 +355,9 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError('Seleziona un cliente tra quelli in attesa, oppure crea un nuovo cliente con "+ Nuovo cliente".');
       return;
     }
-    // Il campo orario è di sola visualizzazione qui (AssignPostazioneForm): rispecchia sempre
-    // Prenotazione.ora, quindi NON va rifiutato se già "nel passato" rispetto ad adesso — è
-    // normalissimo assegnare una postazione qualche minuto dopo l'orario dichiarato dal cliente,
-    // e in quel caso l'orario deve restare quello della prenotazione, non essere respinto (a
-    // differenza del foglio "occupant", dove l'orario è scelto manualmente in tempo reale e
-    // validateOrarioArrivo resta corretto). Basta verificare che sia un formato HH:MM valido.
+    // Il campo è di sola visualizzazione qui: rispecchia Prenotazione.ora e non va rifiutato se
+    // già "nel passato" (normale assegnare qualche minuto dopo l'orario dichiarato). Basta
+    // verificare il formato HH:MM (a differenza di "occupant", dove l'orario è scelto ora).
     const arrivoMinuti = parseHHMMToMinutes(sheetForm.orarioArrivo);
     if (arrivoMinuti === null) {
       setSheetError('Orario di arrivo non valido.');
@@ -612,10 +597,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     }
   };
 
-  // Le prenotazioni self-service (Area Cliente) nascono 'PENDING' (sezione 7 CLAUDE.md): senza
-  // un'azione esplicita per confermarle restano in attesa a tempo indeterminato, dato che nessun
-  // altro punto del flusso staff cambia lo stato automaticamente (assegnare una postazione o
-  // modificare la prenotazione non la conferma).
+  // Le prenotazioni self-service nascono 'PENDING' (sezione 7 CLAUDE.md): nessun altro punto del
+  // flusso staff le conferma automaticamente, serve quest'azione esplicita.
   const confirmPrenotazione = async (p: PrenotazionePiscina) => {
     if (isPastDate || p.stato !== 'PENDING') return;
     setConfirmingPrenotazioneId(p.id);
@@ -654,10 +637,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     ]);
   };
 
-  // react-aria (usato internamente dall'Actionsheet di gluestack-ui) richiede un titolo per ogni
-  // dialog a scopo di accessibilità. Il rilevamento automatico via heading interno è soggetto a
-  // una race condition con l'animazione di apertura del foglio (il warning in console appariva ad
-  // ogni apertura anche se un <Heading> era presente): un aria-label esplicito lo evita del tutto.
+  // aria-label esplicito: il rilevamento automatico del titolo da parte di react-aria ha una
+  // race condition con l'animazione di apertura del foglio (warning in console anche con Heading).
   const sheetAriaLabel =
     sheetMode === 'add-postazione'
       ? 'Nuova postazione'

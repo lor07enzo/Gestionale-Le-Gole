@@ -26,11 +26,8 @@ import {
   LockIcon,
   PhoneIcon,
 } from '@/components/ui/icon';
-// Caricato dinamicamente, non importato in cima al file — stesso motivo del layout genitore
-// (app/cliente/_layout.tsx): un bug noto di react-native-paper-dates fa sì che il suo
-// riferimento a FlatList di React Native risulti a volte `undefined` a seconda dell'ordine con
-// cui Metro impacchetta i moduli, e un import statico qui lo rendeva parte del bundle valutato
-// eagerly su ogni pagina dell'app, non solo su questa.
+// Caricato dinamicamente, stesso motivo di app/cliente/_layout.tsx (bug Metro/FlatList, sezione
+// 14 CLAUDE.md): un import statico lo renderebbe parte del bundle valutato su ogni pagina.
 const TimePickerModal = lazy(() =>
   import('react-native-paper-dates').then((m) => ({ default: m.TimePickerModal }))
 );
@@ -282,9 +279,8 @@ export default function ClientePiscinaBookingScreen() {
       })
       .catch(() => setLoadError('Impossibile trovare questa piscina.'))
       .finally(() => setIsLoadingInventario(false));
-    // Il default dell'orario va ricalcolato solo al primo caricamento dell'inventario, non ad
-    // ogni cambio di `selectedDate` (altrimenti sovrascriverebbe un orario già scelto dall'utente
-    // ogni volta che cambia data).
+    // Solo al primo caricamento, non ad ogni cambio data (altrimenti sovrascriverebbe l'orario
+    // già scelto dall'utente).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inventarioId]);
 

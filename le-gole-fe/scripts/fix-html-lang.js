@@ -1,14 +1,7 @@
-// expo export -p web genera sempre <html lang="en"> a prescindere dalla lingua reale dell'app
-// (Italiano) quando web.output non è "static" — e passare a "static" per usare la
-// personalizzazione ufficiale app/+html.tsx introduce un regresso: il <title> della scheda
-// sparisce (richiede react-helmet/expo-router/head per-rotta, non ereditato più da app.json come
-// nella modalità SPA di default). Più semplice correggere l'HTML esportato dopo il fatto.
-//
-// Un lang errato è quanto basta perché Google Traduttore (e strumenti simili) rilevino la pagina
-// come inglese e traducano/storpino singole parole italiane come se fossero inglesi — riscontrato
-// dall'utente su mobile. Corretto lang="it" + <meta name="google" content="notranslate">
-// (raccomandazione ufficiale Google per escludere una pagina dalla traduzione automatica) come
-// doppia protezione, non solo una delle due.
+// expo export -p web genera sempre <html lang="en">, anche se l'app è in italiano — passare a
+// web.output "static" per usare app/+html.tsx farebbe sparire il <title> della scheda (regresso),
+// quindi si corregge l'HTML esportato dopo il fatto. Un lang errato basta a far tradurre/storpiare
+// il sito da Google Traduttore: corretto con lang="it" + meta notranslate, come doppia protezione.
 const fs = require('fs');
 const path = require('path');
 

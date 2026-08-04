@@ -1,20 +1,12 @@
 #!/usr/bin/env node
 // Smoke test eseguito dopo `expo export -p web`, prima di pubblicare (deploy-frontend.yml e
-// `npm run deploy:web`): serve la cartella `dist/` appena esportata e apre le pagine chiave con
-// un browser reale, verificando che nessuna sollevi un errore JS non gestito.
+// `npm run deploy:web`): serve `dist/` e apre le pagine chiave con un browser reale, verificando
+// che nessuna sollevi un errore JS non gestito — il sintomo del bug di non-determinismo di Metro
+// sull'ordine dei moduli tra ambienti (sezione 14 CLAUDE.md), che a volte rende `undefined` il
+// getter lazy di FlatList. Non elimina il bug, ma impedisce a una build rotta di arrivare online.
 //
-// Motivo (sezione 14 di CLAUDE.md): Metro non garantisce lo stesso ordine di impacchettamento dei
-// moduli tra ambienti diversi (es. export locale su Windows vs export in CI su Linux) — quando
-// quell'ordine è "sfortunato", il getter lazy di `FlatList` di React Native risolve a `undefined`
-// e l'intera app va in crash con una pagina bianca. Il bug non è eliminato alla radice da questo
-// script (resta un problema di non-determinismo di Metro), ma non può più raggiungere gli utenti
-// senza che il deploy fallisca esplicitamente.
-//
-// Nota sui falsi positivi: contano solo i `pageerror` (eccezioni JS non gestite). Servendo `dist/`
-// da localhost, le chiamate API verso il backend reale falliscono per CORS (CORS_ALLOWED_ORIGINS
-// è ristretto a https://legole.expo.app e ai domini di preview, sezione 14) — sono normali
-// fallimenti di rete loggati come errori di console, non eccezioni non gestite, e non vanno confusi
-// con il crash che questo script deve rilevare.
+// Contano solo i `pageerror`: le chiamate API falliscono per CORS servendo da localhost (rumore
+// atteso, non il crash da rilevare).
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -68,13 +60,8 @@ async function main() {
     process.exit(1);
   }
 
-  // `serve` (devDependency) servito come processo figlio, non tramite un'API programmatica: stessa
-  // identica modalità "single-page" (fallback su index.html per ogni rotta client-side) già usata
-  // nella verifica manuale, senza reimplementare la logica di rewrite di un server statico SPA.
-  // Invocato tramite `node <entry.js>` (risolto dal campo "bin" del package, non da
-  // node_modules/.bin/serve.cmd): su Windows uno script .cmd richiede `shell: true` per essere
-  // eseguito da spawn, il che complica l'escaping degli argomenti — chiamare direttamente il file
-  // JS con lo stesso eseguibile node in uso resta identico su Windows/Linux/macOS.
+  // `serve` come processo figlio, invocato risolvendo il campo "bin" del pacchetto invece che
+  // node_modules/.bin/serve.cmd: su Windows un .cmd richiederebbe `shell: true`, più fragile.
   const servePkgJsonPath = require.resolve('serve/package.json');
   const serveEntry = path.join(path.dirname(servePkgJsonPath), require(servePkgJsonPath).bin.serve);
   const server = spawn(process.execPath, [serveEntry, '-s', 'dist', '-l', String(PORT)], {
