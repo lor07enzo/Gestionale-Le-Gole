@@ -487,7 +487,7 @@ export default function ClientePiscinaBookingScreen() {
         <Text size="sm" className="text-center text-destructive">
           {loadError ?? 'Piscina non trovata.'}
         </Text>
-        <BackButton className="self-center" />
+        <BackButton className="self-center" fallbackHref="/cliente/piscina" />
       </Box>
     );
   }
@@ -811,7 +811,7 @@ export default function ClientePiscinaBookingScreen() {
           </>
         )}
 
-        <BackButton />
+        <BackButton fallbackHref="/cliente/piscina" />
 
         <ClienteFooter />
       </VStack>

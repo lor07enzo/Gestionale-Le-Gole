@@ -80,8 +80,19 @@ async function main() {
         const errors = [];
         page.on('pageerror', (err) => errors.push(String(err)));
         try {
+          // 'load' (non 'networkidle'): la chiamata API di ogni pagina verso il backend di
+          // produzione viene rifiutata per CORS servendo da localhost (rumore atteso, vedi sopra)
+          // — con 'networkidle' quel fallimento di rete a volte impiega diversi secondi a
+          // risolversi (variabilità del round-trip CORS, più marcata su runner CI condivisi),
+          // facendo scadere il timeout di navigazione e fallire il gate per un motivo estraneo al
+          // crash che deve rilevare. 'load' si conclude appena la pagina/i bundle sono scaricati,
+          // indipendentemente da richieste di rete ancora pendenti in background; il crash che
+          // interessa (getter lazy di FlatList non definito, sezione 14) avviene durante la
+          // valutazione del JS, ben prima del `load`, e viene comunque catturato dal listener
+          // `pageerror` — la finestra `SETTLE_DELAY_MS` successiva lascia il tempo perché si
+          // manifesti.
           await page.goto(BASE_URL + pagePath, {
-            waitUntil: 'networkidle',
+            waitUntil: 'load',
             timeout: NAVIGATION_TIMEOUT_MS,
           });
           await page.waitForTimeout(SETTLE_DELAY_MS);

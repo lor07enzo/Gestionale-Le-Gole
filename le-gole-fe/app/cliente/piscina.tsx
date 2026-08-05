@@ -128,7 +128,7 @@ export default function ClientePiscinaScreen() {
           ))}
         </VStack>
 
-        <BackButton />
+        <BackButton fallbackHref="/cliente" />
 
         <ClienteFooter />
       </VStack>

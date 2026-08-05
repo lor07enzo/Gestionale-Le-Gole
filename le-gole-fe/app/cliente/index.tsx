@@ -59,7 +59,7 @@ export default function AreaClienteScreen() {
           </HStack>
         </Box>
 
-        <BackButton />
+        <BackButton fallbackHref="/" />
 
         <ClienteFooter />
       </VStack>

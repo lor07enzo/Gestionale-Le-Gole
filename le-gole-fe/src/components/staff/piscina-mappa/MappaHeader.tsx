@@ -1,16 +1,16 @@
 import { Pressable } from 'react-native';
-import { router } from 'expo-router';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { ArrowLeftIcon, Icon } from '@/components/ui/icon';
+import { goBackOr } from '../../../utils/navigation';
 
 export function MappaHeader({ nome }: Readonly<{ nome: string | undefined }>) {
   return (
     <HStack space="sm" className="items-center">
       <Pressable
-        onPress={() => router.back()}
+        onPress={() => goBackOr('/staff')}
         accessibilityLabel="Torna indietro"
         className="h-11 w-11 items-center justify-center rounded-full bg-sky-200 active:bg-sky-300"
       >

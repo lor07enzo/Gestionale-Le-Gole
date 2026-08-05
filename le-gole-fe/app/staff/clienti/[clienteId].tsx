@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
@@ -10,6 +10,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { ArrowLeftIcon, Icon, PhoneIcon } from '@/components/ui/icon';
 import { getCliente, type Cliente } from '../../../src/services/clienti';
 import { listPrenotazioniPiscinaByCliente, type PrenotazionePiscina } from '../../../src/services/prenotazioni';
+import { goBackOr } from '../../../src/utils/navigation';
 import {
   formatDateDDMMYYYY,
   formatIngressiSummary,
@@ -22,7 +23,7 @@ function ClienteDetailHeader({ nome }: Readonly<{ nome: string | undefined }>) {
   return (
     <HStack space="sm" className="items-center">
       <Pressable
-        onPress={() => router.back()}
+        onPress={() => goBackOr('/staff/clienti')}
         accessibilityLabel="Torna indietro"
         className="h-11 w-11 items-center justify-center rounded-full bg-sky-200 active:bg-sky-300"
       >

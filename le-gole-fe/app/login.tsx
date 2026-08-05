@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Image } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
+import { goBackOr } from '../src/utils/navigation';
 import { Box } from '@/components/ui/box';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
@@ -86,7 +87,7 @@ export default function LoginScreen() {
             <ButtonText>Password dimenticata?</ButtonText>
           </Button>
 
-          <Button variant="link" onPress={() => router.back()}>
+          <Button variant="link" onPress={() => goBackOr('/')}>
             <ButtonText>Torna indietro</ButtonText>
           </Button>
         </VStack>

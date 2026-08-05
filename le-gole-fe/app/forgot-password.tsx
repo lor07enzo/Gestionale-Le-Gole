@@ -8,6 +8,7 @@ import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { forgotPasswordSchema, formatZodErrors } from '../src/schemas/auth';
 import { requestPasswordReset } from '../src/services/staff';
+import { goBackOr } from '../src/utils/navigation';
 import { Icon, MailIcon } from '@/components/ui/icon';
 
 export default function ForgotPasswordScreen() {
@@ -88,7 +89,7 @@ export default function ForgotPasswordScreen() {
               <Button onPress={handleSubmit} disabled={isSubmitting}>
                 {isSubmitting ? <ButtonSpinner /> : <ButtonText>Invia link</ButtonText>}
               </Button>
-              <Button variant="link" onPress={() => router.back()}>
+              <Button variant="link" onPress={() => goBackOr('/login')}>
                 <ButtonText>Torna indietro</ButtonText>
               </Button>
             </VStack>

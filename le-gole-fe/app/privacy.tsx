@@ -271,7 +271,7 @@ export default function PrivacyScreen() {
           </Paragraph>
         </VStack>
 
-        <BackButton className="mt-2" />
+        <BackButton className="mt-2" fallbackHref="/cliente" />
       </VStack>
     </ScrollView>
   );

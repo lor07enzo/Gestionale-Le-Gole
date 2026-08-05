@@ -9,6 +9,7 @@ import { Input, InputField } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { ArrowLeftIcon, ChevronRightIcon, Icon, PhoneIcon, SearchIcon } from '@/components/ui/icon';
 import { searchClienti, type Cliente } from '../../src/services/clienti';
+import { goBackOr } from '../../src/utils/navigation';
 
 // Sotto questa lunghezza non cerchiamo: un solo carattere restituirebbe potenzialmente
 // l'intera anagrafica clienti, poco utile e che sovraccarica il backend a ogni tasto premuto.
@@ -19,7 +20,7 @@ function ClientiHeader() {
   return (
     <HStack space="sm" className="items-center">
       <Pressable
-        onPress={() => router.back()}
+        onPress={() => goBackOr('/staff')}
         accessibilityLabel="Torna indietro"
         className="h-11 w-11 items-center justify-center rounded-full bg-sky-200 active:bg-sky-300"
       >
