@@ -189,6 +189,16 @@ export function validateOrarioArrivo(value: string, selectedDate: Date): OrarioV
   return { valid: true, minutes };
 }
 
+// Numero più basso non ancora in uso tra le postazioni attive dell'inventario — `numero` è unico
+// per (inventario, numero) a prescindere dal tipo (sezione 5 CLAUDE.md, vincolo condiviso tra
+// ombrelloni e gazebi), quindi il calcolo ignora il tipo scelto per la nuova postazione.
+export function nextAvailableNumero(postazioni: { numero: number }[]): number {
+  const usati = new Set(postazioni.map((p) => p.numero));
+  let candidato = 1;
+  while (usati.has(candidato)) candidato += 1;
+  return candidato;
+}
+
 export type ResiduiPrenotazione = { ombrellone: number; gazebo: number; lettino: number; sdraia: number };
 
 export function remainingForTipo(residui: ResiduiPrenotazione | undefined, tipo: TipoPostazione): number {

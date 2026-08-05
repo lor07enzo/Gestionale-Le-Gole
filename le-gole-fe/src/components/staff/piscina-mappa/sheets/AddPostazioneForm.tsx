@@ -1,27 +1,26 @@
+import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import type { PiscinaSheetsValue } from '../../../../context/PiscinaSheetsContext';
 
 // Non chiama usePiscinaSheets() da sé: è un figlio di <Actionsheet>, teleportato fuori
 // dall'albero del Provider da gluestack-ui (vedi il commento in PostazioneSheet.tsx).
 export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsValue }>) {
-  const {
-    newTipo,
-    setNewTipo,
-    newNumero,
-    setNewNumero,
-    sheetError,
-    isSubmittingSheet,
-    confirmAddPostazione,
-  } = sheets;
+  const { newTipo, setNewTipo, newNumero, sheetError, isSubmittingSheet, confirmAddPostazione } = sheets;
 
   return (
     <>
-      <Heading size="md">Nuova postazione</Heading>
+      <VStack space="xs">
+        <Heading size="md">Nuova postazione</Heading>
+        <Text size="xs" className="text-sky-900/70">
+          Scegli se è un ombrellone o un gazebo: il numero viene assegnato in automatico (il primo
+          libero) e la postazione compare al centro della mappa, pronta da trascinare nella
+          posizione giusta.
+        </Text>
+      </VStack>
       <HStack space="sm">
         <Button
           size="sm"
@@ -46,16 +45,13 @@ export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsVa
       </HStack>
       <VStack space="xs">
         <Text size="sm" className="font-medium">
-          Numero
+          Numero assegnato
         </Text>
-        <Input>
-          <InputField
-            keyboardType="numeric"
-            placeholder="Es. 12"
-            value={newNumero}
-            onChangeText={setNewNumero}
-          />
-        </Input>
+        <Box className="min-h-9 w-full justify-center rounded-md border border-border bg-sky-50 px-3 py-2">
+          <Text size="sm" className="font-semibold text-sky-900">
+            #{newNumero || '—'}
+          </Text>
+        </Box>
       </VStack>
       {sheetError ? (
         <Text size="sm" className="text-center text-destructive">

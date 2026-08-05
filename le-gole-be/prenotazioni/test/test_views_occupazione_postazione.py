@@ -48,6 +48,58 @@ class TestVincoloUnicoPerGiorno:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
+class TestOccupate:
+    def test_richiede_i_parametri_obbligatori(self, api_client):
+        response = api_client.get(reverse("occupazione-postazione-occupate"))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_inventario_inesistente_restituisce_404(self, api_client):
+        response = api_client.get(
+            reverse("occupazione-postazione-occupate"),
+            {"inventario": "00000000-0000-0000-0000-000000000000", "data": "2026-08-01"},
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_formato_data_non_valido(self, api_client, inventario):
+        response = api_client.get(
+            reverse("occupazione-postazione-occupate"), {"inventario": inventario.pk, "data": "01-08-2026"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_anonimo_puo_leggere_solo_gli_id_occupati(self, api_client, inventario):
+        postazione_occupata = PostazioneFactory(inventario=inventario)
+        occupazione = OccupazionePostazioneFactory(
+            postazione=postazione_occupata, data="2026-08-01", cliente_nome="Mario Rossi"
+        )
+        PostazioneFactory(inventario=inventario, numero=99)  # libera, non deve comparire
+
+        response = api_client.get(
+            reverse("occupazione-postazione-occupate"), {"inventario": inventario.pk, "data": "2026-08-01"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == [str(postazione_occupata.pk)]
+        assert "Mario Rossi" not in response.content.decode()
+        assert str(occupazione.pk) not in response.content.decode()
+
+    def test_filtra_per_data_e_inventario(self, api_client, inventario):
+        from struttura.test.factories import PiscinaInventarioFactory
+
+        postazione = PostazioneFactory(inventario=inventario)
+        OccupazionePostazioneFactory(postazione=postazione, data="2026-08-01")
+        OccupazionePostazioneFactory(postazione=postazione, data="2026-08-02")  # altra data
+        altro_inventario = PiscinaInventarioFactory()
+        OccupazionePostazioneFactory(
+            postazione=PostazioneFactory(inventario=altro_inventario), data="2026-08-01"
+        )  # altro inventario
+
+        response = api_client.get(
+            reverse("occupazione-postazione-occupate"), {"inventario": inventario.pk, "data": "2026-08-01"}
+        )
+
+        assert response.data == [str(postazione.pk)]
+
+
 class TestFiltri:
     def test_filtra_per_data(self, auth_client, inventario):
         postazione = PostazioneFactory(inventario=inventario)

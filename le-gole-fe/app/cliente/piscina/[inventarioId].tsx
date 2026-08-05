@@ -7,7 +7,7 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
-import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
+import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import {
   Actionsheet,
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/actionsheet';
 import {
   Icon,
+  AddIcon,
   CalendarDaysIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -25,6 +26,7 @@ import {
   InfoIcon,
   LockIcon,
   PhoneIcon,
+  RemoveIcon,
 } from '@/components/ui/icon';
 // Caricato dinamicamente, stesso motivo di app/cliente/_layout.tsx (bug Metro/FlatList, sezione
 // 14 CLAUDE.md): un import statico lo renderebbe parte del bundle valutato su ogni pagina.
@@ -43,6 +45,8 @@ import { createCliente } from '../../../src/services/clienti';
 import { ClienteFooter } from '../../../src/components/cliente/ClienteFooter';
 import { BackButton } from '../../../src/components/cliente/BackButton';
 import { CalendarPicker } from '../../../src/components/shared/CalendarPicker';
+import { DisponibilitaCards, type DisponibilitaCardItem } from '../../../src/components/shared/DisponibilitaCards';
+import { PiscinaMappaSelettore, type PiscinaSelezione } from '../../../src/components/cliente/PiscinaMappaSelettore';
 import {
   addDays,
   formatDisplayDate,
@@ -66,13 +70,13 @@ type FormState = {
   ingressiRidotti: string;
   ingressiBambini: string;
   ingressiGratuiti: string;
-  ombrellone: string;
-  gazebo: string;
   lettino: string;
   sdraia: string;
 };
 
-const RISORSE_KEYS = ['ombrellone', 'gazebo', 'lettino', 'sdraia'] as const;
+// Ombrellone/gazebo non sono più campi numerici: la quantità è derivata dalla selezione sulla
+// mappa (PiscinaMappaSelettore) — restano qui solo le due risorse ancora scelte per quantità.
+const RISORSE_KEYS = ['lettino', 'sdraia'] as const;
 
 function defaultOrario(inventario: PiscinaInventario, selectedDate: Date): string {
   const apertura = inventario.orario_apertura.slice(0, 5);
@@ -198,6 +202,11 @@ function DateNav({
   );
 }
 
+// Pulsanti "－"/quantità/"＋" invece di un campo numerico da tastiera: più veloce da toccare per
+// piccole quantità (il caso comune di una prenotazione) e senza la tastiera numerica che copre
+// mezzo schermo su mobile. `onChangeText` riceve comunque una stringa (stessa firma di prima, i
+// chiamanti — `setField(...)` — restano invariati): l'incremento/decremento è solo un modo diverso
+// di produrre lo stesso valore.
 function RisorsaField({
   icon,
   label,
@@ -216,6 +225,12 @@ function RisorsaField({
   gratis?: boolean;
   residuo?: number;
 }>) {
+  const quantita = Number.parseInt(value, 10) || 0;
+  // `residuo` (quando presente) è già il massimo assoluto selezionabile per questa prenotazione
+  // (calcolato escludendo la prenotazione corrente, che non esiste ancora essendo una creazione),
+  // non un residuo-meno-selezione: usato direttamente come tetto dello stepper.
+  const maxRaggiunto = typeof residuo === 'number' && quantita >= residuo;
+
   return (
     <HStack space="sm" className="items-center">
       <Text size="md">{icon}</Text>
@@ -228,9 +243,31 @@ function RisorsaField({
           {typeof residuo === 'number' ? `· Residui: ${residuo}` : null}
         </Text>
       </VStack>
-      <Input className="w-20">
-        <InputField keyboardType="numeric" value={value} onChangeText={onChangeText} />
-      </Input>
+      <HStack space="xs" className="items-center">
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-9 w-9 rounded-full border-2 border-sky-300 bg-white"
+          onPress={() => onChangeText(String(Math.max(0, quantita - 1)))}
+          disabled={quantita <= 0}
+          accessibilityLabel={`Diminuisci ${label}`}
+        >
+          <ButtonIcon as={RemoveIcon} className="text-sky-900" />
+        </Button>
+        <Text size="md" className="w-6 text-center font-bold text-sky-900">
+          {quantita}
+        </Text>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-9 w-9 rounded-full border-2 border-sky-300 bg-white"
+          onPress={() => onChangeText(String(quantita + 1))}
+          disabled={maxRaggiunto}
+          accessibilityLabel={`Aumenta ${label}`}
+        >
+          <ButtonIcon as={AddIcon} className="text-sky-900" />
+        </Button>
+      </HStack>
     </HStack>
   );
 }
@@ -254,10 +291,13 @@ export default function ClientePiscinaBookingScreen() {
     ingressiRidotti: '0',
     ingressiBambini: '0',
     ingressiGratuiti: '0',
-    ombrellone: '0',
-    gazebo: '0',
     lettino: '0',
     sdraia: '0',
+  });
+  const [selezionePostazioni, setSelezionePostazioni] = useState<PiscinaSelezione>({
+    ombrellone: 0,
+    gazebo: 0,
+    ids: [],
   });
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -305,12 +345,37 @@ export default function ClientePiscinaBookingScreen() {
       const prezzoRisorsa = Number.parseFloat(inventario[`prezzo_${key}` as keyof PiscinaInventario] as string);
       somma += quantitaRisorsa * (Number.isNaN(prezzoRisorsa) ? 0 : prezzoRisorsa);
     }
+    somma += selezionePostazioni.ombrellone * (Number.parseFloat(inventario.prezzo_ombrellone) || 0);
+    somma += selezionePostazioni.gazebo * (Number.parseFloat(inventario.prezzo_gazebo) || 0);
     return somma;
-  }, [inventario, form]);
+  }, [inventario, form, selezionePostazioni]);
 
   // Precompila TimePickerModal con l'orario già scelto (se valido), altrimenti apre sui valori
   // di default della libreria.
   const orarioMinutiCorrenti = parseHHMMToMinutes(form.orario);
+
+  const mostraMappaPostazioni = Boolean(
+    inventario && (inventario.totale_ombrelloni > 0 || inventario.totale_gazebi > 0)
+  );
+  const residuiPostazioni: DisponibilitaCardItem[] = [];
+  if (inventario?.totale_ombrelloni) {
+    residuiPostazioni.push({
+      key: 'ombrellone',
+      icon: '⛱️',
+      label: 'Ombrelloni',
+      residui: disponibilita?.ombrellone ?? inventario.totale_ombrelloni,
+      totale: inventario.totale_ombrelloni,
+    });
+  }
+  if (inventario?.totale_gazebi) {
+    residuiPostazioni.push({
+      key: 'gazebo',
+      icon: '⛺',
+      label: 'Gazebi',
+      residui: disponibilita?.gazebo ?? inventario.totale_gazebi,
+      totale: inventario.totale_gazebi,
+    });
+  }
 
   const handleSubmit = async () => {
     if (!inventario || !inventarioId) return;
@@ -348,10 +413,14 @@ export default function ClientePiscinaBookingScreen() {
         return;
       }
     }
-    for (const key of RISORSE_KEYS) {
-      const quantitaRisorsa = Number.parseInt(form[key], 10) || 0;
+    const risorseDaValidare: Array<{ key: 'ombrellone' | 'gazebo' | 'lettino' | 'sdraia'; quantita: number }> = [
+      { key: 'ombrellone', quantita: selezionePostazioni.ombrellone },
+      { key: 'gazebo', quantita: selezionePostazioni.gazebo },
+      ...RISORSE_KEYS.map((key) => ({ key, quantita: Number.parseInt(form[key], 10) || 0 })),
+    ];
+    for (const { key, quantita } of risorseDaValidare) {
       const residuo = disponibilita?.[key] ?? Infinity;
-      if (quantitaRisorsa > residuo) {
+      if (quantita > residuo) {
         setError(`Disponibilità insufficiente: residuano solo ${residuo} ${key}.`);
         return;
       }
@@ -377,8 +446,8 @@ export default function ClientePiscinaBookingScreen() {
         ingressi_ridotti: ingressiRidotti,
         ingressi_bambini: ingressiBambini,
         ingressi_gratuiti: ingressiGratuiti,
-        ombrellone: Number.parseInt(form.ombrellone, 10) || 0,
-        gazebo: Number.parseInt(form.gazebo, 10) || 0,
+        ombrellone: selezionePostazioni.ombrellone,
+        gazebo: selezionePostazioni.gazebo,
         lettino: Number.parseInt(form.lettino, 10) || 0,
         sdraia: Number.parseInt(form.sdraia, 10) || 0,
       });
@@ -638,26 +707,6 @@ export default function ClientePiscinaBookingScreen() {
                   gratis
                 />
               ) : null}
-              {inventario.totale_ombrelloni > 0 ? (
-                <RisorsaField
-                  icon="⛱️"
-                  label="Ombrelloni"
-                  value={form.ombrellone}
-                  onChangeText={setField('ombrellone')}
-                  prezzo={inventario.prezzo_ombrellone}
-                  residuo={disponibilita?.ombrellone}
-                />
-              ) : null}
-              {inventario.totale_gazebi > 0 ? (
-                <RisorsaField
-                  icon="⛺"
-                  label="Gazebi"
-                  value={form.gazebo}
-                  onChangeText={setField('gazebo')}
-                  prezzo={inventario.prezzo_gazebo}
-                  residuo={disponibilita?.gazebo}
-                />
-              ) : null}
               {inventario.totale_lettini > 0 ? (
                 <RisorsaField
                   icon="🛏️"
@@ -707,6 +756,45 @@ export default function ClientePiscinaBookingScreen() {
                 ) : null}
               </Box>
             </VStack>
+
+            {mostraMappaPostazioni ? (
+              <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
+                <VStack space="xs">
+                  <Heading size="sm">Scegli la tua postazione</Heading>
+                  <Text size="xs" className="text-sky-900/70">
+                    Tocca una postazione libera sulla mappa per selezionarla, tocca di nuovo per
+                    deselezionarla. Trascina per spostarti e pizzica con due dita (o usa i pulsanti)
+                    per ingrandire.
+                  </Text>
+                  <Text size="xs" className="text-sky-900/70">
+                    💡 Per stare comodi, ti consigliamo al massimo 3 lettini/sdraie complessivi per
+                    ogni ombrellone o gazebo prenotato.
+                  </Text>
+                </VStack>
+
+                {residuiPostazioni.length > 0 ? (
+                  <DisponibilitaCards items={residuiPostazioni} title="Disponibilità residua" />
+                ) : null}
+
+                <PiscinaMappaSelettore
+                  inventarioId={inventarioId}
+                  selectedDate={selectedDate}
+                  selectedIds={new Set(selezionePostazioni.ids)}
+                  onSelectionChange={setSelezionePostazioni}
+                />
+
+                <Text size="sm" className="text-center font-medium text-sky-900">
+                  {selezionePostazioni.ombrellone === 0 && selezionePostazioni.gazebo === 0
+                    ? 'Nessuna postazione selezionata (solo ingresso)'
+                    : [
+                        selezionePostazioni.ombrellone > 0 ? `⛱️ ${selezionePostazioni.ombrellone}` : null,
+                        selezionePostazioni.gazebo > 0 ? `⛺ ${selezionePostazioni.gazebo}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join('   ')}
+                </Text>
+              </VStack>
+            ) : null}
 
             {error ? (
               <Text size="sm" className="text-center text-destructive">

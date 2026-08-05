@@ -1,21 +1,23 @@
 import type { ReactNode } from 'react';
-import { ScrollView } from 'react-native';
+import { Linking, Pressable, ScrollView } from 'react-native';
 import { Box } from '@/components/ui/box';
+import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
+import { Icon, MailIcon } from '@/components/ui/icon';
 import { BackButton } from '../src/components/cliente/BackButton';
 
-// Campi ancora segnaposto: vanno sostituiti con i dati reali prima del rilascio in produzione.
+// Dati identificativi reali del Titolare del trattamento (non più segnaposto).
 const TITOLARE = {
-  ragioneSociale: 'AME S.n.c.',
+  ragioneSociale: 'AME S.r.l.',
   nomeCommerciale: 'Osteria Le Gole',
-  piva: '[P.IVA / CODICE FISCALE]',
-  indirizzo: '[INDIRIZZO SEDE LEGALE]',
-  emailPrivacy: '[EMAIL DI CONTATTO PER RICHIESTE PRIVACY]',
+  piva: '01271600577',
+  indirizzo: 'Via Salaria SS4 km 98,865 snc, 02013 Antrodoco (RI)',
+  emailPrivacy: 'osterialegole@icloud.com',
 };
 
-const ULTIMO_AGGIORNAMENTO = '3 agosto 2026';
+const ULTIMO_AGGIORNAMENTO = '5 agosto 2026';
 
 function SectionHeading({ children }: Readonly<{ children: string }>) {
   return (
@@ -41,6 +43,37 @@ function ListItem({ children }: Readonly<{ children: ReactNode }>) {
   );
 }
 
+// Riga etichetta/valore del riquadro "Titolare del trattamento": stessa struttura per tutti i
+// campi, l'email è anche tappabile (apre il client di posta) come i contatti del footer cliente.
+function InfoRow({
+  label,
+  value,
+  onPress,
+}: Readonly<{ label: string; value: string; onPress?: () => void }>) {
+  const valueNode = (
+    <Text size="sm" className={`font-semibold text-foreground ${onPress ? 'underline' : ''}`}>
+      {value}
+    </Text>
+  );
+  return (
+    <VStack space="xs">
+      <Text size="2xs" className="font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Text>
+      {onPress ? (
+        <Pressable onPress={onPress} accessibilityRole="link" accessibilityLabel={`Scrivi a ${value}`}>
+          <HStack space="xs" className="items-center">
+            <Icon as={MailIcon} size="xs" className="text-muted-foreground" />
+            {valueNode}
+          </HStack>
+        </Pressable>
+      ) : (
+        valueNode
+      )}
+    </VStack>
+  );
+}
+
 export default function PrivacyScreen() {
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
@@ -54,21 +87,32 @@ export default function PrivacyScreen() {
           </Text>
         </VStack>
 
-        <Box className="w-full rounded-2xl border border-amber-300 bg-amber-50 p-4">
-          <Text size="xs" className="text-amber-900">
-            ⚠️ Bozza con segnaposto: i campi tra parentesi quadre (P.IVA/CF, indirizzo, email di
-            contatto per la privacy) vanno sostituiti con i dati reali prima di pubblicare questa
-            pagina in produzione.
-          </Text>
+        <Box className="w-full rounded-2xl border border-border bg-card p-5">
+          <Heading size="sm" className="text-foreground">
+            🏢 Titolare del trattamento
+          </Heading>
+          <VStack space="md" className="mt-3">
+            <InfoRow
+              label="Ragione sociale"
+              value={`${TITOLARE.ragioneSociale} ("${TITOLARE.nomeCommerciale}")`}
+            />
+            <InfoRow label="P.IVA / Codice Fiscale" value={TITOLARE.piva} />
+            <InfoRow label="Sede legale" value={TITOLARE.indirizzo} />
+            <InfoRow
+              label="Email per richieste privacy"
+              value={TITOLARE.emailPrivacy}
+              onPress={() => Linking.openURL(`mailto:${TITOLARE.emailPrivacy}`).catch(() => {})}
+            />
+          </VStack>
         </Box>
 
         <VStack space="xs">
           <SectionHeading>1. Titolare del trattamento</SectionHeading>
           <Paragraph>
             Il Titolare del trattamento dei dati raccolti tramite questo sito e l'app Le Gole è{' '}
-            {TITOLARE.ragioneSociale} (nome commerciale "{TITOLARE.nomeCommerciale}"), P.IVA/CF{' '}
-            {TITOLARE.piva}, con sede in {TITOLARE.indirizzo}. Per qualsiasi richiesta relativa al
-            trattamento dei tuoi dati personali puoi scrivere a {TITOLARE.emailPrivacy}.
+            {TITOLARE.ragioneSociale} (nome commerciale "{TITOLARE.nomeCommerciale}"), i cui dati
+            identificativi completi sono riportati nel riquadro qui sopra. Per qualsiasi richiesta
+            relativa al trattamento dei tuoi dati personali puoi scrivere a {TITOLARE.emailPrivacy}.
           </Paragraph>
         </VStack>
 

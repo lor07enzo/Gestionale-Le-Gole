@@ -195,6 +195,16 @@ export function listOccupazioni(params: {
     .then((response) => response.data);
 }
 
+// GET /v1/prenotazioni/occupazioni-postazione/occupate/?inventario={id}&data={data} — pubblico,
+// nessuna auth richiesta. Solo gli id delle Postazione occupate, nessun dato personale del
+// cliente occupante — usato dalla mappa piscina self-service (Area Cliente) per marcare le
+// postazioni non selezionabili senza esporre nome/telefono/note altrui.
+export function getPostazioniOccupate(params: { inventario: string; data: string }): Promise<string[]> {
+  return api
+    .get<string[]>(`${OCCUPAZIONI_POSTAZIONE_PATH}occupate/`, { params })
+    .then((response) => response.data);
+}
+
 // POST /v1/prenotazioni/occupazioni-postazione/
 export function createOccupazione(
   payload: CreateOccupazionePayload

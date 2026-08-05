@@ -16,6 +16,7 @@ import {
   computeDefaultOrario,
   formatTime,
   minutesToHHMM,
+  nextAvailableNumero,
   parseHHMMToMinutes,
   remainingForTipo,
   toISODate,
@@ -103,6 +104,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     inventario,
     selectedDate,
     isPastDate,
+    postazioni,
     occupazioneByPostazione,
     remainingByPrenotazione,
     daAssegnare,
@@ -182,7 +184,10 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
 
   const openAddPostazioneSheet = () => {
     setNewTipo('OMBRELLONE');
-    setNewNumero('');
+    // Il numero non è più scelto a mano: viene assegnato automaticamente al primo libero
+    // (sezione 5 CLAUDE.md) — ricalcolato ad ogni apertura, così riflette sempre le postazioni
+    // attive più recenti (es. dopo un'aggiunta o un'eliminazione appena fatta).
+    setNewNumero(String(nextAvailableNumero(postazioni)));
     setSheetError(null);
     setSheetMode('add-postazione');
   };
@@ -496,9 +501,11 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError('Non è possibile aggiungere postazioni per un giorno passato.');
       return;
     }
+    // Backstop difensivo: `newNumero` è sempre valorizzato da `nextAvailableNumero()` all'apertura
+    // del foglio, non più digitato a mano — non dovrebbe mai risultare vuoto/non valido qui.
     const numero = Number.parseInt(newNumero, 10);
     if (!numero || numero <= 0) {
-      setSheetError('Inserisci un numero di postazione valido.');
+      setSheetError('Impossibile calcolare il prossimo numero disponibile. Chiudi e riprova.');
       return;
     }
     setIsSubmittingSheet(true);
@@ -508,7 +515,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setNewNumero('');
       closeSheet();
     } catch {
-      setSheetError('Numero già in uso o dati non validi.');
+      // Raro: un altro staff ha aggiunto una postazione con lo stesso numero nel frattempo.
+      setSheetError('Numero non più disponibile: chiudi e riapri il foglio per ricalcolarlo.');
     } finally {
       setIsSubmittingSheet(false);
     }

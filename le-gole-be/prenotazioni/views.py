@@ -156,6 +156,45 @@ class OccupazionePostazioneViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filterset_fields = ['data', 'postazione', 'postazione__inventario']
 
+    def get_permissions(self):
+        # 'occupate' è pubblica per la mappa piscina self-service (Area Cliente): espone solo gli
+        # id delle postazioni occupate, mai i dati personali del cliente occupante (nome/telefono),
+        # a differenza della list ordinaria di questa viewset che resta riservata allo staff.
+        if self.action == 'occupate':
+            return [AllowAny()]
+        return super().get_permissions()
+
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def occupate(self, request):
+        """
+        Elenco degli id delle Postazione occupate per un inventario+data, pubblico e privo di
+        qualunque dato personale — usato dalla mappa piscina lato Area Cliente per mostrare quali
+        postazioni sono già assegnate senza esporre nome/telefono/note del cliente occupante.
+        GET /api/v1/prenotazioni/occupazioni-postazione/occupate/?inventario={id}&data=YYYY-MM-DD
+        Risposta: ["<postazione_id>", ...]
+        """
+        inventario_id = request.query_params.get('inventario')
+        data_str = request.query_params.get('data')
+        if not inventario_id or not data_str:
+            return Response(
+                {"detail": "Parametri 'inventario' e 'data' obbligatori."}, status=400
+            )
+
+        try:
+            PiscinaInventario.objects.get(pk=inventario_id)
+        except (PiscinaInventario.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "Inventario non trovato."}, status=404)
+
+        try:
+            data_richiesta = datetime.strptime(data_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({"detail": "Formato data non valido, atteso YYYY-MM-DD."}, status=400)
+
+        postazioni_ids = OccupazionePostazione.objects.filter(
+            postazione__inventario_id=inventario_id, data=data_richiesta
+        ).values_list('postazione_id', flat=True)
+        return Response([str(pk) for pk in postazioni_ids])
+
 
 class GiornoPienoPiscinaViewSet(viewsets.ModelViewSet):
     """

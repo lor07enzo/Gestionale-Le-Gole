@@ -30,6 +30,11 @@ type PostazioneMarkerProps = {
   postazione: Postazione;
   isOccupied: boolean;
   isSelectable: boolean;
+  // Selezionata dal cliente nel flusso self-service (Area Cliente): evidenziazione distinta da
+  // isSelectable (che marca solo "disponibile a essere scelta", non "già scelta ora"). Mai usata
+  // lato staff, che non ha un concetto di selezione persistente sul marker — default false, nessun
+  // impatto sul suo aspetto/comportamento esistente.
+  isSelected?: boolean;
   // Nome del cliente assegnato, mostrato in un cartellino sotto l'icona quando la postazione è
   // occupata — undefined quando libera.
   clienteNome?: string;
@@ -61,6 +66,7 @@ export function PostazioneMarker({
   postazione,
   isOccupied,
   isSelectable,
+  isSelected = false,
   clienteNome,
   scale,
   readOnly,
@@ -107,6 +113,9 @@ export function PostazioneMarker({
   const handlePointerDown = (event: any) => {
     if (Platform.OS !== 'web') return;
     event.preventDefault?.();
+    // Impedisce all'evento di risalire fino al canvas della mappa (ZoomPanCanvas, sezione 5): senza,
+    // il tap/drag su un marker verrebbe interpretato anche come l'inizio di un pan della mappa.
+    event.stopPropagation?.();
     dragStateRef.current = { startX: event.clientX, startY: event.clientY, moved: false };
 
     const handleMove = (moveEvent: PointerEvent) => {
@@ -145,6 +154,8 @@ export function PostazioneMarker({
   let borderClassName = 'border-sky-300';
   if (isOccupied) {
     borderClassName = 'border-emerald-500 bg-emerald-50';
+  } else if (isSelected) {
+    borderClassName = 'border-sky-600 bg-sky-200';
   } else if (isSelectable) {
     borderClassName = 'border-amber-400 bg-amber-50';
   }
