@@ -27,14 +27,56 @@ def _payload(inventario, cliente, **overrides):
 
 
 class TestCreazionePubblica:
-    def test_anonimo_puo_creare_e_nasce_pending(self, api_client, inventario, cliente):
+    def test_anonimo_puo_creare_e_nasce_confirmed(self, api_client, inventario, cliente):
         response = api_client.post(reverse("prenotazione-piscina-list"), _payload(inventario, cliente), format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["stato"] == "CONFIRMED"
+
+        creata = PrenotazionePiscina.objects.get(pk=response.data["id"])
+        assert creata.stato == "CONFIRMED"
+
+    def test_anonimo_non_puo_forzare_uno_stato_diverso(self, api_client, inventario, cliente):
+        # Anche passando esplicitamente 'stato' nel payload, la richiesta anonima resta
+        # confermata: perform_create() lo sovrascrive sempre per le richieste pubbliche.
+        response = api_client.post(
+            reverse("prenotazione-piscina-list"),
+            _payload(inventario, cliente, stato="PENDING"),
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["stato"] == "CONFIRMED"
+
+    def test_staff_autenticato_puo_scegliere_lo_stato(self, auth_client, inventario, cliente):
+        response = auth_client.post(
+            reverse("prenotazione-piscina-list"),
+            _payload(inventario, cliente, stato="PENDING"),
+            format="json",
+        )
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["stato"] == "PENDING"
 
+    def test_anonimo_nasce_non_creata_da_staff(self, api_client, inventario, cliente):
+        response = api_client.post(reverse("prenotazione-piscina-list"), _payload(inventario, cliente), format="json")
+
         creata = PrenotazionePiscina.objects.get(pk=response.data["id"])
-        assert creata.stato == "PENDING"
+        assert creata.creata_da_staff is False
+
+    def test_staff_autenticato_nasce_creata_da_staff_anche_se_il_payload_dice_il_contrario(
+        self, auth_client, inventario, cliente
+    ):
+        # Stesso principio dell'enforcement su 'stato' sopra: il valore lato server non dipende
+        # mai da cosa (eventualmente) arriva nel payload, solo dall'autenticazione della richiesta.
+        response = auth_client.post(
+            reverse("prenotazione-piscina-list"),
+            _payload(inventario, cliente, creata_da_staff=False),
+            format="json",
+        )
+
+        creata = PrenotazionePiscina.objects.get(pk=response.data["id"])
+        assert creata.creata_da_staff is True
 
 
 class TestControlloOrarioApertura:

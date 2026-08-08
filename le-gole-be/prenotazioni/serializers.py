@@ -7,6 +7,10 @@ class PrenotazionePiscinaSerializer(serializers.ModelSerializer):
     # Comodo per il frontend (es. mappa postazioni): evita una join lato client con /users/clienti/
     cliente_nome = serializers.CharField(source='cliente_id.nome', read_only=True)
     cliente_telefono = serializers.CharField(source='cliente_id.telefono', read_only=True)
+    # Usato dal pannello notifiche staff (azione 'recenti'), che elenca prenotazioni di piscine
+    # diverse nella stessa lista: senza questo servirebbe una join lato frontend per mostrare a
+    # quale piscina si riferisce ogni notifica.
+    inventario_nome = serializers.CharField(source='inventario.nome', read_only=True)
 
     class Meta:
         model = PrenotazionePiscina

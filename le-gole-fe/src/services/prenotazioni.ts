@@ -12,6 +12,9 @@ export type PrenotazionePiscina = {
   ora: string;
   stato: StatoPrenotazione;
   inventario: string;
+  // Comoda per il pannello notifiche staff, che elenca prenotazioni di piscine diverse nella
+  // stessa lista (azione 'recenti', sotto) — evita una join lato client.
+  inventario_nome: string;
   // Ingressi interi (tariffa piena); ingressi_ridotti/bambini sono contatori indipendenti per le
   // tariffe alternative (PiscinaInventario.prezzo_ingresso_ridotto/bambino) — nessun vincolo tra
   // loro, nessuna verifica automatica di orario/età.
@@ -25,6 +28,11 @@ export type PrenotazionePiscina = {
   gazebo: number;
   lettino: number;
   sdraia: number;
+  // Forzato lato backend in base all'autenticazione della richiesta di creazione: true per un
+  // walk-in/"+ Nuovo cliente" registrato dallo staff, false per una prenotazione self-service
+  // (Area Cliente). Usato server-side dall'azione 'recenti' per non notificare allo staff le
+  // prenotazioni che lo staff stesso ha appena creato — non consumato altrove nel frontend.
+  creata_da_staff: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -38,6 +46,9 @@ export type OccupazionePostazione = {
   numero_lettini: number;
   numero_sdraie: number;
   orario_arrivo_previsto: string;
+  // Check-in manuale per QUESTA specifica postazione — un cliente con più unità dello stesso
+  // tipo (es. 3 gazebi) va segnato separatamente su ciascuna, non è un flag per-prenotazione.
+  arrivato: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -124,12 +135,12 @@ export function listPrenotazioniPiscinaByCliente(clienteId: string): Promise<Pre
     .then((response) => response.data);
 }
 
-// GET /v1/prenotazioni/piscina/?stato=PENDING — tutte le prenotazioni self-service in attesa di
-// conferma, su qualsiasi piscina/data (a differenza di listPrenotazioniPiscina, non filtrata per
+// GET /v1/prenotazioni/piscina/recenti/?limit={limit} — le prenotazioni più recenti per data di
+// creazione, su qualsiasi piscina/data (a differenza di listPrenotazioniPiscina, non filtrata per
 // giorno) — usato dal pannello notifiche staff (StaffNotificationsContext) per il polling.
-export function listPrenotazioniPendenti(): Promise<PrenotazionePiscina[]> {
+export function listPrenotazioniRecenti(limit = 50): Promise<PrenotazionePiscina[]> {
   return api
-    .get<PrenotazionePiscina[]>(PRENOTAZIONI_PISCINA_PATH, { params: { stato: 'PENDING' } })
+    .get<PrenotazionePiscina[]>(`${PRENOTAZIONI_PISCINA_PATH}recenti/`, { params: { limit } })
     .then((response) => response.data);
 }
 
@@ -173,14 +184,9 @@ export function updatePrenotazionePiscina(
     .then((response) => response.data);
 }
 
-// DELETE /v1/prenotazioni/piscina/{id}/ (elimina in cascata anche le OccupazionePostazione collegate, lato backend)
-export function deletePrenotazionePiscina(id: string): Promise<void> {
-  return api.delete(`${PRENOTAZIONI_PISCINA_PATH}${id}/`).then(() => undefined);
-}
-
 // GET /v1/prenotazioni/piscina/{id}/scarica_biglietto/ — pubblico (AllowAny), nessuna auth
-// richiesta: basta conoscere l'UUID della prenotazione (non enumerabile). Disponibile anche per
-// prenotazioni PENDING (self-service, in attesa di conferma staff), non solo CONFIRMED.
+// richiesta: basta conoscere l'UUID della prenotazione (non enumerabile). Bloccato solo per le
+// prenotazioni CANCELLED.
 export function getBigliettoUrl(prenotazioneId: string): string {
   return `${API_BASE_URL}${PRENOTAZIONI_PISCINA_PATH}${prenotazioneId}/scarica_biglietto/`;
 }

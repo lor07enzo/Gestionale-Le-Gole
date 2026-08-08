@@ -13,12 +13,13 @@ from .factories import PiscinaInventarioFactory
 pytestmark = pytest.mark.django_db
 
 
-def _prenotazione(inventario, data_prenotazione):
+def _prenotazione(inventario, data_prenotazione, stato="CONFIRMED"):
     return PrenotazionePiscina.objects.create(
         cliente_id=ClienteFactory(),
         inventario=inventario,
         data=data_prenotazione,
         ora="12:00",
+        stato=stato,
     )
 
 
@@ -88,3 +89,26 @@ class TestEliminazioneInventario:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert PrenotazionePiscina.objects.filter(inventario=inventario).count() == 2
+
+    def test_non_bloccata_se_la_prenotazione_futura_e_stata_annullata(self, auth_client, inventario):
+        # L'annullamento (stato='CANCELLED') ha sostituito l'eliminazione definitiva come azione
+        # normale dello staff (sezione 5 CLAUDE.md): una prenotazione futura ma cancellata non
+        # impegna più alcuna risorsa e non deve poter bloccare per sempre l'eliminazione.
+        cancellata = _prenotazione(inventario, date.today() + timedelta(days=3), stato="CANCELLED")
+
+        response = auth_client.delete(reverse("inventariopiscina-detail", args=[inventario.pk]))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not PiscinaInventario.objects.filter(pk=inventario.pk).exists()
+        # Ripulita insieme all'inventario: altrimenti PROTECT su PrenotazionePiscina.inventario
+        # farebbe fallire perform_destroy() con un ProtectedError.
+        assert not PrenotazionePiscina.objects.filter(pk=cancellata.pk).exists()
+
+    def test_bloccata_se_esiste_anche_una_sola_prenotazione_futura_non_cancellata(self, auth_client, inventario):
+        _prenotazione(inventario, date.today() + timedelta(days=3), stato="CANCELLED")
+        futura_attiva = _prenotazione(inventario, date.today() + timedelta(days=5), stato="CONFIRMED")
+
+        response = auth_client.delete(reverse("inventariopiscina-detail", args=[inventario.pk]))
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert PrenotazionePiscina.objects.filter(pk=futura_attiva.pk).exists()

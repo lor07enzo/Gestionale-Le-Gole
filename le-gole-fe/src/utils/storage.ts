@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 
 const ACCESS_TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
-const NOTIFICHE_LAST_SEEN_KEY = 'staffNotificheLastSeenAt';
+const NOTIFICHE_LETTE_KEY = 'staffNotificheLetteIds';
 
 // expo-secure-store non ha alcuna implementazione sul web (Keychain/Keystore non esistono nel browser):
 // su web usiamo localStorage come fallback, accettabile perché lì non esiste comunque uno storage "sicuro" via JS.
@@ -50,13 +50,22 @@ export async function clearTokens(): Promise<void> {
   await Promise.all([deleteItem(ACCESS_TOKEN_KEY), deleteItem(REFRESH_TOKEN_KEY)]);
 }
 
-// Timestamp ISO dell'ultima volta che lo staff ha aperto il pannello notifiche prenotazioni
-// (StaffNotificationsContext) — persistito perché un refresh della pagina (frequente su web,
-// il target attuale, sezione 8) non deve far ricomparire come "nuove" prenotazioni già viste.
-export function getNotificheLastSeenAt(): Promise<string | null> {
-  return getItem(NOTIFICHE_LAST_SEEN_KEY);
+// Id delle prenotazioni che lo staff ha già segnato come "lette" nel pannello notifiche
+// (StaffNotificationsContext/NotificationsBell) — persistito perché un refresh della pagina
+// (frequente su web, il target attuale, sezione 8) non deve far ricomparire come "non lette"
+// notifiche già gestite. Salvato come array JSON di id (non un singolo timestamp: il controllo
+// è ora per-notifica, non più "tutto ciò che è arrivato prima di un certo istante").
+export async function getNotificheLetteIds(): Promise<string[]> {
+  const raw = await getItem(NOTIFICHE_LETTE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
-export function saveNotificheLastSeenAt(isoTimestamp: string): Promise<void> {
-  return setItem(NOTIFICHE_LAST_SEEN_KEY, isoTimestamp);
+export function saveNotificheLetteIds(ids: string[]): Promise<void> {
+  return setItem(NOTIFICHE_LETTE_KEY, JSON.stringify(ids));
 }

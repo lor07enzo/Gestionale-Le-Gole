@@ -1,4 +1,4 @@
-import type { PrenotazionePiscina } from '../services/prenotazioni';
+import type { OccupazionePostazione, PrenotazionePiscina } from '../services/prenotazioni';
 import type { ResiduiPrenotazione } from '../utils/piscinaMappa';
 
 export type SheetMode = 'add-postazione' | 'assign' | 'occupant' | null;
@@ -84,4 +84,11 @@ export type ClienteDelGiornoEntry = {
   prenotazione: PrenotazionePiscina;
   residui: ResiduiPrenotazione | undefined;
   completo: boolean;
+  // Le OccupazionePostazione collegate a questa prenotazione (una per ogni ombrellone/gazebo già
+  // assegnato) — usate per il badge orario effettivo e il conteggio arrivi (sotto).
+  occupazioni: OccupazionePostazione[];
+  // Orario da mostrare in lista: se almeno una postazione è già assegnata, il più presto tra gli
+  // 'orario_arrivo_previsto' delle sue OccupazionePostazione (modificabile per singola postazione
+  // dalla mappa, sezione 5) — altrimenti l'orario originale della prenotazione (Prenotazione.ora).
+  orarioEffettivo: string;
 };

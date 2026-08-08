@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable } from 'react-native';
+import { router, type Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Spinner } from '@/components/ui/spinner';
-import { BellIcon, CheckIcon, ClockIcon, Icon } from '@/components/ui/icon';
+import { BellIcon, CheckIcon, ChevronRightIcon, ClockIcon, Icon } from '@/components/ui/icon';
 import {
   Actionsheet,
   ActionsheetBackdrop,
@@ -16,57 +17,190 @@ import {
   ActionsheetScrollView,
 } from '@/components/ui/actionsheet';
 import { useStaffNotifications } from '../../context/StaffNotificationsContext';
-import { formatDateDDMMYYYY, formatIngressiSummary, formatTime } from '../../utils/piscinaMappa';
+import { formatDateDDMMYYYY, formatIngressiSummary, formatRelativeTime, formatTime } from '../../utils/piscinaMappa';
 import type { PrenotazionePiscina } from '../../services/prenotazioni';
 
-function NotificaRow({
+// Piscina è l'unica categoria con dati reali per ora — Asporto/Ristorante non hanno ancora un
+// modello/API backend (sezione 1 CLAUDE.md, stesso stato "Da sviluppare" del selettore tipo
+// inventario in PiscinaInventarioSection.tsx). I filtri esistono comunque già in UI, pronti per
+// quando quei servizi arriveranno.
+type Categoria = 'TUTTI' | 'PISCINA' | 'ASPORTO' | 'RISTORANTE';
+
+const CATEGORIE: Array<{ key: Categoria; label: string; icon: string; disponibile: boolean }> = [
+  { key: 'TUTTI', label: 'Tutti', icon: '', disponibile: true },
+  { key: 'PISCINA', label: 'Piscina', icon: '🏊', disponibile: true },
+  { key: 'ASPORTO', label: 'Asporto', icon: '🥡', disponibile: false },
+  { key: 'RISTORANTE', label: 'Sala', icon: '🍽️', disponibile: false },
+];
+
+// Iniziali per l'avatar della card notifica — "Mario Rossi" -> "MR", "Mario" -> "MA".
+function getIniziali(nome: string): string {
+  const parole = nome.trim().split(/\s+/).filter(Boolean);
+  if (parole.length === 0) return '?';
+  if (parole.length === 1) return parole[0].slice(0, 2).toUpperCase();
+  return (parole[0][0] + parole[1][0]).toUpperCase();
+}
+
+// Segmented control (tab attivo = pillola bianca sollevata su sfondo sky-50), non la pillola
+// piena sky-600 già usata dal toggle Mese/Settimana di CalendarPicker (sezione 5) — qui i tab
+// sono 4, non 2, e un'unica pillola piena su 4 colonne strette risultava meno leggibile della
+// variante "sollevata". Le due categorie non ancora disponibili restano testo attenuato,
+// distinguibili a colpo d'occhio senza dover leggere il messaggio sotto per capire lo stato.
+function CategoriaTabs({
+  categoria,
+  onChange,
+  unreadCount,
+}: Readonly<{ categoria: Categoria; onChange: (c: Categoria) => void; unreadCount: number }>) {
+  return (
+    <HStack space="xs" className="w-full rounded-2xl bg-sky-50 p-1">
+      {CATEGORIE.map((c) => {
+        const isActive = categoria === c.key;
+        const showBadge = c.disponibile && unreadCount > 0;
+        return (
+          <Pressable
+            key={c.key}
+            accessibilityRole="button"
+            accessibilityLabel={`Filtra per ${c.label}${c.disponibile ? '' : ' (in arrivo)'}`}
+            onPress={() => onChange(c.key)}
+            className={`flex-1 flex-row items-center justify-center gap-1 rounded-xl px-1.5 py-2 ${
+              isActive ? 'bg-white shadow-sm' : ''
+            }`}
+          >
+            {c.icon ? <Text size="xs">{c.icon}</Text> : null}
+            <Text
+              size="xs"
+              className={`font-bold ${
+                !c.disponibile ? 'text-muted-foreground/70' : isActive ? 'text-sky-700' : 'text-sky-600/80'
+              }`}
+            >
+              {c.label}
+            </Text>
+            {showBadge ? (
+              <Box className="min-w-4 items-center justify-center rounded-full bg-sky-600 px-1">
+                <Text size="2xs" className="text-center font-bold leading-none text-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </Box>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </HStack>
+  );
+}
+
+function InfoChip({
+  icon,
+  children,
+  tone = 'sky',
+}: Readonly<{ icon?: React.ReactNode; children: React.ReactNode; tone?: 'sky' | 'emerald' }>) {
+  const toneClasses =
+    tone === 'emerald' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-sky-200 bg-sky-50 text-sky-700';
+  return (
+    <HStack space="xs" className={`items-center rounded-full border px-2.5 py-1 ${toneClasses}`}>
+      {icon}
+      <Text size="2xs" className={`font-bold ${tone === 'emerald' ? 'text-emerald-700' : 'text-sky-700'}`}>
+        {children}
+      </Text>
+    </HStack>
+  );
+}
+
+// Una volta segnata come letta la notifica esce dalla lista (NotificationsBell la filtra) — ogni
+// card qui è quindi sempre "non letta" per definizione, niente più variante di stile per lo stato
+// letto (semplificazione rispetto alla versione precedente, che teneva le lette visibili).
+function NotificaCard({
   prenotazione,
-  onConfirm,
-  isConfirming,
+  onDismiss,
+  onOpen,
 }: Readonly<{
   prenotazione: PrenotazionePiscina;
-  onConfirm: (p: PrenotazionePiscina) => void;
-  isConfirming: boolean;
+  onDismiss: () => void;
+  onOpen: () => void;
 }>) {
   return (
-    <Box className="rounded-2xl border border-amber-100 bg-amber-50/40 p-3">
-      <HStack space="sm" className="items-start justify-between">
-        <VStack space="xs" className="flex-1">
-          <HStack space="xs" className="flex-wrap items-center">
-            <Text size="sm" className="font-semibold text-sky-900">
-              {prenotazione.cliente_nome}
-            </Text>
-            <HStack space="xs" className="items-center rounded-full border border-sky-200 bg-white px-2.5 py-1">
-              <Icon as={ClockIcon} size="2xs" className="text-sky-700" />
-              <Text size="2xs" className="font-bold text-sky-700">
-                {formatDateDDMMYYYY(prenotazione.data)} · {formatTime(prenotazione.ora)}
+    <Box className="overflow-hidden rounded-2xl border border-sky-200 bg-sky-50/50 shadow-sm">
+      {/* Barra di accento a sinistra: un Box colorato "sorella" del contenuto, non un
+          border-l-* — nessun precedente nel progetto per utility di bordo per-lato, preferito
+          restare su bg-* (pattern già ampiamente collaudato altrove) piuttosto che rischiare
+          un'incompatibilità silenziosa di NativeWind v5/react-native-css (ancora alpha, sezione 4). */}
+      <HStack className="items-stretch">
+        <Box className="w-1 bg-sky-500" />
+
+        <HStack space="sm" className="flex-1 items-start justify-between p-3">
+          {/* Pressable "sorella", non annidata in quella del pulsante segna-come-letta: nidificare
+              due Pressable rischierebbe un doppio trigger su web (react-native-web fa risalire il
+              click al genitore, stesso principio già documentato per DateNavigator, sezione 5).
+              active:bg-* dà un feedback di pressione visibile (oltre al chevron sotto) — lo stesso
+              linguaggio "riga cliccabile" di una qualunque lista di navigazione. */}
+          <Pressable
+            onPress={onOpen}
+            accessibilityRole="button"
+            accessibilityLabel={`Vai alla mappa piscina per la prenotazione di ${prenotazione.cliente_nome}`}
+            className="-m-1 flex-1 flex-row items-start gap-3 rounded-xl p-1 active:bg-sky-100/70"
+          >
+            <Box className="h-10 w-10 items-center justify-center rounded-full bg-sky-600">
+              <Text size="xs" className="font-bold text-white">
+                {getIniziali(prenotazione.cliente_nome)}
               </Text>
-            </HStack>
-          </HStack>
-          <Text size="xs" className="text-muted-foreground">
-            {prenotazione.cliente_telefono}
-          </Text>
-          {prenotazione.note ? (
-            <Text size="xs" className="italic text-sky-900/70">
-              📝 {prenotazione.note}
-            </Text>
-          ) : null}
-          <Text size="xs" className="text-sky-900/70">
-            {formatIngressiSummary(prenotazione)}{' '}
-            {prenotazione.ombrellone > 0 ? `⛱️ ${prenotazione.ombrellone} ` : ''}
-            {prenotazione.gazebo > 0 ? `⛺ ${prenotazione.gazebo} ` : ''}
-            {prenotazione.lettino > 0 ? `🛏️ ${prenotazione.lettino} ` : ''}
-            {prenotazione.sdraia > 0 ? `🪑 ${prenotazione.sdraia}` : ''}
-          </Text>
-        </VStack>
-        <Pressable
-          accessibilityLabel={`Conferma prenotazione di ${prenotazione.cliente_nome}`}
-          onPress={() => onConfirm(prenotazione)}
-          disabled={isConfirming}
-          className="h-8 w-8 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 active:bg-emerald-100"
-        >
-          {isConfirming ? <Spinner size="small" /> : <Icon as={CheckIcon} size="sm" className="text-emerald-700" />}
-        </Pressable>
+            </Box>
+
+            <VStack space="xs" className="flex-1">
+              <HStack space="xs" className="items-center justify-between">
+                <HStack space="xs" className="flex-1 items-center">
+                  <Box className="h-2 w-2 rounded-full bg-sky-600" />
+                  <Text size="sm" className="flex-1 font-semibold text-sky-900">
+                    {prenotazione.cliente_nome}
+                  </Text>
+                </HStack>
+                <Text size="2xs" className="text-muted-foreground">
+                  {formatRelativeTime(prenotazione.created_at)}
+                </Text>
+              </HStack>
+
+              <HStack space="xs" className="flex-wrap items-center">
+                <InfoChip icon={<Icon as={ClockIcon} size="2xs" className="text-sky-700" />} tone="sky">
+                  {formatDateDDMMYYYY(prenotazione.data)} · {formatTime(prenotazione.ora)}
+                </InfoChip>
+                <InfoChip tone="emerald">🏊 {prenotazione.inventario_nome}</InfoChip>
+              </HStack>
+
+              <Text size="xs" className="text-muted-foreground">
+                {prenotazione.cliente_telefono}
+              </Text>
+              {prenotazione.note ? (
+                <Text size="xs" className="italic text-sky-900/70">
+                  📝 {prenotazione.note}
+                </Text>
+              ) : null}
+
+              <Box className="mt-0.5 h-px w-full bg-border" />
+
+              <Text size="xs" className="text-sky-900/70">
+                {formatIngressiSummary(prenotazione)}{' '}
+                {prenotazione.ombrellone > 0 ? `⛱️ ${prenotazione.ombrellone} ` : ''}
+                {prenotazione.gazebo > 0 ? `⛺ ${prenotazione.gazebo} ` : ''}
+                {prenotazione.lettino > 0 ? `🛏️ ${prenotazione.lettino} ` : ''}
+                {prenotazione.sdraia > 0 ? `🪑 ${prenotazione.sdraia}` : ''}
+              </Text>
+            </VStack>
+
+            {/* Indicatore di navigazione (disclosure chevron, come una riga di lista standard):
+                segnale visivo esplicito, in aggiunta al feedback active:bg-* sopra, che l'intera
+                riga porta altrove al tocco. */}
+            <Icon as={ChevronRightIcon} size="sm" className="mt-1 shrink-0 text-sky-300" />
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Segna come letta la notifica di ${prenotazione.cliente_nome}`}
+            onPress={onDismiss}
+            hitSlop={8}
+            className="h-8 w-8 items-center justify-center rounded-full border border-sky-200 bg-white active:bg-emerald-50"
+          >
+            <Icon as={CheckIcon} size="sm" className="text-sky-400" />
+          </Pressable>
+        </HStack>
       </HStack>
     </Box>
   );
@@ -91,27 +225,41 @@ export function NotificationsBanner() {
 
 export function NotificationsBell() {
   const [isOpen, setIsOpen] = useState(false);
-  const { pendenti, nuoveCount, isLoading, error, markAllAsSeen, confirmingId, confirmPrenotazione } =
-    useStaffNotifications();
+  const [categoria, setCategoria] = useState<Categoria>('TUTTI');
+  const { notifiche, unreadCount, isLoading, error, isRead, markAsRead } = useStaffNotifications();
 
-  const handleOpen = () => {
-    setIsOpen(true);
-    markAllAsSeen();
+  // Solo Piscina ha dati reali oggi: Asporto/Ristorante mostrano sempre una lista vuota con un
+  // messaggio dedicato, non un errore — coerente col resto dell'app per i servizi "Da sviluppare".
+  // Le notifiche già lette sono filtrate qui, non solo attenuate: una volta gestita (o segnata
+  // esplicitamente) una notifica non ha più motivo di restare nell'elenco — l'elenco è quindi
+  // sempre "cosa manca da vedere", non un archivio di tutto l'arrivato di recente.
+  const categoriaAttiva = CATEGORIE.find((c) => c.key === categoria)!;
+  const visibili = useMemo(
+    () => (categoriaAttiva.disponibile ? notifiche.filter((p) => !isRead(p.id)) : []),
+    [categoriaAttiva.disponibile, notifiche, isRead]
+  );
+
+  const handleOpenPrenotazione = (p: PrenotazionePiscina) => {
+    markAsRead(p.id);
+    setIsOpen(false);
+    router.push(`/staff/piscina/${p.inventario}?data=${p.data}` as Href);
   };
 
   return (
     <>
       <Pressable
         className="relative h-9 w-9 items-center justify-center md:h-10 md:w-10"
-        onPress={handleOpen}
+        onPress={() => setIsOpen(true)}
         accessibilityRole="button"
-        accessibilityLabel={nuoveCount > 0 ? `Notifiche prenotazioni, ${nuoveCount} nuove` : 'Notifiche prenotazioni'}
+        accessibilityLabel={
+          unreadCount > 0 ? `Notifiche prenotazioni, ${unreadCount} da leggere` : 'Notifiche prenotazioni'
+        }
       >
         <Icon as={BellIcon} size="md" className="text-sky-700" />
-        {nuoveCount > 0 ? (
-          <Box className="absolute -right-1 -top-1 h-4 min-w-4 items-center justify-center rounded-full border border-background bg-amber-100 px-1">
-            <Text size="2xs" className="text-center font-bold leading-none text-amber-700">
-              {nuoveCount > 9 ? '9+' : nuoveCount}
+        {unreadCount > 0 ? (
+          <Box className="absolute -right-1 -top-1 h-4 min-w-4 items-center justify-center rounded-full border-2 border-background bg-sky-600 px-1">
+            <Text size="2xs" className="text-center font-bold leading-none text-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
             </Text>
           </Box>
         ) : null}
@@ -127,40 +275,59 @@ export function NotificationsBell() {
           <ActionsheetScrollView className="w-full">
             <VStack space="md" className="w-full pb-6 pt-1">
               <HStack className="items-center justify-between px-1">
-                <Heading size="sm">Prenotazioni in attesa</Heading>
-                <Box className="rounded-full bg-amber-100 px-2.5 py-1">
-                  <Text size="2xs" className="font-bold text-amber-700">
-                    {pendenti.length}
-                  </Text>
-                </Box>
+                <Heading size="sm">Notifiche prenotazioni</Heading>
+                {visibili.length > 0 ? (
+                  <Box className="rounded-full bg-sky-600 px-2.5 py-1">
+                    <Text size="2xs" className="font-bold text-white">
+                      {visibili.length} da leggere
+                    </Text>
+                  </Box>
+                ) : null}
               </HStack>
 
-              {isLoading && pendenti.length === 0 ? (
-                <Box className="items-center py-6">
-                  <Spinner size="small" />
-                </Box>
-              ) : null}
+              <CategoriaTabs categoria={categoria} onChange={setCategoria} unreadCount={unreadCount} />
 
-              {error ? (
-                <Text size="xs" className="px-1 text-destructive">
-                  {error}
-                </Text>
-              ) : null}
+              {!categoriaAttiva.disponibile ? (
+                <VStack space="xs" className="items-center rounded-2xl border border-dashed border-border px-4 py-6">
+                  <Text size="2xl">{categoriaAttiva.icon}</Text>
+                  <Text size="sm" className="text-center text-muted-foreground">
+                    Le notifiche per {categoriaAttiva.label} saranno disponibili quando questo servizio verrà
+                    sviluppato.
+                  </Text>
+                </VStack>
+              ) : (
+                <>
+                  {isLoading && visibili.length === 0 ? (
+                    <Box className="items-center py-6">
+                      <Spinner size="small" />
+                    </Box>
+                  ) : null}
 
-              {!isLoading && pendenti.length === 0 && !error ? (
-                <Text size="sm" className="px-1 text-muted-foreground">
-                  Nessuna prenotazione in attesa di conferma.
-                </Text>
-              ) : null}
+                  {error ? (
+                    <Text size="xs" className="px-1 text-destructive">
+                      {error}
+                    </Text>
+                  ) : null}
 
-              {pendenti.map((p) => (
-                <NotificaRow
-                  key={p.id}
-                  prenotazione={p}
-                  onConfirm={(pren) => confirmPrenotazione(pren.id)}
-                  isConfirming={confirmingId === p.id}
-                />
-              ))}
+                  {!isLoading && visibili.length === 0 && !error ? (
+                    <VStack space="xs" className="items-center rounded-2xl border border-dashed border-border px-4 py-6">
+                      <Text size="2xl">✅</Text>
+                      <Text size="sm" className="text-center text-muted-foreground">
+                        Nessuna notifica da leggere.
+                      </Text>
+                    </VStack>
+                  ) : null}
+
+                  {visibili.map((p) => (
+                    <NotificaCard
+                      key={p.id}
+                      prenotazione={p}
+                      onDismiss={() => markAsRead(p.id)}
+                      onOpen={() => handleOpenPrenotazione(p)}
+                    />
+                  ))}
+                </>
+              )}
             </VStack>
           </ActionsheetScrollView>
         </ActionsheetContent>

@@ -50,6 +50,7 @@ export function MappaCanvas() {
             scale={scale}
             isOccupied={occupazioneByPostazione.has(postazione.id)}
             clienteNome={occupazioneByPostazione.get(postazione.id)?.cliente_nome}
+            arrivato={occupazioneByPostazione.get(postazione.id)?.arrivato}
             isSelectable={
               !isEditMode &&
               !occupazioneByPostazione.has(postazione.id) &&

@@ -38,6 +38,9 @@ type PostazioneMarkerProps = {
   // Nome del cliente assegnato, mostrato in un cartellino sotto l'icona quando la postazione è
   // occupata — undefined quando libera.
   clienteNome?: string;
+  // Check-in manuale del cliente assegnato (OccupazionePostazione.arrivato) — mostra un badge
+  // verde sul marker, per vedere a colpo d'occhio chi è già arrivato senza aprire ogni foglio.
+  arrivato?: boolean;
   scale: number;
   // Giorno passato: il tap resta attivo (per consultare l'occupante), ma il trascinamento è
   // sempre disattivato — la posizione è un dato strutturale condiviso da tutte le date, non ha
@@ -68,6 +71,7 @@ export function PostazioneMarker({
   isSelectable,
   isSelected = false,
   clienteNome,
+  arrivato = false,
   scale,
   readOnly,
   editMode,
@@ -201,6 +205,31 @@ export function PostazioneMarker({
           #{postazione.numero}
         </Text>
       </Box>
+
+      {/* Badge check-in: overlay in alto a destra sul cerchio, non annidato al suo interno (stesso
+          principio del cartellino nome sotto — pointer-events-none, il tap resta gestito solo dal
+          cerchio). Anello bianco per "ritagliarlo" dal bordo del marker sottostante, stesso
+          effetto già usato per i badge conteggio di CalendarPicker (sezione 5). */}
+      {isOccupied && arrivato ? (
+        <Box
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: left + iconSize - 7 * scale,
+            top: top - 3 * scale,
+            width: 14 * scale,
+            height: 14 * scale,
+          }}
+          className="items-center justify-center rounded-full border-2 border-white bg-emerald-500"
+        >
+          <Text
+            className="select-none font-bold text-white"
+            style={{ fontSize: 8 * scale, lineHeight: 9 * scale }}
+          >
+            ✓
+          </Text>
+        </Box>
+      ) : null}
 
       {/* Cartellino col nome del cliente assegnato, sotto l'icona — sibling assoluto (non
           annidato nel cerchio, troppo piccolo per contenere un nome leggibile), non interattivo

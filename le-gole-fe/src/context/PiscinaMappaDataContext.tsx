@@ -22,7 +22,6 @@ import {
   createOccupazione,
   createPrenotazionePiscina,
   deleteOccupazione,
-  deletePrenotazionePiscina,
   listGiorniPieni,
   listOccupazioni,
   listPrenotazioniPiscina,
@@ -44,6 +43,7 @@ import {
   CANVAS_WIDTH,
   clamp,
   DISPONIBILITA_ITEMS,
+  parseISODate,
   toISODate,
   type ResiduiPrenotazione,
 } from '../utils/piscinaMappa';
@@ -96,7 +96,12 @@ type PiscinaMappaDataValue = {
     id: string,
     payload: UpdatePrenotazionePiscinaPayload
   ) => Promise<PrenotazionePiscina>;
-  removePrenotazione: (id: string) => Promise<void>;
+  // Annulla (PATCH stato='CANCELLED') — dal 2026-08-07 unica azione di rimozione disponibile per
+  // lo staff, l'eliminazione definitiva (DELETE reale) non è più esposta lato UI: la prenotazione
+  // resta nello storico cliente (sezione 5 CLAUDE.md), il backend libera da sé le postazioni
+  // assegnate (PrenotazionePiscinaViewSet.perform_update), qui rispecchiamo subito la stessa
+  // pulizia in locale rimuovendo la prenotazione dalle liste del giorno e le occupazioni collegate.
+  cancelPrenotazione: (id: string) => Promise<void>;
 };
 
 const PiscinaMappaDataContext = createContext<PiscinaMappaDataValue | undefined>(undefined);
@@ -108,18 +113,34 @@ function filterPrenotazioniAttive(
   return prenotazioni.filter((p) => p.inventario === inventarioId && p.stato !== 'CANCELLED');
 }
 
+// Il più presto tra gli orari di arrivo delle postazioni già assegnate a questa prenotazione, se
+// ce n'è almeno una — altrimenti l'orario originale della prenotazione. Più postazioni potrebbero
+// avere orari diversi (modificabili singolarmente, sezione 5): mostriamo il più presto perché è
+// il dato più utile per lo staff (il primo momento in cui aspettarsi qualcuno di questo gruppo).
+function calcolaOrarioEffettivo(prenotazione: PrenotazionePiscina, occupazioni: OccupazionePostazione[]): string {
+  if (occupazioni.length === 0) return prenotazione.ora;
+  return occupazioni.reduce(
+    (min, o) => (o.orario_arrivo_previsto < min ? o.orario_arrivo_previsto : min),
+    occupazioni[0].orario_arrivo_previsto
+  );
+}
+
 export function PiscinaMappaDataProvider({
   inventarioId,
+  initialDate,
   children,
 }: Readonly<{
   inventarioId: string;
+  // 'YYYY-MM-DD' opzionale (es. dal query param ?data= impostato dal pannello notifiche staff,
+  // NotificationsBell): se presente, la mappa si apre già su quel giorno invece che su oggi.
+  initialDate?: string;
   children: ReactNode;
 }>) {
   const [inventario, setInventario] = useState<PiscinaInventario | null>(null);
   const [postazioni, setPostazioni] = useState<Postazione[]>([]);
   const [prenotazioni, setPrenotazioni] = useState<PrenotazionePiscina[]>([]);
   const [occupazioni, setOccupazioni] = useState<OccupazionePostazione[]>([]);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(() => (initialDate ? parseISODate(initialDate) : new Date()));
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
@@ -133,6 +154,17 @@ export function PiscinaMappaDataProvider({
   useEffect(() => {
     setIsEditMode(false);
   }, [selectedDate]);
+
+  // Risincronizza selectedDate se initialDate cambia mentre il componente resta montato — es.
+  // due notifiche diverse per la stessa piscina aperte in sequenza dal pannello notifiche
+  // (NotificationsBell), dove solo il query param ?data= cambia senza uno smontaggio della
+  // pagina. Il useState iniziale sopra copre solo il primissimo mount.
+  useEffect(() => {
+    if (initialDate) {
+      setSelectedDate(parseISODate(initialDate));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +209,19 @@ export function PiscinaMappaDataProvider({
     () => new Map(occupazioni.map((o) => [o.postazione, o])),
     [occupazioni]
   );
+
+  // Tutte le OccupazionePostazione collegate a ciascuna prenotazione (es. 3 gazebi -> 3 voci) —
+  // usato per l'orario effettivo e il conteggio arrivi in clientiDelGiorno, sotto.
+  const occupazioniByPrenotazione = useMemo(() => {
+    const map = new Map<string, OccupazionePostazione[]>();
+    for (const occ of occupazioni) {
+      if (!occ.prenotazione) continue;
+      const lista = map.get(occ.prenotazione) ?? [];
+      lista.push(occ);
+      map.set(occ.prenotazione, lista);
+    }
+    return map;
+  }, [occupazioni]);
 
   // Un cliente che prenota più ombrelloni e/o gazebi va assegnato una volta per unità prenotata:
   // per ogni prenotazione contiamo quante occupazioni sono già collegate, distinte per tipo
@@ -228,20 +273,27 @@ export function PiscinaMappaDataProvider({
   );
 
   // "Completo" = nessuna unità ombrellone/gazebo residua (solo-ingresso sempre completo).
-  // Ordinati: da assegnare in cima, poi per orario di arrivo crescente.
+  // Ordinati: da assegnare in cima, poi per orario effettivo crescente (vedi calcolaOrarioEffettivo).
   const clientiDelGiorno = useMemo<ClienteDelGiornoEntry[]>(
     () =>
       [...prenotazioni]
         .map((p) => {
           const residui = remainingByPrenotazione.get(p.id);
           const completo = !residui || (residui.ombrellone === 0 && residui.gazebo === 0);
-          return { prenotazione: p, residui, completo };
+          const occupazioniAssegnate = occupazioniByPrenotazione.get(p.id) ?? [];
+          return {
+            prenotazione: p,
+            residui,
+            completo,
+            occupazioni: occupazioniAssegnate,
+            orarioEffettivo: calcolaOrarioEffettivo(p, occupazioniAssegnate),
+          };
         })
         .sort((a, b) => {
           if (a.completo !== b.completo) return a.completo ? 1 : -1;
-          return a.prenotazione.ora.localeCompare(b.prenotazione.ora);
+          return a.orarioEffettivo.localeCompare(b.orarioEffettivo);
         }),
-    [prenotazioni, remainingByPrenotazione]
+    [prenotazioni, remainingByPrenotazione, occupazioniByPrenotazione]
   );
 
   // Rispecchia il conteggio anti-overbooking del backend (prenotazioni/serializers.py):
@@ -332,12 +384,13 @@ export function PiscinaMappaDataProvider({
     return updated;
   };
 
-  const removePrenotazione = async (id: string): Promise<void> => {
-    await deletePrenotazionePiscina(id);
+  const cancelPrenotazione = async (id: string): Promise<void> => {
+    await updatePrenotazionePiscina(id, { stato: 'CANCELLED' });
+    // Il record non viene eliminato lato backend (resta nello storico cliente) — ma sulla mappa
+    // del giorno una prenotazione CANCELLED non ha più nulla da fare (stesso filtro già applicato
+    // al caricamento, filterPrenotazioniAttive sopra): la togliamo dallo stato locale invece di
+    // lasciarla come riga "fantasma" a 0 residui.
     setPrenotazioni((prev) => prev.filter((p) => p.id !== id));
-    // Il backend elimina anche le OccupazionePostazione collegate (vedi
-    // PrenotazionePiscinaViewSet.destroy), liberando davvero le postazioni sulla mappa:
-    // rispecchiamo subito la stessa pulizia in locale, senza aspettare un refetch.
     setOccupazioni((prev) => prev.filter((o) => o.prenotazione !== id));
   };
 
@@ -389,7 +442,7 @@ export function PiscinaMappaDataProvider({
       removeOccupazione,
       addPrenotazione,
       editPrenotazione,
-      removePrenotazione,
+      cancelPrenotazione,
     }),
     [
       inventarioId,

@@ -1,9 +1,12 @@
+import { Pressable } from 'react-native';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { CheckCircleIcon, CircleIcon, Icon } from '@/components/ui/icon';
 import type { PiscinaSheetsValue } from '../../../../context/PiscinaSheetsContext';
 import { formatOrarioInput } from '../../../../utils/piscinaMappa';
 
@@ -21,6 +24,9 @@ export function OccupantForm({ sheets }: Readonly<{ sheets: PiscinaSheetsValue }
     isSubmittingSheet,
     confirmOccupantEdit,
     liberaPostazione,
+    arrivato,
+    isTogglingArrivato,
+    toggleArrivato,
   } = sheets;
 
   if (!targetPostazione) return null;
@@ -33,6 +39,29 @@ export function OccupantForm({ sheets }: Readonly<{ sheets: PiscinaSheetsValue }
           Sola lettura: le assegnazioni non sono modificabili per un giorno passato.
         </Text>
       ) : null}
+      {/* Check-in per QUESTA postazione: se il cliente ha prenotato più unità dello stesso tipo
+          (es. 3 gazebi), va segnato separatamente su ciascuna — non è un flag sulla prenotazione. */}
+      <Pressable
+        onPress={toggleArrivato}
+        disabled={isPastDate || isTogglingArrivato}
+        accessibilityRole="button"
+        accessibilityLabel={arrivato ? 'Segna cliente come non ancora arrivato' : 'Segna cliente come arrivato'}
+        className={`flex-row items-center justify-between rounded-xl border p-3 ${
+          arrivato ? 'border-emerald-300 bg-emerald-50' : 'border-sky-200 bg-white'
+        } ${isPastDate ? 'opacity-50' : ''}`}
+      >
+        <HStack space="sm" className="items-center">
+          <Icon
+            as={arrivato ? CheckCircleIcon : CircleIcon}
+            size="md"
+            className={arrivato ? 'text-emerald-600' : 'text-sky-300'}
+          />
+          <Text size="sm" className={`font-semibold ${arrivato ? 'text-emerald-800' : 'text-sky-900'}`}>
+            {arrivato ? 'Cliente arrivato' : 'Cliente non ancora arrivato'}
+          </Text>
+        </HStack>
+        {isTogglingArrivato ? <Spinner size="small" /> : null}
+      </Pressable>
       <VStack space="xs">
         <Text size="sm" className="font-medium">
           Nome cliente

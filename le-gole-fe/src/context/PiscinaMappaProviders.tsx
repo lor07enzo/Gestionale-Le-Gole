@@ -8,10 +8,11 @@ import { PiscinaSheetsProvider } from './PiscinaSheetsContext';
 // PiscinaSelectionContext (candidato selezionato), quindi deve stare annidato dentro entrambi.
 export function PiscinaMappaProviders({
   inventarioId,
+  initialDate,
   children,
-}: Readonly<{ inventarioId: string; children: ReactNode }>) {
+}: Readonly<{ inventarioId: string; initialDate?: string; children: ReactNode }>) {
   return (
-    <PiscinaMappaDataProvider inventarioId={inventarioId}>
+    <PiscinaMappaDataProvider inventarioId={inventarioId} initialDate={initialDate}>
       <PiscinaSelectionProvider>
         <PiscinaSheetsProvider>{children}</PiscinaSheetsProvider>
       </PiscinaSelectionProvider>

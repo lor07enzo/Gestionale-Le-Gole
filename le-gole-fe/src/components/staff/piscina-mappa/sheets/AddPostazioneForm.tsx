@@ -9,7 +9,19 @@ import type { PiscinaSheetsValue } from '../../../../context/PiscinaSheetsContex
 // Non chiama usePiscinaSheets() da sé: è un figlio di <Actionsheet>, teleportato fuori
 // dall'albero del Provider da gluestack-ui (vedi il commento in PostazioneSheet.tsx).
 export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsValue }>) {
-  const { newTipo, setNewTipo, newNumero, sheetError, isSubmittingSheet, confirmAddPostazione } = sheets;
+  const {
+    newTipo,
+    setNewTipo,
+    newNumero,
+    capacitaOmbrelloni,
+    capacitaGazebi,
+    sheetError,
+    isSubmittingSheet,
+    confirmAddPostazione,
+  } = sheets;
+
+  const capacita = newTipo === 'OMBRELLONE' ? capacitaOmbrelloni : capacitaGazebi;
+  const limiteRaggiunto = capacita.usati >= capacita.totale;
 
   return (
     <>
@@ -22,26 +34,46 @@ export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsVa
         </Text>
       </VStack>
       <HStack space="sm">
-        <Button
-          size="sm"
-          variant={newTipo === 'OMBRELLONE' ? 'default' : 'outline'}
-          className={`flex-1 ${newTipo === 'OMBRELLONE' ? '' : 'border-2 border-sky-300'}`}
-          onPress={() => setNewTipo('OMBRELLONE')}
-        >
-          <ButtonText className={newTipo === 'OMBRELLONE' ? '' : 'font-semibold text-sky-900'}>
-            ⛱️ Ombrellone
-          </ButtonText>
-        </Button>
-        <Button
-          size="sm"
-          variant={newTipo === 'GAZEBO' ? 'default' : 'outline'}
-          className={`flex-1 ${newTipo === 'GAZEBO' ? '' : 'border-2 border-sky-300'}`}
-          onPress={() => setNewTipo('GAZEBO')}
-        >
-          <ButtonText className={newTipo === 'GAZEBO' ? '' : 'font-semibold text-sky-900'}>
-            ⛺ Gazebo
-          </ButtonText>
-        </Button>
+        <VStack space="xs" className="flex-1">
+          <Button
+            size="sm"
+            variant={newTipo === 'OMBRELLONE' ? 'default' : 'outline'}
+            className={newTipo === 'OMBRELLONE' ? '' : 'border-2 border-sky-300'}
+            onPress={() => setNewTipo('OMBRELLONE')}
+          >
+            <ButtonText className={newTipo === 'OMBRELLONE' ? '' : 'font-semibold text-sky-900'}>
+              ⛱️ Ombrellone
+            </ButtonText>
+          </Button>
+          <Text
+            size="2xs"
+            className={`text-center ${
+              capacitaOmbrelloni.usati >= capacitaOmbrelloni.totale ? 'font-medium text-destructive' : 'text-muted-foreground'
+            }`}
+          >
+            {capacitaOmbrelloni.usati}/{capacitaOmbrelloni.totale} posizionati
+          </Text>
+        </VStack>
+        <VStack space="xs" className="flex-1">
+          <Button
+            size="sm"
+            variant={newTipo === 'GAZEBO' ? 'default' : 'outline'}
+            className={newTipo === 'GAZEBO' ? '' : 'border-2 border-sky-300'}
+            onPress={() => setNewTipo('GAZEBO')}
+          >
+            <ButtonText className={newTipo === 'GAZEBO' ? '' : 'font-semibold text-sky-900'}>
+              ⛺ Gazebo
+            </ButtonText>
+          </Button>
+          <Text
+            size="2xs"
+            className={`text-center ${
+              capacitaGazebi.usati >= capacitaGazebi.totale ? 'font-medium text-destructive' : 'text-muted-foreground'
+            }`}
+          >
+            {capacitaGazebi.usati}/{capacitaGazebi.totale} posizionati
+          </Text>
+        </VStack>
       </HStack>
       <VStack space="xs">
         <Text size="sm" className="font-medium">
@@ -53,12 +85,18 @@ export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsVa
           </Text>
         </Box>
       </VStack>
+      {limiteRaggiunto ? (
+        <Text size="sm" className="text-center text-destructive">
+          Limite raggiunto: il listino prevede al massimo {capacita.totale}{' '}
+          {newTipo === 'OMBRELLONE' ? 'ombrelloni' : 'gazebi'}.
+        </Text>
+      ) : null}
       {sheetError ? (
         <Text size="sm" className="text-center text-destructive">
           {sheetError}
         </Text>
       ) : null}
-      <Button onPress={confirmAddPostazione} disabled={isSubmittingSheet}>
+      <Button onPress={confirmAddPostazione} disabled={isSubmittingSheet || limiteRaggiunto}>
         {isSubmittingSheet ? <ButtonSpinner /> : <ButtonText>Aggiungi</ButtonText>}
       </Button>
     </>

@@ -49,6 +49,11 @@ export type PiscinaSheetsValue = {
   setNewTipo: (tipo: TipoPostazione) => void;
   newNumero: string;
   setNewNumero: (value: string) => void;
+  // Postazioni fisiche attive per tipo rispetto al totale previsto dal listino (inventario.totale_
+  // ombrelloni/totale_gazebi) — usato da AddPostazioneForm per mostrare "X/Y posizionati" e
+  // disabilitare "Aggiungi" quando il tipo selezionato ha raggiunto il limite (sezione 5 CLAUDE.md).
+  capacitaOmbrelloni: { usati: number; totale: number };
+  capacitaGazebi: { usati: number; totale: number };
   clientiSelezionabiliPerTarget: PrenotazionePiscina[];
   sheetAriaLabel: string;
   openAddPostazioneSheet: () => void;
@@ -59,6 +64,12 @@ export type PiscinaSheetsValue = {
   confirmOccupantEdit: () => Promise<void>;
   liberaPostazione: () => Promise<void>;
   handleDeletePostazione: (postazione: Postazione) => void;
+
+  // Check-in manuale del cliente assegnato a questa postazione (foglio "occupant") — per
+  // singola postazione, non per prenotazione: un cliente con 3 gazebi va segnato su ciascuno.
+  arrivato: boolean;
+  isTogglingArrivato: boolean;
+  toggleArrivato: () => Promise<void>;
 
   // Picker cliente (dentro il foglio "assign").
   isClientPickerOpen: boolean;
@@ -88,7 +99,10 @@ export type PiscinaSheetsValue = {
   openEditPrenotazione: (p: PrenotazionePiscina) => void;
   closeEditPrenotazione: () => void;
   confirmEditPrenotazione: () => Promise<void>;
-  handleDeletePrenotazione: (p: PrenotazionePiscina) => void;
+  // Annulla (stato -> CANCELLED, non un'eliminazione reale): il backend libera da sé le postazioni
+  // già assegnate. L'eliminazione definitiva non è più un'azione disponibile lato staff (2026-08-07,
+  // sostituita interamente dall'annullamento — vedi sezione 5 CLAUDE.md).
+  handleCancelPrenotazione: (p: PrenotazionePiscina) => void;
 
   // Conferma una prenotazione self-service 'PENDING' (nessun altro punto del flusso staff la
   // conferma automaticamente — vedi commento su confirmPrenotazione).
@@ -115,7 +129,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     removeOccupazione,
     addPrenotazione,
     editPrenotazione,
-    removePrenotazione,
+    cancelPrenotazione,
   } = usePiscinaMappaData();
   const { selectedPrenotazioneId, selectPrenotazioneCandidate } = usePiscinaSelection();
 
@@ -140,6 +154,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
   const [confirmingPrenotazioneId, setConfirmingPrenotazioneId] = useState<string | null>(null);
+  const [isTogglingArrivato, setIsTogglingArrivato] = useState(false);
 
   const updateSheetForm = (patch: Partial<SimpleFormState>) =>
     setSheetForm((f) => ({ ...f, ...patch }));
@@ -174,6 +189,18 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
   const maxSdraie = residuoRiferimento
     ? residuoRiferimento.sdraia + (sheetMode === 'occupant' ? occupazioneCorrente?.numero_sdraie ?? 0 : 0)
     : null;
+  const arrivato = occupazioneCorrente?.arrivato ?? false;
+
+  // Postazioni attive per tipo rispetto al totale del listino — 'postazioni' arriva già filtrata
+  // alle sole attive (soft-delete escluso lato backend, sezione 5 CLAUDE.md).
+  const capacitaOmbrelloni = {
+    usati: postazioni.filter((p) => p.tipo === 'OMBRELLONE').length,
+    totale: inventario?.totale_ombrelloni ?? 0,
+  };
+  const capacitaGazebi = {
+    usati: postazioni.filter((p) => p.tipo === 'GAZEBO').length,
+    totale: inventario?.totale_gazebi ?? 0,
+  };
 
   const closeSheet = () => {
     setSheetMode(null);
@@ -390,6 +417,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         numero_lettini: lettiniRichiesti,
         numero_sdraie: sdraieRichieste,
         orario_arrivo_previsto: minutesToHHMM(arrivoMinuti),
+        arrivato: false,
       });
 
       // Se questo cliente aveva prenotato più unità dello stesso tipo (es. 2 ombrelloni), resta
@@ -447,6 +475,28 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError('Impossibile salvare le modifiche.');
     } finally {
       setIsSubmittingSheet(false);
+    }
+  };
+
+  // Check-in per singola postazione: separato da confirmOccupantEdit (che richiede "Salva
+  // modifiche") perché è un'azione rapida da poter fare senza toccare gli altri campi del form —
+  // stesso principio del pulsante ✅ "Conferma prenotazione" altrove nella mappa.
+  const toggleArrivato = async () => {
+    if (!targetPostazione) return;
+    const occ = occupazioneByPostazione.get(targetPostazione.id);
+    if (!occ) return;
+    if (isPastDate) {
+      setSheetError('Non è possibile modificare lo stato di arrivo di un giorno passato.');
+      return;
+    }
+    setIsTogglingArrivato(true);
+    setSheetError(null);
+    try {
+      await updateOccupazioneEntry(occ.id, { arrivato: !occ.arrivato });
+    } catch {
+      setSheetError('Impossibile aggiornare lo stato di arrivo.');
+    } finally {
+      setIsTogglingArrivato(false);
     }
   };
 
@@ -508,15 +558,28 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError('Impossibile calcolare il prossimo numero disponibile. Chiudi e riprova.');
       return;
     }
+    // Backstop lato frontend: lo stesso limite è comunque applicato lato backend (fonte di
+    // verità, PostazioneSerializer.validate()) — qui evitiamo solo la chiamata quando il limite
+    // è già visibile in UI (AddPostazioneForm mostra "X/Y" e disabilita "Aggiungi" di conseguenza).
+    const capacita = newTipo === 'OMBRELLONE' ? capacitaOmbrelloni : capacitaGazebi;
+    if (capacita.usati >= capacita.totale) {
+      const etichetta = newTipo === 'OMBRELLONE' ? 'ombrelloni' : 'gazebi';
+      setSheetError(`Limite raggiunto: il listino prevede al massimo ${capacita.totale} ${etichetta}.`);
+      return;
+    }
     setIsSubmittingSheet(true);
     setSheetError(null);
     try {
       await addPostazione({ tipo: newTipo, numero, pos_x: 50, pos_y: 50 });
       setNewNumero('');
       closeSheet();
-    } catch {
-      // Raro: un altro staff ha aggiunto una postazione con lo stesso numero nel frattempo.
-      setSheetError('Numero non più disponibile: chiudi e riapri il foglio per ricalcolarlo.');
+    } catch (err: any) {
+      const detail = err?.response?.data;
+      const message =
+        detail && typeof detail === 'object'
+          ? Object.values(detail).flat().join(' ')
+          : 'Numero non più disponibile: chiudi e riapri il foglio per ricalcolarlo.';
+      setSheetError(message);
     } finally {
       setIsSubmittingSheet(false);
     }
@@ -619,29 +682,29 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     }
   };
 
-  const confirmDeletePrenotazione = async (p: PrenotazionePiscina) => {
+  const confirmCancelPrenotazione = async (p: PrenotazionePiscina) => {
     try {
-      await removePrenotazione(p.id);
+      await cancelPrenotazione(p.id);
       if (selectedPrenotazioneId === p.id) {
         selectPrenotazioneCandidate(null);
       }
     } catch {
-      Alert.alert('Errore', 'Impossibile eliminare la prenotazione.');
+      Alert.alert('Errore', 'Impossibile annullare la prenotazione.');
     }
   };
 
-  const handleDeletePrenotazione = (p: PrenotazionePiscina) => {
+  const handleCancelPrenotazione = (p: PrenotazionePiscina) => {
     if (isPastDate) return;
-    const message = `La prenotazione di ${p.cliente_nome} verrà eliminata definitivamente insieme alle postazioni già assegnate, che torneranno libere sulla mappa.`;
+    const message = `La prenotazione di ${p.cliente_nome} verrà annullata. Le postazioni già assegnate torneranno libere sulla mappa; la prenotazione resterà comunque visibile nello storico del cliente come cancellata.`;
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
-        confirmDeletePrenotazione(p);
+        confirmCancelPrenotazione(p);
       }
       return;
     }
-    Alert.alert('Eliminare prenotazione?', message, [
-      { text: 'Annulla', style: 'cancel' },
-      { text: 'Elimina', style: 'destructive', onPress: () => confirmDeletePrenotazione(p) },
+    Alert.alert('Annullare prenotazione?', message, [
+      { text: 'No', style: 'cancel' },
+      { text: 'Annulla prenotazione', style: 'destructive', onPress: () => confirmCancelPrenotazione(p) },
     ]);
   };
 
@@ -670,6 +733,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     setNewTipo,
     newNumero,
     setNewNumero,
+    capacitaOmbrelloni,
+    capacitaGazebi,
     clientiSelezionabiliPerTarget,
     sheetAriaLabel,
     openAddPostazioneSheet,
@@ -680,6 +745,9 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     confirmOccupantEdit,
     liberaPostazione,
     handleDeletePostazione,
+    arrivato,
+    isTogglingArrivato,
+    toggleArrivato,
     isClientPickerOpen,
     setIsClientPickerOpen,
     handlePickCliente,
@@ -701,7 +769,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     openEditPrenotazione,
     closeEditPrenotazione,
     confirmEditPrenotazione,
-    handleDeletePrenotazione,
+    handleCancelPrenotazione,
     confirmingPrenotazioneId,
     confirmPrenotazione,
   };

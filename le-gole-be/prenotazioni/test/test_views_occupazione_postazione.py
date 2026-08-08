@@ -29,6 +29,23 @@ class TestPermessi:
         )
         assert response.status_code == status.HTTP_201_CREATED
 
+    def test_anonimo_puo_creare(self, api_client, inventario):
+        # 'create' è pubblica dal 2026-08-07: il flusso self-service assegna automaticamente le
+        # postazioni scelte sulla mappa alla prenotazione appena creata (sezione 7 CLAUDE.md).
+        postazione = PostazioneFactory(inventario=inventario)
+
+        response = api_client.post(
+            reverse("occupazione-postazione-list"),
+            {
+                "postazione": str(postazione.pk),
+                "data": "2026-08-01",
+                "cliente_nome": "Mario Rossi",
+                "orario_arrivo_previsto": "12:00",
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
 
 class TestVincoloUnicoPerGiorno:
     def test_rifiuta_due_occupazioni_per_la_stessa_postazione_nello_stesso_giorno(self, auth_client, inventario):
@@ -98,6 +115,65 @@ class TestOccupate:
         )
 
         assert response.data == [str(postazione.pk)]
+
+
+class TestArrivato:
+    def test_nasce_non_arrivato_di_default(self, auth_client, inventario):
+        postazione = PostazioneFactory(inventario=inventario)
+
+        response = auth_client.post(
+            reverse("occupazione-postazione-list"),
+            {
+                "postazione": str(postazione.pk),
+                "data": "2026-08-01",
+                "cliente_nome": "Mario Rossi",
+                "orario_arrivo_previsto": "12:00",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["arrivato"] is False
+
+    def test_puo_essere_segnato_arrivato_indipendentemente_dalle_altre_occupazioni(self, auth_client, inventario):
+        # Stesso cliente su più postazioni (es. 2 gazebi): segnare l'arrivo su una non deve
+        # toccare le altre, il check-in è per singola postazione.
+        prima = OccupazionePostazioneFactory(
+            postazione=PostazioneFactory(inventario=inventario), cliente_nome="Mario Rossi"
+        )
+        seconda = OccupazionePostazioneFactory(
+            postazione=PostazioneFactory(inventario=inventario, numero=99), cliente_nome="Mario Rossi"
+        )
+
+        response = auth_client.patch(
+            reverse("occupazione-postazione-detail", args=[prima.pk]), {"arrivato": True}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["arrivato"] is True
+        seconda.refresh_from_db()
+        assert seconda.arrivato is False
+
+    def test_richiesta_anonima_forza_arrivato_false(self, api_client, inventario):
+        # Un chiamante anonimo non deve poter registrare un check-in mai avvenuto passando
+        # 'arrivato: true' nel payload — stesso principio del 'perform_create' che forza 'stato'
+        # su PrenotazionePiscinaViewSet per le richieste pubbliche.
+        postazione = PostazioneFactory(inventario=inventario)
+
+        response = api_client.post(
+            reverse("occupazione-postazione-list"),
+            {
+                "postazione": str(postazione.pk),
+                "data": "2026-08-01",
+                "cliente_nome": "Mario Rossi",
+                "orario_arrivo_previsto": "12:00",
+                "arrivato": True,
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["arrivato"] is False
 
 
 class TestFiltri:

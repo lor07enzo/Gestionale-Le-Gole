@@ -69,6 +69,60 @@ class TestScaricaBiglietto:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
+class TestRecenti:
+    def test_richiede_autenticazione(self, api_client):
+        response = api_client.get(reverse("prenotazione-piscina-recenti"))
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_ordina_per_data_di_creazione_decrescente_ed_esclude_cancellate(self, auth_client, inventario):
+        prima = PrenotazionePiscinaFactory(inventario=inventario, data="2026-07-01")
+        seconda = PrenotazionePiscinaFactory(inventario=inventario, data="2026-06-01")
+        PrenotazionePiscinaFactory(inventario=inventario, data="2026-08-01", stato="CANCELLED")
+
+        response = auth_client.get(reverse("prenotazione-piscina-recenti"))
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = [row["id"] for row in response.data]
+        # 'seconda' è stata creata dopo 'prima' (ordine di chiamata della factory), a prescindere
+        # dalla 'data' di prenotazione di ciascuna (qui volutamente invertita rispetto a created_at).
+        assert ids == [str(seconda.pk), str(prima.pk)]
+
+    def test_include_il_nome_dell_inventario(self, auth_client, inventario):
+        prenotazione = PrenotazionePiscinaFactory(inventario=inventario)
+
+        response = auth_client.get(reverse("prenotazione-piscina-recenti"))
+
+        assert response.data[0]["inventario_nome"] == inventario.nome
+        assert response.data[0]["id"] == str(prenotazione.pk)
+
+    def test_rispetta_il_parametro_limit(self, auth_client, inventario):
+        for _ in range(3):
+            PrenotazionePiscinaFactory(inventario=inventario)
+
+        response = auth_client.get(reverse("prenotazione-piscina-recenti"), {"limit": 2})
+
+        assert len(response.data) == 2
+
+    def test_limit_non_numerico_ricade_sul_default(self, auth_client, inventario):
+        PrenotazionePiscinaFactory(inventario=inventario)
+
+        response = auth_client.get(reverse("prenotazione-piscina-recenti"), {"limit": "tanti"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+
+    def test_esclude_le_prenotazioni_create_dallo_staff(self, auth_client, inventario):
+        # Un walk-in registrato dallo staff (es. "+ Nuovo cliente" dalla mappa) non deve generare
+        # una notifica: solo chi prenota da sé (Area Cliente) deve comparire in questo elenco.
+        self_service = PrenotazionePiscinaFactory(inventario=inventario, creata_da_staff=False)
+        PrenotazionePiscinaFactory(inventario=inventario, creata_da_staff=True)
+
+        response = auth_client.get(reverse("prenotazione-piscina-recenti"))
+
+        ids = [row["id"] for row in response.data]
+        assert ids == [str(self_service.pk)]
+
+
 class TestConteggi:
     def test_richiede_autenticazione(self, api_client):
         response = api_client.get(reverse("prenotazione-piscina-conteggi"))

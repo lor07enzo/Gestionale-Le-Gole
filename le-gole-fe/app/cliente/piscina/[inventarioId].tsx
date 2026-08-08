@@ -35,6 +35,7 @@ const TimePickerModal = lazy(() =>
 );
 import { getPiscinaInventario, type PiscinaInventario } from '../../../src/services/struttura';
 import {
+  createOccupazione,
   createPrenotazionePiscina,
   getBigliettoUrl,
   getDisponibilitaPiscina,
@@ -107,6 +108,17 @@ function validateOrario(value: string, inventario: PiscinaInventario, selectedDa
     return "L'orario non può essere nel passato.";
   }
   return null;
+}
+
+// Distribuisce un totale (lettini/sdraie del form) il più equamente possibile tra le `n`
+// postazioni scelte sulla mappa, resto alle prime — usato per assegnare automaticamente
+// numero_lettini/numero_sdraie ad ogni OccupazionePostazione creata al submit, invece di lasciarle
+// a 0 in attesa di una correzione manuale dello staff.
+function distribuisciSuPostazioni(totale: number, n: number): number[] {
+  if (n <= 0) return [];
+  const base = Math.floor(totale / n);
+  const resto = totale % n;
+  return Array.from({ length: n }, (_, i) => base + (i < resto ? 1 : 0));
 }
 
 function extractErrorMessage(error: unknown, fallback: string): string {
@@ -437,9 +449,9 @@ export default function ClientePiscinaBookingScreen() {
         cliente_id: cliente.id,
         data: toISODate(selectedDate),
         ora: form.orario.trim(),
-        // Prenotazione anticipata self-service: nasce 'PENDING', sarà lo staff a confermarla
-        // (diverso dal walk-in creato dalla mappa, che nasce già 'CONFIRMED' — vedi sezione 5).
-        stato: 'PENDING',
+        // Prenotazione self-service confermata subito all'invio, stesso stato del walk-in
+        // creato dalla mappa staff (sezione 5) — nessuna attesa di conferma manuale.
+        stato: 'CONFIRMED',
         inventario: inventarioId,
         note: form.note.trim(),
         ingressi,
@@ -451,6 +463,39 @@ export default function ClientePiscinaBookingScreen() {
         lettino: Number.parseInt(form.lettino, 10) || 0,
         sdraia: Number.parseInt(form.sdraia, 10) || 0,
       });
+
+      if (selezionePostazioni.ids.length > 0) {
+        const lettiniPerPostazione = distribuisciSuPostazioni(
+          Number.parseInt(form.lettino, 10) || 0,
+          selezionePostazioni.ids.length
+        );
+        const sdraiePerPostazione = distribuisciSuPostazioni(
+          Number.parseInt(form.sdraia, 10) || 0,
+          selezionePostazioni.ids.length
+        );
+        // Best-effort (Promise.allSettled, non Promise.all): la prenotazione è già stata creata e
+        // ha già "riservato" le quantità (anti-overbooking sul conteggio, non sulla postazione
+        // fisica) — se una postazione scelta minuti prima non fosse più libera (un altro cliente
+        // self-service o lo staff l'ha occupata nel frattempo), quella singola assegnazione fallisce
+        // silenziosamente e la prenotazione resta comunque valida: lo staff la assegnerà a mano
+        // dalla mappa (sezione 5), come già avveniva per ogni prenotazione self-service prima di
+        // questa modifica.
+        await Promise.allSettled(
+          selezionePostazioni.ids.map((postazioneId, index) =>
+            createOccupazione({
+              postazione: postazioneId,
+              data: toISODate(selectedDate),
+              prenotazione: prenotazione.id,
+              cliente_nome: form.nome.trim(),
+              numero_lettini: lettiniPerPostazione[index] ?? 0,
+              numero_sdraie: sdraiePerPostazione[index] ?? 0,
+              orario_arrivo_previsto: form.orario.trim(),
+              arrivato: false,
+            })
+          )
+        );
+      }
+
       setPrenotazioneId(prenotazione.id);
       setPrenotazioneInviata(true);
     } catch (err) {
@@ -499,19 +544,19 @@ export default function ClientePiscinaBookingScreen() {
           <Box className="w-full max-w-md items-center rounded-3xl border border-emerald-200 bg-emerald-50 p-8">
             <Text size="3xl">✅</Text>
             <Heading size="lg" className="mt-2 text-center text-emerald-900">
-              Richiesta inviata!
+              Prenotazione confermata!
             </Heading>
             <Text size="sm" className="mt-2 text-center text-emerald-800">
-              Il nostro staff confermerà a breve la tua prenotazione per {inventario.nome} del{' '}
-              {formatDisplayDate(selectedDate)} alle {form.orario}. Ti contatteremo al numero
-              indicato in caso di necessità.
+              La tua prenotazione per {inventario.nome} del{' '}
+              {formatDisplayDate(selectedDate)} alle {form.orario} è confermata. Ti contatteremo
+              al numero indicato solo in caso di necessità.
             </Text>
           </Box>
 
           <Box className="w-full max-w-md rounded-2xl border border-sky-200 bg-sky-100 p-5">
             <Text size="sm" className="text-center text-sky-900">
               🎫 Scarica il biglietto e mostralo in biglietteria: riporta il riepilogo della tua
-              richiesta, anche prima della conferma dello staff.
+              prenotazione, già confermata.
             </Text>
             <Button className="mt-3" onPress={handleScaricaBiglietto} disabled={isDownloadingBiglietto}>
               {isDownloadingBiglietto ? <ButtonSpinner /> : <ButtonText>Scarica biglietto (PDF)</ButtonText>}
@@ -803,10 +848,10 @@ export default function ClientePiscinaBookingScreen() {
             ) : null}
 
             <Button onPress={handleSubmit} disabled={isSubmitting}>
-              {isSubmitting ? <ButtonSpinner /> : <ButtonText>Invia richiesta di prenotazione</ButtonText>}
+              {isSubmitting ? <ButtonSpinner /> : <ButtonText>Prenota ora</ButtonText>}
             </Button>
             <Text size="2xs" className="text-center text-muted-foreground">
-              La richiesta resta in attesa di conferma da parte del nostro staff.
+              La prenotazione viene confermata subito, senza attese.
             </Text>
           </>
         )}

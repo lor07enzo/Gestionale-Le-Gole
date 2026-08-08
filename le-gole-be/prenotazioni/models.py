@@ -42,6 +42,11 @@ class PrenotazionePiscina(Prenotazione):
     gazebo = models.PositiveSmallIntegerField(default=0)
     lettino = models.PositiveSmallIntegerField(default=0)
     sdraia = models.PositiveSmallIntegerField(default=0)
+    # Forzato da PrenotazionePiscinaViewSet.perform_create() in base all'autenticazione della
+    # richiesta (mai dal payload): distingue una prenotazione self-service (Area Cliente) da un
+    # walk-in/"+ Nuovo cliente" registrato dallo staff dalla mappa. Usato solo da 'recenti' per
+    # non generare una notifica quando è lo staff stesso a registrare il cliente.
+    creata_da_staff = models.BooleanField(default=False, verbose_name="Creata dallo staff")
 
     class Meta:
         verbose_name = "Prenotazione Piscina"
@@ -101,6 +106,10 @@ class OccupazionePostazione(models.Model):
     # questo è l'orario di arrivo previsto per QUESTA postazione/giorno, compilabile anche per i
     # clienti walk-in che non hanno una prenotazione reale a monte. Obbligatorio.
     orario_arrivo_previsto = models.TimeField()
+    # Check-in manuale per QUESTA specifica postazione: se un cliente ha prenotato più unità
+    # dello stesso tipo (es. 3 gazebi -> 3 OccupazionePostazione), va segnato separatamente su
+    # ciascuna, non è un flag a livello di Prenotazione/cliente.
+    arrivato = models.BooleanField(default=False, verbose_name="Cliente arrivato")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

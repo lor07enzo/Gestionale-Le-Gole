@@ -8,9 +8,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { listPrenotazioniPendenti, updatePrenotazionePiscina } from '../services/prenotazioni';
+import { listPrenotazioniRecenti } from '../services/prenotazioni';
 import type { PrenotazionePiscina } from '../services/prenotazioni';
-import { getNotificheLastSeenAt, saveNotificheLastSeenAt } from '../utils/storage';
+import { getNotificheLetteIds, saveNotificheLetteIds } from '../utils/storage';
 
 // Polling, non websocket/push: il backend qui è WSGI (runserver), senza infrastruttura realtime
 // (sezione 10 di CLAUDE.md) — un intervallo di 20s è un compromesso ragionevole tra "quasi in
@@ -19,45 +19,47 @@ const POLL_INTERVAL_MS = 20000;
 // Il banner di una nuova prenotazione resta visibile un po' più a lungo di un semplice toast,
 // dato che non c'è un pulsante di chiusura oltre al tap sul banner stesso.
 const BANNER_DURATION_MS = 6000;
+// Quante prenotazioni recenti tenere in memoria per il pannello — oltre questo numero una
+// prenotazione più vecchia non può comunque più "ricomparire" (l'ordine è per data di
+// creazione, solo le nuove entrano in cima), quindi un id letto che ne esce non serve più.
+const RECENTI_LIMIT = 50;
 
 type StaffNotificationsContextValue = {
-  // Tutte le prenotazioni self-service PENDING, su qualsiasi piscina/data, più recenti prima.
-  pendenti: PrenotazionePiscina[];
-  // Quante, tra queste, sono arrivate dopo l'ultima volta che lo staff ha aperto il pannello
-  // (persistito tra sessioni, vedi utils/storage.ts) — non un semplice conteggio del poll.
-  nuoveCount: number;
+  // Le prenotazioni piscina più recenti (qualsiasi data/stato tranne CANCELLED), più recenti
+  // prima. Unica categoria con dati reali per ora — Asporto/Ristorante non hanno ancora un
+  // modello backend (sezione 1 CLAUDE.md), il filtro categoria vive nella UI (NotificationsBell).
+  notifiche: PrenotazionePiscina[];
+  unreadCount: number;
   isLoading: boolean;
   error: string | null;
   // Messaggio del banner "a comparsa" per una nuova prenotazione rilevata durante il polling
   // (null = nessun banner attivo). Si azzera da solo dopo BANNER_DURATION_MS.
   banner: string | null;
   dismissBanner: () => void;
-  markAllAsSeen: () => void;
-  confirmingId: string | null;
-  confirmPrenotazione: (id: string) => Promise<void>;
+  isRead: (id: string) => boolean;
+  markAsRead: (id: string) => void;
 };
 
 const StaffNotificationsContext = createContext<StaffNotificationsContextValue | undefined>(undefined);
 
 export function StaffNotificationsProvider({ children }: { children: ReactNode }) {
-  const [pendenti, setPendenti] = useState<PrenotazionePiscina[]>([]);
+  const [notifiche, setNotifiche] = useState<PrenotazionePiscina[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [banner, setBanner] = useState<string | null>(null);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   // null finché non arriva il primo poll riuscito: serve a non far comparire un banner per
-  // l'intero "arretrato" di prenotazioni già pendenti al primo caricamento della pagina, solo
-  // per quelle che compaiono tra un poll e il successivo durante la sessione.
+  // l'intero "arretrato" già esistente al primo caricamento della pagina, solo per le
+  // prenotazioni che compaiono tra un poll e il successivo durante la sessione.
   const knownIdsRef = useRef<Set<string> | null>(null);
   const bannerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const stored = await getNotificheLastSeenAt();
-      if (!cancelled) setLastSeenAt(stored);
+      const stored = await getNotificheLetteIds();
+      if (!cancelled) setReadIds(new Set(stored));
     })();
     return () => {
       cancelled = true;
@@ -66,7 +68,7 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
 
   const poll = useCallback(async () => {
     try {
-      const risultato = await listPrenotazioniPendenti();
+      const risultato = await listPrenotazioniRecenti(RECENTI_LIMIT);
       const ordinati = [...risultato].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
       if (knownIdsRef.current) {
@@ -83,7 +85,7 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
       }
       knownIdsRef.current = new Set(ordinati.map((p) => p.id));
 
-      setPendenti(ordinati);
+      setNotifiche(ordinati);
       setError(null);
     } catch {
       setError('Impossibile controllare le nuove prenotazioni.');
@@ -110,41 +112,35 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
     setBanner(null);
   }, []);
 
-  const markAllAsSeen = useCallback(() => {
-    const now = new Date().toISOString();
-    setLastSeenAt(now);
-    saveNotificheLastSeenAt(now);
+  const markAsRead = useCallback((id: string) => {
+    setReadIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      saveNotificheLetteIds(Array.from(next));
+      return next;
+    });
   }, []);
 
-  const confirmPrenotazione = useCallback(async (id: string) => {
-    setConfirmingId(id);
-    try {
-      await updatePrenotazionePiscina(id, { stato: 'CONFIRMED' });
-      setPendenti((prev) => prev.filter((p) => p.id !== id));
-      knownIdsRef.current?.delete(id);
-    } finally {
-      setConfirmingId(null);
-    }
-  }, []);
+  const isRead = useCallback((id: string) => readIds.has(id), [readIds]);
 
-  const nuoveCount = useMemo(
-    () => (lastSeenAt ? pendenti.filter((p) => p.created_at > lastSeenAt).length : pendenti.length),
-    [pendenti, lastSeenAt]
+  const unreadCount = useMemo(
+    () => notifiche.filter((p) => !readIds.has(p.id)).length,
+    [notifiche, readIds]
   );
 
   const value = useMemo<StaffNotificationsContextValue>(
     () => ({
-      pendenti,
-      nuoveCount,
+      notifiche,
+      unreadCount,
       isLoading,
       error,
       banner,
       dismissBanner,
-      markAllAsSeen,
-      confirmingId,
-      confirmPrenotazione,
+      isRead,
+      markAsRead,
     }),
-    [pendenti, nuoveCount, isLoading, error, banner, dismissBanner, markAllAsSeen, confirmingId, confirmPrenotazione]
+    [notifiche, unreadCount, isLoading, error, banner, dismissBanner, isRead, markAsRead]
   );
 
   return <StaffNotificationsContext.Provider value={value}>{children}</StaffNotificationsContext.Provider>;

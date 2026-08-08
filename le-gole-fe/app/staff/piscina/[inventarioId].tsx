@@ -21,7 +21,9 @@ import { NewClienteSheet } from '../../../src/components/staff/piscina-mappa/she
 import { PostazioneSheet } from '../../../src/components/staff/piscina-mappa/sheets/PostazioneSheet';
 
 export default function PiscinaMappaScreen() {
-  const { inventarioId } = useLocalSearchParams<{ inventarioId: string }>();
+  // 'data' opzionale (?data=YYYY-MM-DD): usato dal pannello notifiche staff (NotificationsBell)
+  // per riportare la mappa direttamente sul giorno della prenotazione, invece che su oggi.
+  const { inventarioId, data } = useLocalSearchParams<{ inventarioId: string; data?: string }>();
 
   if (!inventarioId) {
     return (
@@ -32,7 +34,7 @@ export default function PiscinaMappaScreen() {
   }
 
   return (
-    <PiscinaMappaProviders inventarioId={inventarioId}>
+    <PiscinaMappaProviders inventarioId={inventarioId} initialDate={data}>
       <PiscinaMappaContent />
     </PiscinaMappaProviders>
   );

@@ -36,6 +36,15 @@ export function toISODate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// "YYYY-MM-DD" -> Date locale a mezzanotte (simmetrico a toISODate sopra: usa i componenti
+// anno/mese/giorno diretti, non new Date(iso) che parserebbe come UTC e potrebbe spostare il
+// giorno in fusi con offset negativo). Usato per riportare la mappa staff sulla data di una
+// prenotazione quando si arriva da un link diretto (es. il pannello notifiche).
+export function parseISODate(iso: string): Date {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 export function addDays(date: Date, delta: number): Date {
   const next = new Date(date);
   next.setDate(next.getDate() + delta);
@@ -65,6 +74,21 @@ export function formatTime(time: string | null | undefined): string {
 export function formatDateDDMMYYYY(isoDate: string): string {
   const [year, month, day] = isoDate.split('-');
   return `${day}/${month}/${year}`;
+}
+
+// Timestamp ISO (created_at) -> "adesso" / "5 min fa" / "3 h fa" / "2 giorni fa" — usato dalle
+// card del pannello notifiche staff per mostrare quanto tempo fa è arrivata la prenotazione.
+export function formatRelativeTime(isoTimestamp: string): string {
+  const diffMs = Date.now() - new Date(isoTimestamp).getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+  if (diffMinutes < 1) return 'adesso';
+  if (diffMinutes < 60) return `${diffMinutes} min fa`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} h fa`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return '1 giorno fa';
+  if (diffDays < 30) return `${diffDays} giorni fa`;
+  return formatDateDDMMYYYY(toISODate(new Date(isoTimestamp)));
 }
 
 export function minutesToHHMM(totalMinutes: number): string {

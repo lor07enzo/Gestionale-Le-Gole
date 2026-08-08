@@ -28,12 +28,18 @@ class PiscinaInventarioViewSet(viewsets.ModelViewSet):
         inventario = self.get_object()
         oggi = timezone.localdate()
 
-        # Prenotazioni odierne/future bloccano l'eliminazione (chi ha prenotato conta su quella
-        # disponibilità); quelle passate sono solo storico e vengono ripulite per liberare il
-        # PROTECT su PrenotazionePiscina.inventario.
-        ha_prenotazioni_correnti_o_future = PrenotazionePiscina.objects.filter(
-            inventario=inventario, data__gte=oggi
-        ).exists()
+        # Prenotazioni odierne/future NON cancellate bloccano l'eliminazione (chi ha prenotato
+        # conta su quella disponibilità) — le CANCELLED sono escluse: da quando l'annullamento
+        # (stato='CANCELLED') ha sostituito l'eliminazione definitiva come azione normale dello
+        # staff (sezione 5), una prenotazione futura annullata non impegna più alcuna risorsa e
+        # non deve poter bloccare per sempre l'eliminazione del listino. Le prenotazioni passate
+        # sono solo storico e vengono comunque ripulite (qualsiasi stato) per liberare il PROTECT
+        # su PrenotazionePiscina.inventario.
+        ha_prenotazioni_correnti_o_future = (
+            PrenotazionePiscina.objects.filter(inventario=inventario, data__gte=oggi)
+            .exclude(stato='CANCELLED')
+            .exists()
+        )
 
         if ha_prenotazioni_correnti_o_future:
             return Response(
@@ -48,7 +54,12 @@ class PiscinaInventarioViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
-                PrenotazionePiscina.objects.filter(inventario=inventario, data__lt=oggi).delete()
+                # A questo punto ogni prenotazione rimasta collegata è o passata (qualsiasi stato)
+                # o futura ma CANCELLED (l'unico caso non bloccato sopra) — in entrambi i casi va
+                # ripulita qui, altrimenti una futura CANCELLED farebbe comunque fallire
+                # perform_destroy() sotto con un ProtectedError (PrenotazionePiscina.inventario è
+                # PROTECT). Non basta più filtrare solo su data__lt=oggi come prima.
+                PrenotazionePiscina.objects.filter(inventario=inventario).delete()
                 self.perform_destroy(inventario)
         except ProtectedError:
             # Rete di sicurezza per eventuali riferimenti PROTECT residui non previsti sopra:

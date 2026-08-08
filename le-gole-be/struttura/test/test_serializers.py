@@ -81,3 +81,70 @@ class TestNumeroUnicoTraLeAttive:
         )
 
         assert serializer.is_valid(), serializer.errors
+
+
+class TestCapacitaPerTipo:
+    def test_rifiuta_oltre_il_totale_ombrelloni(self):
+        inventario = PiscinaInventarioFactory(totale_ombrelloni=2)
+        PostazioneFactory(inventario=inventario, tipo="OMBRELLONE", numero=1)
+        PostazioneFactory(inventario=inventario, tipo="OMBRELLONE", numero=2)
+
+        serializer = PostazioneSerializer(
+            data={"inventario": inventario.pk, "tipo": "OMBRELLONE", "numero": 3, "pos_x": 10, "pos_y": 10}
+        )
+
+        assert not serializer.is_valid()
+        assert "tipo" in serializer.errors
+
+    def test_accetta_fino_al_totale_gazebi(self):
+        inventario = PiscinaInventarioFactory(totale_gazebi=1)
+
+        serializer = PostazioneSerializer(
+            data={"inventario": inventario.pk, "tipo": "GAZEBO", "numero": 1, "pos_x": 10, "pos_y": 10}
+        )
+
+        assert serializer.is_valid(), serializer.errors
+
+    def test_il_conteggio_e_indipendente_per_tipo(self):
+        # 2 gazebi esistenti non devono influire sul limite degli ombrelloni.
+        inventario = PiscinaInventarioFactory(totale_ombrelloni=1, totale_gazebi=5)
+        PostazioneFactory(inventario=inventario, tipo="GAZEBO", numero=1)
+        PostazioneFactory(inventario=inventario, tipo="GAZEBO", numero=2)
+
+        serializer = PostazioneSerializer(
+            data={"inventario": inventario.pk, "tipo": "OMBRELLONE", "numero": 3, "pos_x": 10, "pos_y": 10}
+        )
+
+        assert serializer.is_valid(), serializer.errors
+
+    def test_le_postazioni_eliminate_non_contano_per_il_limite(self):
+        inventario = PiscinaInventarioFactory(totale_ombrelloni=1)
+        eliminata = PostazioneFactory(inventario=inventario, tipo="OMBRELLONE", numero=1)
+        eliminata.deleted_at = timezone.now()
+        eliminata.save(update_fields=["deleted_at"])
+
+        serializer = PostazioneSerializer(
+            data={"inventario": inventario.pk, "tipo": "OMBRELLONE", "numero": 2, "pos_x": 10, "pos_y": 10}
+        )
+
+        assert serializer.is_valid(), serializer.errors
+
+    def test_il_limite_non_si_applica_in_modifica(self):
+        # Se il totale viene abbassato dopo che le postazioni sono state create, quelle
+        # eccedenti restano comunque modificabili (es. per riposizionarle), il limite blocca
+        # solo l'aggiunta di nuove postazioni.
+        inventario = PiscinaInventarioFactory(totale_ombrelloni=1)
+        PostazioneFactory(inventario=inventario, tipo="OMBRELLONE", numero=1)
+        eccedente = PostazioneFactory(inventario=inventario, tipo="OMBRELLONE", numero=2)
+
+        serializer = PostazioneSerializer(instance=eccedente, data={"pos_x": 30, "pos_y": 30}, partial=True)
+
+        assert serializer.is_valid(), serializer.errors
+
+    def test_nessun_controllo_capacita_senza_inventario_risolvibile(self):
+        # Guardia difensiva: un partial=True senza istanza (mai prodotto dal ModelViewSet reale,
+        # che passa sempre self.get_object() come instance su un PATCH) non deve far esplodere
+        # i validator invece di limitarsi a saltare i controlli che richiedono un inventario.
+        serializer = PostazioneSerializer(data={"tipo": "OMBRELLONE"}, partial=True)
+
+        assert serializer.is_valid(), serializer.errors
