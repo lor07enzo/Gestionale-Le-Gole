@@ -1,4 +1,4 @@
-name: Deploy Frontend (EAS Hosting)
+name: Deploy Frontend (Netlify)
 
 # Solo su push a main, e solo quando cambia davvero qualcosa sotto le-gole-fe/ — a differenza di
 # ci.yml (test backend, sezione 9 di CLAUDE.md), qui non ha senso ripubblicare un identico
@@ -12,7 +12,7 @@ on:
 
 jobs:
   deploy:
-    name: Export + deploy to EAS Hosting (produzione)
+    name: Export + deploy to Netlify (produzione)
     runs-on: ubuntu-latest
 
     defaults:
@@ -63,9 +63,14 @@ jobs:
       - name: Verify exported build has no crash on load
         run: node scripts/verify-web-build.js
 
-      # eas-cli è una devDependency pinnata (package.json), non npx eas-cli@latest: in CI serve
-      # una versione riproducibile, non l'ultima disponibile al momento della run.
-      - name: Deploy to EAS Hosting (production)
-        run: npx eas-cli deploy --prod --non-interactive
+      # netlify-cli è una devDependency pinnata (package.json), non npx netlify-cli@latest: in CI
+      # serve una versione riproducibile, non l'ultima disponibile al momento della run.
+      # NETLIFY_AUTH_TOKEN/NETLIFY_SITE_ID sono lette automaticamente dalla CLI (nessun flag
+      # --auth/--site necessario) — stesso pattern già usato per EXPO_TOKEN quando il deploy
+      # andava su EAS Hosting (sezione 14 di CLAUDE.md, migrato a Netlify per il dominio custom
+      # gratuito: EAS Hosting lo richiede solo a partire dal piano Starter, $19/mese).
+      - name: Deploy to Netlify (production)
+        run: npx netlify deploy --prod --dir=dist
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
