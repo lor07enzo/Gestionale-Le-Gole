@@ -6,7 +6,11 @@ services:
   - name: le-gole-backend
     type: web
     runtime: docker
-    plan: free
+    # Starter ($7/mese, 512 MB RAM / 0.5 CPU) — passato dal piano Free l'8/8/2026 per eliminare
+    # lo sleep dopo inattività (il polling notifiche staff ogni 20s teneva comunque sveglio il
+    # servizio quasi tutto l'orario di apertura, sezione 11/12). RAM invariata rispetto al Free
+    # (stesso 512 MB), solo CPU maggiore — GUNICORN_WORKERS resta a 2 di conseguenza (sotto).
+    plan: starter
     dockerfilePath: ./le-gole-be/Dockerfile
     dockerContext: ./le-gole-be
     healthCheckPath: /api/v1/struttura/inventario-piscina/
@@ -15,21 +19,18 @@ services:
         generateValue: true
       - key: DEBUG
         value: "False"
-      # Wildcard sul dominio Render: qualunque sottodominio *.onrender.com assegnato al
-      # servizio combacia (Django supporta il pattern ".dominio" per un host jolly). Va
-      # ristretto all'host esatto (o aggiunto un dominio custom) quando si esce dalla sola
-      # fase di test.
+      # Wildcard sul dominio Render (qualunque sottodominio *.onrender.com combacia) più il
+      # dominio custom del backend (api.osterialegole.com, sezione 14/12) — senza quest'ultimo
+      # Django risponde 400 DisallowedHost a ogni richiesta con quell'Host header, incluso
+      # l'health check interno di Render, che lo osserva come un timeout in attesa di un 200.
       - key: ALLOWED_HOSTS
-        value: .onrender.com
-      # Frontend in produzione (EAS Hosting, sezione 14) — unica origine autorizzata a chiamare
-      # l'API da un browser. Sostituisce CORS_ALLOW_ALL_ORIGINS (era True, TODO da tempo).
+        value: .onrender.com,api.osterialegole.com
+      # Frontend in produzione (Netlify, dominio custom osterialegole.com, sezione 14) — uniche
+      # origini autorizzate a chiamare l'API da un browser. Sostituisce CORS_ALLOW_ALL_ORIGINS
+      # (era True, TODO da tempo). Storicamente https://legole.expo.app (EAS Hosting, dismesso
+      # l'8/8/2026 per il costo del dominio custom su quel piano — sezione 14).
       - key: CORS_ALLOWED_ORIGINS
-        value: https://legole.expo.app
-      # Deployment di preview di EAS Hosting (hash casuale ad ogni `eas deploy` senza --prod,
-      # es. legole--f975mx76x0.expo.app) — utile per verificare un deploy prima di promuoverlo a
-      # produzione senza incappare in errori CORS.
-      - key: CORS_ALLOWED_ORIGIN_REGEX
-        value: ^https://legole--[a-zA-Z0-9]+\.expo\.app$
+        value: https://osterialegole.com,https://www.osterialegole.com
       # Credenziali Supabase (sezione 12) — da inserire manualmente in dashboard dopo aver
       # creato il progetto Supabase, mai salvate in questo file. Se la connessione diretta
       # (porta 5432, host db.<ref>.supabase.co) non funziona da Render, è quasi certamente
@@ -56,14 +57,16 @@ services:
       # provider, mantenuto passando a Supabase.
       - key: DB_CONN_MAX_AGE
         value: "60"
-      # Piano free: RAM limitata, meno worker gunicorn del default Docker locale (3, sezione 10).
+      # RAM limitata (512 MB, invariata passando a Starter sopra): meno worker gunicorn del
+      # default Docker locale (3, sezione 10).
       - key: GUNICORN_WORKERS
         value: "2"
       - key: RESEND_API_KEY
         sync: false
-      # Placeholder finché il frontend non ha un URL web reale (sezione 7/12) — i deep link
-      # legole://... non risolvono in un browser, vanno sostituiti con l'URL https effettivo
-      # non appena il frontend viene ospitato da qualche parte.
+      # Da impostare manualmente in dashboard (sync: false) su https://osterialegole.com/activate
+      # e https://osterialegole.com/reset-password ora che il frontend ha un dominio reale
+      # (sezione 14) — finché non vengono aggiornati restano sui placeholder legole://... che
+      # non risolvono da un link email aperto in un browser.
       - key: FRONTEND_ACTIVATION_URL
         sync: false
       - key: FRONTEND_RESET_URL
