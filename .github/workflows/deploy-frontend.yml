@@ -69,8 +69,14 @@ jobs:
       # --auth/--site necessario) — stesso pattern già usato per EXPO_TOKEN quando il deploy
       # andava su EAS Hosting (sezione 14 di CLAUDE.md, migrato a Netlify per il dominio custom
       # gratuito: EAS Hosting lo richiede solo a partire dal piano Starter, $19/mese).
+      # --no-build: il sito Netlify ha un "build command" configurato via dashboard UI
+      # (npm run deploy:web, impostato dal wizard di onboarding) — senza questo flag `netlify
+      # deploy` lo rieseguirebbe prima di pubblicare, richiamando se stesso ricorsivamente
+      # (npm run deploy:web finisce a sua volta con `netlify deploy`), fallendo con "Command
+      # failed with exit code 1: npm run deploy:web". dist/ è già la build verificata dagli step
+      # sopra, non c'è alcun bisogno che Netlify ne generi una propria.
       - name: Deploy to Netlify (production)
-        run: npx netlify deploy --prod --dir=dist
+        run: npx netlify deploy --prod --dir=dist --no-build
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
