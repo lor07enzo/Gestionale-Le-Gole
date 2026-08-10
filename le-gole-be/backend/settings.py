@@ -39,6 +39,29 @@ DEBUG = env.bool('DEBUG', default=False)
 # (Render, sezione 12) va valorizzato con l'host reale.
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['*'])
 
+# Hardening di sicurezza attivo solo quando DEBUG=False (produzione, Render — sezione 12): non
+# deve toccare lo sviluppo locale in http (.env ha DEBUG=True). SECURE_SSL_REDIRECT non è incluso
+# qui deliberatamente: Render reindirizza già http->https al proprio edge per ogni servizio, e
+# forzarlo di nuovo a livello Django rischierebbe di rompere l'health check interno di Render (che
+# in certi setup raggiunge il container direttamente, senza passare dall'edge TLS) con un
+# redirect loop — stesso genere di incidente già capitato con ALLOWED_HOSTS/DisallowedHost
+# (sezione 12), non da ripetere per un guadagno di sicurezza marginale dato che il traffico
+# pubblico passa comunque sempre da https.
+if not DEBUG:
+    # Cookie di sessione/CSRF (usati solo dall'admin Django, l'API stessa è JWT via header
+    # Authorization, sezione 1) mai inviati in chiaro.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Solo un header di risposta, nessun impatto sulle richieste in ingresso (incluso l'health
+    # check, che ignora gli header extra) — quindi nessun rischio del genere descritto sopra per
+    # SECURE_SSL_REDIRECT. Valore prudente (1 giorno, non il classico 1 anno + preload) per
+    # poterlo alzare con calma una volta verificato che nessun client interno dipenda da una
+    # richiesta http esplicita; copre solo api.osterialegole.com (l'host che invia l'header), non
+    # il dominio principale servito da Netlify.
+    SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=86400)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
+
 
 # Application definition
 
@@ -150,6 +173,24 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
     ),
+    # Rate-limit globale, non per singolo endpoint: diverse azioni sono AllowAny (creazione
+    # cliente/prenotazione/occupazione self-service, disponibilità, biglietto PDF — sezione 1/2/7)
+    # e senza alcun limite un client automatizzato potrebbe spammare prenotazioni/email di conferma
+    # senza alcun freno. AnonRateThrottle conta per IP, UserRateThrottle per utente autenticato
+    # (staff) — coprendo così sia il flusso self-service pubblico sia un eventuale script con un
+    # token rubato. Tassi deliberatamente generosi (non i default DRF, molto più stretti): più
+    # clienti sulla stessa rete Wi-Fi del locale condividono spesso lo stesso IP pubblico, e il
+    # flusso di prenotazione self-service da solo può generare una decina di richieste in sequenza
+    # (cliente + prenotazione + una POST occupazioni-postazione per ogni postazione scelta,
+    # sezione 7) — un tetto troppo basso bloccherebbe utenti legittimi, non solo un abuso.
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '120/min',
+        'user': '300/min',
+    },
 }
 
 SIMPLE_JWT = {

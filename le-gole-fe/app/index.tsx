@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Image } from 'react-native';
 import { router } from 'expo-router';
+import Constants from 'expo-constants';
 import { useAuth } from '../src/context/AuthContext';
 import { Box } from '@/components/ui/box';
 import { VStack } from '@/components/ui/vstack';
@@ -10,6 +11,7 @@ import { Button, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 
 const logo = require('../assets/logo-le-gole-nero.png');
+const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
 export default function RoleSelectionScreen() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -48,6 +50,8 @@ export default function RoleSelectionScreen() {
             <ButtonText>Area Cliente</ButtonText>
           </Button>
         </VStack>
+
+        <Text className="mt-6 text-center text-xs text-muted-foreground">v{appVersion}</Text>
       </Box>
     </Box>
   );

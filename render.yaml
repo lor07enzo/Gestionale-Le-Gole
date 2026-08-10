@@ -19,12 +19,14 @@ services:
         generateValue: true
       - key: DEBUG
         value: "False"
-      # Wildcard sul dominio Render (qualunque sottodominio *.onrender.com combacia) più il
-      # dominio custom del backend (api.osterialegole.com, sezione 14/12) — senza quest'ultimo
-      # Django risponde 400 DisallowedHost a ogni richiesta con quell'Host header, incluso
-      # l'health check interno di Render, che lo osserva come un timeout in attesa di un 200.
+      # Host esatti, non più il wildcard *.onrender.com (usato solo nella fase di test, prima che
+      # il dominio custom fosse stabile) — le-gole-backend.onrender.com resta comunque valido
+      # (Render lo tiene sempre raggiungibile insieme al dominio custom, ed è l'host che riceve
+      # l'health check interno se mai instradato lì) più api.osterialegole.com (sezione 14/12,
+      # l'host reale usato in produzione dal frontend e dall'health check). Senza uno dei due
+      # Django risponde 400 DisallowedHost a ogni richiesta con quell'Host header.
       - key: ALLOWED_HOSTS
-        value: .onrender.com,api.osterialegole.com
+        value: le-gole-backend.onrender.com,api.osterialegole.com
       # Frontend in produzione (Netlify, dominio custom osterialegole.com, sezione 14) — uniche
       # origini autorizzate a chiamare l'API da un browser. Sostituisce CORS_ALLOW_ALL_ORIGINS
       # (era True, TODO da tempo). Storicamente https://legole.expo.app (EAS Hosting, dismesso

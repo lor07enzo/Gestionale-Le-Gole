@@ -125,9 +125,11 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
     // origine, la seconda a marcare una lettura sovrascriveva per intero staffNotificheLetteIds
     // con la propria copia locale, cancellando quanto la prima aveva appena salvato — bug
     // riprodotto con Playwright (due schede, letture diverse: la seconda scrittura faceva
-    // sparire la prima). Una race identica-ma-più-stretta resta possibile se due marcature
-    // avvengono nello stesso istante esatto in schede diverse, accettabile per un dato non
-    // critico come lo stato letto/non letto di una notifica.
+    // sparire la prima) e con un test automatico (`StaffNotificationsContext.test.tsx`, "due
+    // schede che marcano letture diverse in sequenza non si cancellano a vicenda"). Una race
+    // identica-ma-più-stretta resta possibile se due marcature avvengono nello stesso istante
+    // esatto in schede diverse, accettabile per un dato non critico come lo stato letto/non letto
+    // di una notifica.
     (async () => {
       const current = await getNotificheLetteIds();
       if (current.includes(id)) return;

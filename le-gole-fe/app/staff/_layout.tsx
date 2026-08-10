@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable } from 'react-native';
 import { router, Slot } from 'expo-router';
+import Constants from 'expo-constants';
 import { useAuth } from '../../src/context/AuthContext';
 import { StaffNotificationsProvider } from '../../src/context/StaffNotificationsContext';
 import { NotificationsBanner, NotificationsBell } from '../../src/components/staff/NotificationsBell';
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/actionsheet';
 
 const logo = require('../../assets/logo-le-gole-nero.png');
+const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
 export default function StaffLayout() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -125,6 +127,8 @@ export default function StaffLayout() {
                 Logout
               </ActionsheetItemText>
             </ActionsheetItem>
+
+            <Text className="mb-1 text-center text-xs text-muted-foreground">v{appVersion}</Text>
           </ActionsheetContent>
         </Actionsheet>
       </Box>
