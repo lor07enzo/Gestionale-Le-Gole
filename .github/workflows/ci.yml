@@ -109,9 +109,49 @@ jobs:
             le-gole-be/coverage-struttura.xml
             le-gole-be/coverage-users.xml
 
+  frontend-tests:
+    name: Frontend tests (jest)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: le-gole-fe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: le-gole-fe/package-lock.json
+
+      # legacy-peer-deps=true è già in le-gole-fe/.npmrc (letto automaticamente da npm ci, stesso
+      # motivo per cui deploy-frontend.yml non passa alcun flag extra qui) — necessario per le
+      # dipendenze alpha/preview del progetto (gluestack-ui, NativeWind v5, sezione 4 di CLAUDE.md).
+      - name: Install dependencies
+        run: npm ci
+
+      # jest-expo/web (sezione 9 di CLAUDE.md): solo i moduli realmente richiesti dai test attuali
+      # vengono strumentati (nessun collectCoverageFrom esplicito) — evita di forzare Babel a
+      # trasformare l'intero albero app/ (gluestack-ui + react-native-css, già causa nota di
+      # comportamenti non deterministici in produzione, sezione 14) solo per riportarlo a 0%.
+      - name: Run jest with coverage
+        run: npx jest --coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: le-gole-fe/coverage/lcov.info
+
   sonarqube:
     name: SonarQube Cloud analysis
-    needs: backend-tests
+    needs: [backend-tests, frontend-tests]
     runs-on: ubuntu-latest
     # I fork non hanno accesso ai secret del repo (SONAR_TOKEN) — una PR da fork farebbe
     # comunque fallire lo step di scan con un errore di autenticazione poco chiaro.
@@ -123,11 +163,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download coverage report
+      - name: Download backend coverage report
         uses: actions/download-artifact@v4
         with:
           name: coverage-xml
           path: le-gole-be
+
+      - name: Download frontend coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-lcov
+          path: le-gole-fe/coverage
 
       - name: SonarQube Cloud Scan
         uses: SonarSource/sonarqube-scan-action@v5

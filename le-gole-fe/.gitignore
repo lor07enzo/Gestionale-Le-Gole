@@ -40,6 +40,9 @@ yarn-error.*
 # netlify-cli local site link (netlify link/init), machine-specific
 .netlify
 
+# jest --coverage output (rigenerato in CI per SonarQube, sezione 9/13 di CLAUDE.md)
+coverage/
+
 # generated native folders
 /ios
 /android
