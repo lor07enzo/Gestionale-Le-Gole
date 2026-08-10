@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, sviluppo]
   pull_request:
-    branches: [main]
+    branches: [main, sviluppo]
 
 jobs:
   backend-tests:

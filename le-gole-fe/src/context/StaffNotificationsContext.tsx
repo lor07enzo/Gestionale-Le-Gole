@@ -117,9 +117,22 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
       if (prev.has(id)) return prev;
       const next = new Set(prev);
       next.add(id);
-      saveNotificheLetteIds(Array.from(next));
       return next;
     });
+    // Persistenza separata dall'update dello stato React sopra: rilegge lo storage al momento
+    // della scrittura e ci unisce il nuovo id, invece di salvare lo Set in memoria di questa
+    // scheda/sessione (che potrebbe essere rimasto indietro). Con due schede aperte sulla stessa
+    // origine, la seconda a marcare una lettura sovrascriveva per intero staffNotificheLetteIds
+    // con la propria copia locale, cancellando quanto la prima aveva appena salvato — bug
+    // riprodotto con Playwright (due schede, letture diverse: la seconda scrittura faceva
+    // sparire la prima). Una race identica-ma-più-stretta resta possibile se due marcature
+    // avvengono nello stesso istante esatto in schede diverse, accettabile per un dato non
+    // critico come lo stato letto/non letto di una notifica.
+    (async () => {
+      const current = await getNotificheLetteIds();
+      if (current.includes(id)) return;
+      await saveNotificheLetteIds([...current, id]);
+    })();
   }, []);
 
   const isRead = useCallback((id: string) => readIds.has(id), [readIds]);
