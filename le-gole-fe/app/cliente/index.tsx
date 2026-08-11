@@ -37,10 +37,46 @@ export default function AreaClienteScreen() {
             </VStack>
           </HStack>
           <Text size="sm" className="mt-4 text-sky-900/80">
-            Da qui potrai consultare e prenotare i servizi de Le Gole: piscina, ristorante e
-            asporto, tutto in un unico posto. Scegli un servizio tra quelli qui sotto — le card
-            non ancora attive saranno disponibili a breve.
+            Da qui potrai consultare e prenotare i servizi de Le Gole: piscina, ristorante,
+            asporto e padel, tutto in un unico posto. Scegli un servizio tra quelli qui sotto — le
+            card non ancora attive saranno disponibili a breve.
           </Text>
+        </Box>
+
+        <Box className="w-full rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4">
+          <HStack space="sm" className="items-start">
+            <Text size="md">🚧</Text>
+            <VStack space="xs" className="flex-1">
+              <Text size="xs" className="font-semibold text-amber-900">
+                Piattaforma in fase di sviluppo
+              </Text>
+              <Text size="xs" className="text-amber-800">
+                Stiamo ancora testando questa Area Cliente: potresti incontrare qualche
+                malfunzionamento o rallentamento. Hai trovato un problema o vuoi lasciarci un
+                suggerimento? Trovi il nostro contatto dedicato nella sezione "Assistenza" in
+                fondo alla pagina.
+              </Text>
+            </VStack>
+          </HStack>
+        </Box>
+
+        {/* Nota separata dal banner "in sviluppo" sopra: informazione permanente sul servizio,
+            non un avviso temporaneo legato alla fase di test — tono/colore diversi (sky, non
+            amber) per non confonderla con quello. */}
+        <Box className="w-full rounded-2xl border border-sky-200 bg-sky-50 p-4">
+          <HStack space="sm" className="items-start">
+            <Text size="md">🎉</Text>
+            <VStack space="xs" className="flex-1">
+              <Text size="xs" className="font-semibold text-sky-900">
+                Organizzi un evento o un compleanno?
+              </Text>
+              <Text size="xs" className="text-sky-900/80">
+                Per eventi privati e compleanni contattaci direttamente al numero di telefono
+                nella sezione "Contatti" in fondo alla pagina: ti aiutiamo a organizzare tutto su
+                misura.
+              </Text>
+            </VStack>
+          </HStack>
         </Box>
 
         <VStack space="sm" className="w-full">
@@ -49,15 +85,6 @@ export default function AreaClienteScreen() {
           </Heading>
           <ServiziClienteSection />
         </VStack>
-
-        <Box className="w-full rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <HStack space="sm" className="items-start">
-            <Text size="md">💬</Text>
-            <Text size="xs" className="flex-1 text-amber-800">
-              Hai bisogno di aiuto o informazioni? Qui sotto troverai i nostri contatti e social.
-            </Text>
-          </HStack>
-        </Box>
 
         <BackButton fallbackHref="/" />
 

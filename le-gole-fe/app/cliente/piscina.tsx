@@ -7,6 +7,7 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Spinner } from '@/components/ui/spinner';
+import { ChevronRightIcon, Icon } from '@/components/ui/icon';
 import { listPiscinaInventari, type PiscinaInventario } from '../../src/services/struttura';
 import { ClienteFooter } from '../../src/components/cliente/ClienteFooter';
 import { BackButton } from '../../src/components/cliente/BackButton';
@@ -97,10 +98,11 @@ export default function ClientePiscinaScreen() {
               key={piscina.id}
               onPress={() => router.push(`/cliente/piscina/${piscina.id}` as Href)}
               accessibilityRole="button"
-              accessibilityLabel={`Piscina ${piscina.nome}`}
+              accessibilityLabel={`Piscina ${piscina.nome} — tocca per prenotare`}
+              className="active:opacity-80"
             >
-              <Box className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
-                <VStack space="sm">
+              <Box className="w-full overflow-hidden rounded-2xl border-2 border-sky-300 bg-sky-100 shadow-sm">
+                <VStack space="sm" className="p-5">
                   <HStack space="sm" className="items-center">
                     <Box className="h-12 w-12 items-center justify-center rounded-full bg-white/70">
                       <Text size="xl">🏊</Text>
@@ -116,13 +118,21 @@ export default function ClientePiscinaScreen() {
                         {piscina.orario_apertura.slice(0, 5)} - {piscina.orario_chiusura.slice(0, 5)}
                       </Text>
                     </VStack>
-                    <Text size="lg" className="font-semibold text-sky-700">
-                      →
-                    </Text>
                   </HStack>
 
                   <PrezziGrid piscina={piscina} />
                 </VStack>
+
+                {/* Barra CTA evidenziata: senza, la card non dava alcun indizio di essere
+                    cliccabile oltre al cursore del mouse su web (assente su touch) — stesso
+                    principio già usato per "Gestisci mappa postazioni →" lato staff
+                    (PiscinaInventarioSection.tsx) e per il chevron di NotificaCard. */}
+                <HStack className="items-center justify-between bg-sky-500/20 px-5 py-3">
+                  <Text size="sm" className="font-semibold text-sky-800">
+                    Prenota ora
+                  </Text>
+                  <Icon as={ChevronRightIcon} size="md" className="text-sky-700" />
+                </HStack>
               </Box>
             </Pressable>
           ))}

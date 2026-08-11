@@ -38,7 +38,7 @@ function buildServizi(isPiscinaDisponibile: boolean): ServizioCliente[] {
       label: 'Ristorante',
       descrizione: 'Prenotazione tavoli',
       disponibile: false,
-      badgeLabel: 'Presto',
+      badgeLabel: 'In arrivo',
       messaggioNonDisponibile: "Ristorante sarà disponibile a breve in quest'area.",
     },
     {
@@ -47,8 +47,17 @@ function buildServizi(isPiscinaDisponibile: boolean): ServizioCliente[] {
       label: 'Asporto',
       descrizione: 'Ordina da asporto',
       disponibile: false,
-      badgeLabel: 'Presto',
+      badgeLabel: 'In arrivo',
       messaggioNonDisponibile: "Asporto sarà disponibile a breve in quest'area.",
+    },
+    {
+      key: 'PADEL',
+      icon: '🎾',
+      label: 'Padel',
+      descrizione: 'Prenotazione campo da padel',
+      disponibile: false,
+      badgeLabel: 'In arrivo',
+      messaggioNonDisponibile: "Il campo da padel sarà disponibile a breve in quest'area.",
     },
   ];
 }
@@ -121,7 +130,7 @@ function ServizioCard({ servizio }: Readonly<{ servizio: ServizioCliente }>) {
             <Text
               size="2xs"
               className={
-                servizio.badgeLabel === 'Presto'
+                servizio.badgeLabel === 'In arrivo'
                   ? 'font-medium text-amber-700'
                   : 'font-medium text-slate-600'
               }

@@ -30,7 +30,7 @@ import {
 } from '../../services/struttura';
 import { formatOrarioInput } from '../../utils/piscinaMappa';
 
-type TipoInventario = 'PISCINA' | 'ASPORTO' | 'SALA';
+type TipoInventario = 'PISCINA' | 'ASPORTO' | 'SALA' | 'PADEL';
 
 const TIPO_INVENTARIO_OPTIONS: Array<{
   tipo: TipoInventario;
@@ -42,6 +42,7 @@ const TIPO_INVENTARIO_OPTIONS: Array<{
   { tipo: 'PISCINA', icon: '🏊', label: 'Piscina', descrizione: 'Listino, ombrelloni, gazebi, lettini e sdraie', disponibile: true },
   { tipo: 'ASPORTO', icon: '🥡', label: 'Asporto', descrizione: 'In arrivo', disponibile: false },
   { tipo: 'SALA', icon: '🍽️', label: 'Sala', descrizione: 'In arrivo', disponibile: false },
+  { tipo: 'PADEL', icon: '🎾', label: 'Padel', descrizione: 'In arrivo', disponibile: false },
 ];
 
 const STOCK_ITEMS: Array<{ key: keyof PiscinaInventario; icon: string; label: string }> = [
@@ -292,7 +293,7 @@ export function PiscinaInventarioSection() {
       openCreateForm();
       return;
     }
-    const label = tipo === 'ASPORTO' ? 'Asporto' : 'Sala';
+    const label = TIPO_INVENTARIO_OPTIONS.find((option) => option.tipo === tipo)?.label ?? tipo;
     const message = `La gestione dell'inventario ${label} è in arrivo: non è ancora disponibile.`;
     if (Platform.OS === 'web') {
       window.alert(message);
@@ -448,7 +449,7 @@ export function PiscinaInventarioSection() {
                 {!option.disponibile ? (
                   <Box className="rounded-full bg-amber-100 px-2 py-0.5">
                     <Text size="2xs" className="font-medium text-amber-700">
-                      Presto
+                      In arrivo
                     </Text>
                   </Box>
                 ) : null}

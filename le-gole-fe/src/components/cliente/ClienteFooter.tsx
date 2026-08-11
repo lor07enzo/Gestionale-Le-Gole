@@ -5,7 +5,7 @@ import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Icon, MailIcon, PhoneIcon } from '@/components/ui/icon';
+import { Icon, MailIcon, MessageCircleIcon, PhoneIcon } from '@/components/ui/icon';
 import { FacebookIcon, InstagramIcon, WhatsAppIcon } from './SocialIcons';
 
 // Variante bianca del logo (sfondo trasparente): l'unica leggibile sul footer scuro, a
@@ -17,6 +17,15 @@ const CONTATTI = {
   telefonoHref: 'tel:+393334528903',
   email: 'osterialegole@icloud.com',
   emailHref: 'mailto:osterialegole@icloud.com',
+};
+
+// Contatto tecnico dedicato ai problemi/feedback sul sito, distinto da CONTATTI.email (la casella
+// del ristorante, per richieste ai clienti) — la piattaforma è ancora in fase di sviluppo/test
+// (banner dedicato in app/cliente/index.tsx), e serve un canale separato per chi segnala bug o
+// suggerimenti sulla piattaforma stessa, non per prenotazioni/informazioni sul locale.
+const ASSISTENZA = {
+  email: 'seniority55@outlook.it',
+  emailHref: 'mailto:seniority55@outlook.it',
 };
 
 const SOCIAL_LINKS = [
@@ -57,7 +66,7 @@ export function ClienteFooter() {
               </Heading>
             </HStack>
             <Text size="xs" className="text-amber-200/60">
-              Piscina, ristorante e asporto: la tua pausa relax, tutta in un unico posto.
+              Piscina, ristorante, asporto e padel: la tua pausa relax, tutta in un unico posto.
             </Text>
           </VStack>
 
@@ -106,6 +115,39 @@ export function ClienteFooter() {
             </HStack>
           </VStack>
         </VStack>
+
+        <Box className="h-px w-full bg-white/10" />
+
+        {/* Sezione dedicata a bug/feedback sul sito, distinta dalla colonna "Contatti" sopra
+            (quella è la casella del ristorante, per prenotazioni/informazioni sul locale) —
+            riquadro bordato per farla leggere come un blocco a sé, coerente con il banner "in
+            fase di sviluppo" in app/cliente/index.tsx che rimanda qui. */}
+        <Box className="w-full rounded-xl border border-white/10 bg-white/5 p-4">
+          <VStack space="xs">
+            <HStack space="xs" className="items-center">
+              <Icon as={MessageCircleIcon} size="sm" className="text-amber-200/70" />
+              <Text size="sm" className="font-semibold text-amber-50">
+                Assistenza e feedback
+              </Text>
+            </HStack>
+            <Text size="xs" className="text-amber-200/60">
+              Il sito è ancora in fase di sviluppo e test: se riscontri un malfunzionamento o hai
+              un suggerimento per migliorarlo, scrivici direttamente.
+            </Text>
+            <Pressable
+              onPress={() => openLink(ASSISTENZA.emailHref)}
+              accessibilityRole="link"
+              accessibilityLabel={`Scrivi a ${ASSISTENZA.email} per assistenza o feedback`}
+            >
+              <HStack space="sm" className="items-center">
+                <Icon as={MailIcon} size="sm" className="text-amber-200/70" />
+                <Text size="sm" className="font-semibold text-amber-100 underline">
+                  {ASSISTENZA.email}
+                </Text>
+              </HStack>
+            </Pressable>
+          </VStack>
+        </Box>
 
         <Box className="h-px w-full bg-white/10" />
 

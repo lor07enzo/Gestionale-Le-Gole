@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, Pressable } from 'react-native';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
@@ -7,6 +7,17 @@ import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Button, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { EditIcon, SlashIcon, ThreeDotsIcon, TrashIcon } from '@/components/ui/icon';
+import {
+  Actionsheet,
+  ActionsheetBackdrop,
+  ActionsheetContent,
+  ActionsheetDragIndicator,
+  ActionsheetDragIndicatorWrapper,
+  ActionsheetIcon,
+  ActionsheetItem,
+  ActionsheetItemText,
+} from '@/components/ui/actionsheet';
 import { useAuth } from '../../context/AuthContext';
 import { StaffManagementProvider, useStaffManagement } from '../../context/StaffManagementContext';
 import type { StaffMember } from '../../services/staff';
@@ -32,65 +43,111 @@ type StaffRowProps = {
 };
 
 function StaffRow({ member, isSelf, onEdit, onDelete, onToggleActive }: Readonly<StaffRowProps>) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const runAction = (action: () => void) => {
+    setIsMenuOpen(false);
+    action();
+  };
+
   return (
     <HStack space="sm" className="items-start rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
       <Box className="h-9 w-9 items-center justify-center rounded-full bg-white/70">
         <Text size="md">{member.is_superuser ? '👑' : '👤'}</Text>
       </Box>
       <VStack space="xs" className="flex-1">
-        <HStack space="xs" className="items-center flex-wrap">
-          <Text size="sm" className="font-semibold text-sky-900">
-            {member.username}
-          </Text>
-          {isSelf ? (
-            <Box className="rounded-full bg-sky-500/15 px-2 py-0.5">
-              <Text size="2xs" className="font-medium text-sky-700">
-                Tu
-              </Text>
-            </Box>
-          ) : null}
-          {member.is_superuser ? (
-            <Box className="rounded-full bg-amber-100 px-2 py-0.5">
-              <Text size="2xs" className="font-medium text-amber-700">
-                Superuser
-              </Text>
-            </Box>
-          ) : null}
-          {!member.is_active ? (
-            <Box className="rounded-full bg-rose-100 px-2 py-0.5">
-              <Text size="2xs" className="font-medium text-rose-700">
-                Disattivo
-              </Text>
-            </Box>
-          ) : null}
+        <HStack className="items-start justify-between">
+          <HStack space="xs" className="flex-1 flex-wrap items-center">
+            <Text size="sm" className="font-semibold text-sky-900">
+              {member.username}
+            </Text>
+            {isSelf ? (
+              <Box className="rounded-full bg-sky-500/15 px-2 py-0.5">
+                <Text size="2xs" className="font-medium text-sky-700">
+                  Tu
+                </Text>
+              </Box>
+            ) : null}
+            {member.is_superuser ? (
+              <Box className="rounded-full bg-amber-100 px-2 py-0.5">
+                <Text size="2xs" className="font-medium text-amber-700">
+                  Superuser
+                </Text>
+              </Box>
+            ) : null}
+            {!member.is_active ? (
+              <Box className="rounded-full bg-rose-100 px-2 py-0.5">
+                <Text size="2xs" className="font-medium text-rose-700">
+                  Disattivato
+                </Text>
+              </Box>
+            ) : null}
+          </HStack>
+
+          {/* Menù a tendina: Modifica/Disattiva-Riattiva/Elimina vivevano prima come pulsanti
+              testuali affiancati, ingombranti su una riga già densa di badge — accorpati dietro
+              i tre puntini, stesso pattern "Actionsheet come menu" già usato altrove nel progetto
+              (es. il selettore tipo inventario in PiscinaInventarioSection.tsx) invece di
+              introdurre un vero popover ancorato, non presente nel kit di componenti. */}
+          <Pressable
+            onPress={() => setIsMenuOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Azioni per ${member.username}`}
+            className="h-8 w-8 items-center justify-center rounded-full active:bg-sky-200/60"
+          >
+            <ActionsheetIcon as={ThreeDotsIcon} className="text-sky-700" />
+          </Pressable>
         </HStack>
         <Text size="xs" className="text-sky-900/70">
           {member.email || '—'}
         </Text>
-
-        <HStack space="xs" className="flex-wrap pt-1">
-          <Button size="sm" variant="outline" className="border-sky-300" onPress={onEdit}>
-            <ButtonText size="sm">Modifica</ButtonText>
-          </Button>
-          {/* Un superuser non può disattivare/eliminare il proprio account da qui: eviterebbe un
-              lockout (nessun altro modo per ripristinarlo se non da manage.py createsuperuser).
-              Il cambio password è nel menu account (vedi app/staff/_layout.tsx), non qui. */}
-          {!isSelf ? (
-            <>
-              <Button size="sm" variant="outline" className="border-amber-400" onPress={onToggleActive}>
-                <ButtonText size="sm" className="text-amber-700">
-                  {member.is_active ? 'Disattiva' : 'Riattiva'}
-                </ButtonText>
-              </Button>
-              <Button size="sm" variant="outline" className="border-destructive/40" onPress={onDelete}>
-                <ButtonText size="sm" className="text-destructive">
-                  Elimina
-                </ButtonText>
-              </Button>
-            </>
-          ) : null}
-        </HStack>
       </VStack>
+
+      <Actionsheet isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)}>
+        <ActionsheetBackdrop />
+        <ActionsheetContent aria-label={`Azioni per ${member.username}`}>
+          <ActionsheetDragIndicatorWrapper>
+            <ActionsheetDragIndicator />
+          </ActionsheetDragIndicatorWrapper>
+
+          <VStack space="xs" className="w-full pb-4 pt-1">
+            <Heading size="sm" className="px-1 pb-2">
+              {member.username}
+            </Heading>
+
+            <ActionsheetItem onPress={() => runAction(onEdit)}>
+              <ActionsheetIcon as={EditIcon} className="text-sky-700" />
+              <ActionsheetItemText>Modifica</ActionsheetItemText>
+            </ActionsheetItem>
+
+            {/* Un superuser non può disattivare il proprio account da qui: eviterebbe un lockout
+                (nessun altro modo per ripristinarlo se non da manage.py createsuperuser). Il
+                cambio password è nel menu account (app/staff/_layout.tsx), non qui. */}
+            {!isSelf ? (
+              <ActionsheetItem onPress={() => runAction(onToggleActive)}>
+                <ActionsheetIcon as={SlashIcon} className="text-amber-700" />
+                <ActionsheetItemText className="text-amber-700">
+                  {member.is_active ? 'Disattiva' : 'Riattiva'}
+                </ActionsheetItemText>
+              </ActionsheetItem>
+            ) : null}
+
+            {/* Un superuser non è mai eliminabile (solo disattivabile) — è l'unico tipo di
+                account che gestisce gli altri, perderlo per errore non avrebbe rimedio se non da
+                manage.py createsuperuser. Stesso guardrail applicato lato backend
+                (UtenteViewSet.destroy), qui solo per non mostrare un'azione che il server
+                rifiuterebbe comunque. */}
+            {!isSelf && !member.is_superuser ? (
+              <ActionsheetItem onPress={() => runAction(onDelete)}>
+                <ActionsheetIcon as={TrashIcon} className="text-destructive" />
+                <ActionsheetItemText className="text-destructive">
+                  Elimina
+                </ActionsheetItemText>
+              </ActionsheetItem>
+            ) : null}
+          </VStack>
+        </ActionsheetContent>
+      </Actionsheet>
     </HStack>
   );
 }

@@ -123,6 +123,40 @@ class TestSetActive:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
+class TestDestroy:
+    def test_superuser_elimina_uno_staff_normale(self, superuser_client, staff_user):
+        response = superuser_client.delete(reverse("staff-detail", args=[staff_user.pk]))
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        from users.models import Utente
+
+        assert not Utente.objects.filter(pk=staff_user.pk).exists()
+
+    def test_non_puo_eliminare_un_altro_superuser(self, superuser_client):
+        altro_superuser = SuperUserFactory()
+
+        response = superuser_client.delete(reverse("staff-detail", args=[altro_superuser.pk]))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        from users.models import Utente
+
+        assert Utente.objects.filter(pk=altro_superuser.pk).exists()
+
+    def test_non_puo_eliminare_se_stesso(self, superuser_client, superuser):
+        response = superuser_client.delete(reverse("staff-detail", args=[superuser.pk]))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        from users.models import Utente
+
+        assert Utente.objects.filter(pk=superuser.pk).exists()
+
+    def test_richiede_superuser(self, staff_client, staff_user):
+        altro = UtenteFactory()
+
+        response = staff_client.delete(reverse("staff-detail", args=[altro.pk]))
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
 class TestActivate:
     def test_uid_e_token_validi_impostano_la_password(self, api_client):
         utente = UtenteFactory()
