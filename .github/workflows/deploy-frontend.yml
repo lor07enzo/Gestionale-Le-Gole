@@ -13,7 +13,15 @@ on:
 jobs:
   deploy:
     name: Export + deploy to Netlify (produzione)
-    runs-on: ubuntu-latest
+    # windows-latest, non ubuntu-latest (sezione 14 CLAUDE.md): il crash da require circolare
+    # react-native-web/react-native-css (NativeWind v5 alpha) dipende dall'ordine con cui Metro
+    # valuta i moduli, a sua volta sensibile a come il filesystem scansiona node_modules — mai
+    # riprodotto su Windows in nessuno dei numerosi episodi osservati (deploy manuale da locale
+    # sempre pulito), sistematicamente intermittente su Linux. Non risolve il bug alla radice
+    # (resta un problema reale di NativeWind/react-native-css, ancora alpha), ma allinea il runner
+    # CI all'unico ambiente che si è dimostrato affidabile finora. Lo step di verifica sotto resta
+    # comunque attivo come rete di sicurezza.
+    runs-on: windows-latest
 
     defaults:
       run:
@@ -48,11 +56,11 @@ jobs:
       - name: Fix HTML lang + notranslate meta
         run: node scripts/fix-html-lang.js
 
-      # Chromium per il browser reale usato da scripts/verify-web-build.js. --with-deps installa
-      # anche le librerie di sistema richieste dal runner ubuntu-latest (altrimenti Chromium non
-      # parte affatto in CI).
+      # Chromium per il browser reale usato da scripts/verify-web-build.js. Niente --with-deps qui
+      # (installa librerie di sistema via apt, solo per runner Linux/Debian-based) — su
+      # windows-latest il browser scaricato da Playwright è già autosufficiente.
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       # Blocca il deploy se il bundle appena esportato va in crash su una qualunque delle pagine
       # chiave (bug di non-determinismo di Metro sull'ordine dei moduli tra ambienti diversi,
