@@ -13,19 +13,24 @@ import {
   type SimpleFormState,
 } from '../types/piscinaMappa';
 import {
+  computeBulkPositions,
   computeDefaultOrario,
+  generateGruppoId,
   formatTime,
   minutesToHHMM,
-  nextAvailableNumero,
+  nextAvailableNumeri,
   parseHHMMToMinutes,
   remainingForTipo,
   toISODate,
   validateOrarioArrivo,
   validateOrarioIngressoIntero,
   validateOrarioIngressoRidotto,
+  type OrientamentoGriglia,
 } from '../utils/piscinaMappa';
 import { usePiscinaMappaData } from './PiscinaMappaDataContext';
 import { usePiscinaSelection } from './PiscinaSelectionContext';
+
+export type OrdineNumeri = 'crescente' | 'decrescente';
 
 // Esportato perché i form annidati in PostazioneSheet (figli di <Actionsheet>, montato da
 // gluestack-ui fuori dall'albero di PiscinaSheetsProvider) non possono chiamare usePiscinaSheets()
@@ -47,8 +52,27 @@ export type PiscinaSheetsValue = {
   maxSdraie: number | null;
   newTipo: TipoPostazione;
   setNewTipo: (tipo: TipoPostazione) => void;
+  // Numero della prima postazione che verrà creata — per compatibilità con un solo elemento
+  // (ombrelloni, o un singolo gazebo). Per una creazione in blocco vedi newNumeriPreview sotto.
   newNumero: string;
-  setNewNumero: (value: string) => void;
+  // Creazione in blocco (solo gazebi, sezione 5 CLAUDE.md, 2026-08-12): quanti posizionarne e se
+  // metterli in colonna (verticale) o in riga (orizzontale) — ignorati per gli ombrelloni, che
+  // restano sempre singoli.
+  newQuantita: string;
+  setNewQuantita: (value: string) => void;
+  newOrientamento: OrientamentoGriglia;
+  setNewOrientamento: (value: OrientamentoGriglia) => void;
+  // Direzione di numerazione del blocco (sezione 5 CLAUDE.md, 2026-08-13): 'crescente' assegna il
+  // numero più basso riservato alla prima postazione della striscia (in alto/a sinistra),
+  // 'decrescente' lo assegna all'ultima — l'insieme dei numeri riservati (i più bassi liberi) non
+  // cambia, cambia solo quale estremo della striscia li riceve in che ordine.
+  newOrdineNumeri: OrdineNumeri;
+  setNewOrdineNumeri: (value: OrdineNumeri) => void;
+  // Tutti i numeri che verranno assegnati in questa creazione, nell'ordine in cui verranno
+  // abbinati alle posizioni della striscia (1 elemento per una postazione singola, N per un
+  // blocco di gazebi) — calcolati in anticipo con nextAvailableNumeri, così non collidono tra
+  // loro anche prima di essere salvati; già riordinati secondo newOrdineNumeri.
+  newNumeriPreview: number[];
   // Postazioni fisiche attive per tipo rispetto al totale previsto dal listino (inventario.totale_
   // ombrelloni/totale_gazebi) — usato da AddPostazioneForm per mostrare "X/Y posizionati" e
   // disabilitare "Aggiungi" quando il tipo selezionato ha raggiunto il limite (sezione 5 CLAUDE.md).
@@ -139,7 +163,9 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [isSubmittingSheet, setIsSubmittingSheet] = useState(false);
   const [newTipo, setNewTipo] = useState<TipoPostazione>('OMBRELLONE');
-  const [newNumero, setNewNumero] = useState('');
+  const [newQuantita, setNewQuantita] = useState('1');
+  const [newOrientamento, setNewOrientamento] = useState<OrientamentoGriglia>('verticale');
+  const [newOrdineNumeri, setNewOrdineNumeri] = useState<OrdineNumeri>('crescente');
   const [isClientPickerOpen, setIsClientPickerOpen] = useState(false);
   const [isClientListOpen, setIsClientListOpen] = useState(false);
 
@@ -202,6 +228,24 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     totale: inventario?.totale_gazebi ?? 0,
   };
 
+  // La creazione in blocco (quantità > 1) è pensata solo per i gazebi (sezione 5 CLAUDE.md,
+  // 2026-08-12): gli ombrelloni di questo listino sono al massimo 15 e si posizionano bene uno
+  // alla volta come da sempre — per un ombrellone la quantità resta sempre 1 anche se il campo
+  // del form (nascosto per questo tipo) conservasse un valore diverso residuo da un cambio tipo.
+  const quantitaRichiesta =
+    newTipo === 'GAZEBO' ? Math.max(Number.parseInt(newQuantita, 10) || 1, 1) : 1;
+  // Riserva l'intero blocco di numeri in anticipo (non uno alla volta durante il salvataggio):
+  // nextAvailableNumeri garantisce che non collidano tra loro anche prima di essere creati.
+  // L'insieme riservato è sempre "i numeri liberi più bassi" a prescindere dall'ordine scelto —
+  // newOrdineNumeri decide solo quale estremo della striscia riceve il numero più basso: in
+  // ordine 'decrescente' l'array viene semplicemente invertito prima di essere abbinato alle
+  // posizioni (calcolate sempre dall'inizio della striscia in poi, invariate).
+  const newNumeriPreview = useMemo(() => {
+    const base = nextAvailableNumeri(postazioni, quantitaRichiesta);
+    return newOrdineNumeri === 'decrescente' ? [...base].reverse() : base;
+  }, [postazioni, quantitaRichiesta, newOrdineNumeri]);
+  const newNumero = String(newNumeriPreview[0] ?? '');
+
   const closeSheet = () => {
     setSheetMode(null);
     setSheetError(null);
@@ -211,10 +255,12 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
 
   const openAddPostazioneSheet = () => {
     setNewTipo('OMBRELLONE');
+    setNewQuantita('1');
+    setNewOrientamento('verticale');
+    setNewOrdineNumeri('crescente');
     // Il numero non è più scelto a mano: viene assegnato automaticamente al primo libero
-    // (sezione 5 CLAUDE.md) — ricalcolato ad ogni apertura, così riflette sempre le postazioni
-    // attive più recenti (es. dopo un'aggiunta o un'eliminazione appena fatta).
-    setNewNumero(String(nextAvailableNumero(postazioni)));
+    // (sezione 5 CLAUDE.md), derivato reattivamente da newNumeriPreview sopra — riflette sempre
+    // le postazioni attive più recenti senza bisogno di ricalcolarlo qui.
     setSheetError(null);
     setSheetMode('add-postazione');
   };
@@ -551,27 +597,50 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError('Non è possibile aggiungere postazioni per un giorno passato.');
       return;
     }
-    // Backstop difensivo: `newNumero` è sempre valorizzato da `nextAvailableNumero()` all'apertura
-    // del foglio, non più digitato a mano — non dovrebbe mai risultare vuoto/non valido qui.
-    const numero = Number.parseInt(newNumero, 10);
-    if (!numero || numero <= 0) {
-      setSheetError('Impossibile calcolare il prossimo numero disponibile. Chiudi e riprova.');
+    // Backstop difensivo: `newNumeriPreview` è sempre valorizzato reattivamente da
+    // nextAvailableNumeri() (sopra), non dovrebbe mai risultare più corto della quantità richiesta.
+    if (newNumeriPreview.length < quantitaRichiesta) {
+      setSheetError('Impossibile calcolare i prossimi numeri disponibili. Chiudi e riprova.');
       return;
     }
     // Backstop lato frontend: lo stesso limite è comunque applicato lato backend (fonte di
     // verità, PostazioneSerializer.validate()) — qui evitiamo solo la chiamata quando il limite
     // è già visibile in UI (AddPostazioneForm mostra "X/Y" e disabilita "Aggiungi" di conseguenza).
     const capacita = newTipo === 'OMBRELLONE' ? capacitaOmbrelloni : capacitaGazebi;
-    if (capacita.usati >= capacita.totale) {
-      const etichetta = newTipo === 'OMBRELLONE' ? 'ombrelloni' : 'gazebi';
-      setSheetError(`Limite raggiunto: il listino prevede al massimo ${capacita.totale} ${etichetta}.`);
+    const postiResidui = capacita.totale - capacita.usati;
+    const etichettaTipo = newTipo === 'OMBRELLONE' ? 'ombrelloni' : 'gazebi';
+    if (postiResidui <= 0) {
+      setSheetError(`Limite raggiunto: il listino prevede al massimo ${capacita.totale} ${etichettaTipo}.`);
+      return;
+    }
+    if (quantitaRichiesta > postiResidui) {
+      setSheetError(
+        `Il listino prevede al massimo ${capacita.totale} ${etichettaTipo}: ne restano da posizionare solo ${postiResidui}.`
+      );
       return;
     }
     setIsSubmittingSheet(true);
     setSheetError(null);
     try {
-      await addPostazione({ tipo: newTipo, numero, pos_x: 50, pos_y: 50 });
-      setNewNumero('');
+      const posizioni = computeBulkPositions(newTipo, quantitaRichiesta, newOrientamento);
+      // Un blocco di più gazebo condivide un unico `gruppo` (UUID generato qui, sezione 5
+      // CLAUDE.md, 2026-08-13) — da questo momento si sposta sempre tutto insieme
+      // (PiscinaMappaDataContext.dragPostazione) e non può più dividersi/unirsi trascinando. Null
+      // per l'ombrellone (sempre singolo) e per un gazebo creato da solo (quantità 1): un
+      // "gruppo" di un solo elemento non avrebbe alcun effetto pratico.
+      const gruppo = newTipo === 'GAZEBO' && quantitaRichiesta > 1 ? generateGruppoId() : null;
+      // In sequenza, non in Promise.all: i numeri sono già riservati tutti insieme in anticipo
+      // da newNumeriPreview (nessun rischio di collisione tra loro), il ciclo serve solo a non
+      // sommergere il backend con richieste simultanee su un blocco potenzialmente grande.
+      for (let i = 0; i < quantitaRichiesta; i++) {
+        await addPostazione({
+          tipo: newTipo,
+          numero: newNumeriPreview[i],
+          pos_x: posizioni[i].pos_x,
+          pos_y: posizioni[i].pos_y,
+          gruppo,
+        });
+      }
       closeSheet();
     } catch (err: any) {
       const detail = err?.response?.data;
@@ -732,7 +801,13 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     newTipo,
     setNewTipo,
     newNumero,
-    setNewNumero,
+    newQuantita,
+    setNewQuantita,
+    newOrientamento,
+    setNewOrientamento,
+    newOrdineNumeri,
+    setNewOrdineNumeri,
+    newNumeriPreview,
     capacitaOmbrelloni,
     capacitaGazebi,
     clientiSelezionabiliPerTarget,

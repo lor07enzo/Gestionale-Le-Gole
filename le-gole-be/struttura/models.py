@@ -88,6 +88,16 @@ class Postazione(models.Model):
     pos_x = models.FloatField(default=50.0, help_text="Posizione orizzontale in percentuale (0-100) sul canvas")
     pos_y = models.FloatField(default=50.0, help_text="Posizione verticale in percentuale (0-100) sul canvas")
 
+    # Gruppo di gazebo "attaccati" creati in un'unica operazione dal foglio "+ Aggiungi
+    # postazione" (sezione 5 CLAUDE.md, 2026-08-13): un blocco così creato non si può più
+    # dividere/unire trascinando (a differenza della prima versione, puramente geometrica) — tutte
+    # le postazioni con lo stesso `gruppo` si spostano sempre insieme come un unico corpo rigido
+    # (PiscinaMappaDataContext.dragPostazione, frontend). Nullo per l'ombrellone (sempre singolo) e
+    # per un gazebo creato singolarmente (quantità 1, nessun bisogno di un gruppo di uno). Generato
+    # lato frontend (un UUID per l'intero blocco, non riutilizzato da altre postazioni) al momento
+    # della creazione — non ha una tabella/modello dedicato, è solo una chiave di raggruppamento.
+    gruppo = models.UUIDField(null=True, blank=True, db_index=True)
+
     # Soft delete: eliminare per davvero cancellerebbe lo storico (CASCADE su
     # OccupazionePostazione/PostazionePosizioneStorico) e altererebbe retroattivamente cosa
     # risultava "esistito" nei giorni passati. PostazioneViewSet filtra di conseguenza in base

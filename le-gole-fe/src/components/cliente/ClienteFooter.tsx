@@ -5,7 +5,7 @@ import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Icon, MailIcon, MessageCircleIcon, PhoneIcon } from '@/components/ui/icon';
+import { Icon, MailIcon, MapPinIcon, MessageCircleIcon, PhoneIcon } from '@/components/ui/icon';
 import { FacebookIcon, InstagramIcon, WhatsAppIcon } from './SocialIcons';
 
 // Variante bianca del logo (sfondo trasparente): l'unica leggibile sul footer scuro, a
@@ -17,7 +17,17 @@ const CONTATTI = {
   telefonoHref: 'tel:+393334528903',
   email: 'osterialegole@icloud.com',
   emailHref: 'mailto:osterialegole@icloud.com',
+  // Stesso indirizzo di TITOLARE.indirizzo in app/privacy.tsx (sede legale) — duplicato qui
+  // invece di importato da quel file: è una route, non un modulo di dominio, e il valore non
+  // cambia mai indipendentemente da quel file (stesso trattamento già riservato a CONTATTI.telefono,
+  // ripetuto anche nell'href WhatsApp di SOCIAL_LINKS sotto).
+  indirizzo: 'Via Salaria SS4 km 98,865 snc, 02013 Antrodoco (RI)',
 };
+
+// Link universale Google Maps (query testuale, nessuna API key richiesta): su mobile apre l'app
+// Maps se installata, altrimenti ricade sul sito — stesso principio "apri con il sistema" già
+// usato per tel:/mailto: sopra.
+const MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(CONTATTI.indirizzo)}`;
 
 // Contatto tecnico dedicato ai problemi/feedback sul sito, distinto da CONTATTI.email (la casella
 // del ristorante, per richieste ai clienti) — la piattaforma è ancora in fase di sviluppo/test
@@ -93,6 +103,18 @@ export function ClienteFooter() {
                 <Icon as={MailIcon} size="sm" className="text-amber-200/70" />
                 <Text size="sm" className="text-amber-100/90">
                   {CONTATTI.email}
+                </Text>
+              </HStack>
+            </Pressable>
+            <Pressable
+              onPress={() => openLink(MAPS_URL)}
+              accessibilityRole="link"
+              accessibilityLabel={`Apri l'indirizzo ${CONTATTI.indirizzo} su Google Maps`}
+            >
+              <HStack space="sm" className="items-start">
+                <Icon as={MapPinIcon} size="sm" className="mt-0.5 shrink-0 text-amber-200/70" />
+                <Text size="sm" className="flex-1 text-amber-100/90">
+                  {CONTATTI.indirizzo}
                 </Text>
               </HStack>
             </Pressable>

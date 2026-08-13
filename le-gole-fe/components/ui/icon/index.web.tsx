@@ -1068,6 +1068,30 @@ const MailIcon = createIcon({
 MailIcon.displayName = 'MailIcon';
 export { MailIcon };
 
+const MapPinIcon = createIcon({
+  Root: Svg,
+  viewBox: '0 0 24 24',
+  path: (
+    <>
+      <path
+        d="M20 10C20 14.993 14.461 20.193 12.601 21.799C12.4277 21.9351 12.2138 22.0089 11.9935 22.0089C11.7732 22.0089 11.5593 21.9351 11.386 21.799C9.539 20.193 4 14.993 4 10C4 7.87827 4.84285 5.84344 6.34315 4.34315C7.84344 2.84285 9.87827 2 12 2C14.1217 2 16.1566 2.84285 17.6569 4.34315C19.1571 5.84344 20 7.87827 20 10Z"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M15 10C15 11.6569 13.6569 13 12 13C10.3431 13 9 11.6569 9 10C9 8.34315 10.3431 7 12 7C13.6569 7 15 8.34315 15 10Z"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+});
+
+MapPinIcon.displayName = 'MapPinIcon';
+export { MapPinIcon };
+
 const MenuIcon = createIcon({
   Root: Svg,
   viewBox: '0 0 24 24',

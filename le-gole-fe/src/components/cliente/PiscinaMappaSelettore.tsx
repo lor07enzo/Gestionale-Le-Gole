@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { Text } from '@/components/ui/text';
@@ -9,7 +9,16 @@ import { listPostazioni, type Postazione } from '../../services/struttura';
 import { getPostazioniOccupate } from '../../services/prenotazioni';
 import { PostazioneMarker } from '../staff/piscina-mappa/PostazioneMarker';
 import { ZoomPanCanvas } from '../shared/ZoomPanCanvas';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, MAX_SCALE, MIN_SCALE, SCALE_STEP, clamp, toISODate } from '../../utils/piscinaMappa';
+import {
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  clamp,
+  groupGazeboAttaccati,
+  MAX_SCALE,
+  MIN_SCALE,
+  SCALE_STEP,
+  toISODate,
+} from '../../utils/piscinaMappa';
 
 export type PiscinaSelezione = { ombrellone: number; gazebo: number; ids: string[] };
 
@@ -52,6 +61,10 @@ export function PiscinaMappaSelettore({
   const [scale, setScale] = useState(1);
 
   const dataISO = toISODate(selectedDate);
+  // Stesso rendering "un unico rettangolo allungato" per i gazebo attaccati già usato dalla mappa
+  // staff (sezione 5 CLAUDE.md, 2026-08-13) — nessuna differenza di logica tra le due mappe, solo
+  // qui il cliente non può trascinare/staccare i segmenti (mappa di sola scelta, readOnly).
+  const gazeboGroupById = useMemo(() => groupGazeboAttaccati(postazioni), [postazioni]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -175,6 +188,7 @@ export function PiscinaMappaSelettore({
               isOccupied={occupatiIds.has(postazione.id)}
               isSelectable={!occupatiIds.has(postazione.id)}
               isSelected={selectedIds.has(postazione.id)}
+              groupInfo={gazeboGroupById.get(postazione.id) ?? null}
               readOnly
               editMode={false}
               onPress={() => handleToggle(postazione)}

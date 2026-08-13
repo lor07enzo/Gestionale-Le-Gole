@@ -44,6 +44,11 @@ export type Postazione = {
   numero: number;
   pos_x: number;
   pos_y: number;
+  // Gazebo creati in blocco dal foglio "+ Aggiungi postazione" condividono lo stesso `gruppo`
+  // (UUID generato lato frontend per l'intero blocco) — un gruppo così creato non si può più
+  // dividere/unire trascinando, si sposta sempre tutto insieme (sezione 5 CLAUDE.md, 2026-08-13).
+  // null per l'ombrellone e per un gazebo creato singolarmente.
+  gruppo: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -320,13 +320,54 @@ export function PiscinaMappaDataProvider({
     // Backstop difensivo: l'interazione di drag è già disabilitata lato UI (PostazioneMarker)
     // per i giorni passati, ma qui evitiamo comunque qualunque scrittura se richiamata a monte.
     if (isPastDate) return;
-    const newX = clamp(postazione.pos_x + (dxLogical / CANVAS_WIDTH) * 100, 0, 100);
-    const newY = clamp(postazione.pos_y + (dyLogical / CANVAS_HEIGHT) * 100, 0, 100);
-    setPostazioni((prev) =>
-      prev.map((p) => (p.id === postazione.id ? { ...p, pos_x: newX, pos_y: newY } : p))
+
+    // Un gazebo con `gruppo` valorizzato trascina sempre l'intero blocco come un corpo rigido
+    // (sezione 5 CLAUDE.md, 2026-08-13) — il gruppo non si può più dividere/unire trascinando un
+    // singolo segmento, quindi ogni drag su un membro sposta tutti i membri dello stesso delta.
+    // Un ombrellone o un gazebo senza gruppo trascina solo se stesso (membriGruppo = [postazione]).
+    const membriGruppo = postazione.gruppo
+      ? postazioni.filter((p) => p.gruppo === postazione.gruppo)
+      : [postazione];
+
+    const deltaXPercent = (dxLogical / CANVAS_WIDTH) * 100;
+    const deltaYPercent = (dyLogical / CANVAS_HEIGHT) * 100;
+
+    // Il delta è applicato in blocco: se spostare l'intero gruppo del delta richiesto farebbe
+    // uscire anche un solo membro dal canvas (0-100%), il delta viene ridotto in blocco per
+    // restare dentro i margini SENZA deformare le distanze relative tra i membri — clampare ogni
+    // membro singolarmente romperebbe l'allineamento "attaccato" (il punto dell'intera funzionalità).
+    const xs = membriGruppo.map((m) => m.pos_x);
+    const ys = membriGruppo.map((m) => m.pos_y);
+    let dx = deltaXPercent;
+    let dy = deltaYPercent;
+    const minX = Math.min(...xs) + dx;
+    const maxX = Math.max(...xs) + dx;
+    const minY = Math.min(...ys) + dy;
+    const maxY = Math.max(...ys) + dy;
+    if (minX < 0) dx -= minX;
+    if (maxX > 100) dx -= maxX - 100;
+    if (minY < 0) dy -= minY;
+    if (maxY > 100) dy -= maxY - 100;
+
+    const nuovePosizioni = new Map(
+      membriGruppo.map((m) => [m.id, { pos_x: clamp(m.pos_x + dx, 0, 100), pos_y: clamp(m.pos_y + dy, 0, 100) }])
     );
-    updatePostazione(postazione.id, { pos_x: newX, pos_y: newY }).catch(() => {
-      setPostazioni((prev) => prev.map((p) => (p.id === postazione.id ? postazione : p)));
+
+    setPostazioni((prev) =>
+      prev.map((p) => {
+        const nuova = nuovePosizioni.get(p.id);
+        return nuova ? { ...p, ...nuova } : p;
+      })
+    );
+
+    Promise.all(
+      membriGruppo.map((m) => {
+        const nuova = nuovePosizioni.get(m.id)!;
+        return updatePostazione(m.id, nuova);
+      })
+    ).catch(() => {
+      const originali = new Map(membriGruppo.map((m) => [m.id, m]));
+      setPostazioni((prev) => prev.map((p) => originali.get(p.id) ?? p));
     });
     // Il backend registra da sé lo storico posizione per oggi (PostazioneViewSet.perform_update
     // → registra_posizione_storico), niente da sincronizzare qui lato frontend.

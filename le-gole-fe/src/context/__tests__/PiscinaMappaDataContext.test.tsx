@@ -103,6 +103,7 @@ function buildPostazione(overrides: Partial<Postazione> = {}): Postazione {
     numero: 1,
     pos_x: 50,
     pos_y: 50,
+    gruppo: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -388,7 +389,7 @@ describe('PiscinaMappaDataProvider — mutazioni', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.addPostazione({ tipo: 'OMBRELLONE', numero: 4, pos_x: 10, pos_y: 10 });
+      await result.current.addPostazione({ tipo: 'OMBRELLONE', numero: 4, pos_x: 10, pos_y: 10, gruppo: null });
     });
 
     expect(mockCreatePostazione).toHaveBeenCalledWith({
@@ -396,6 +397,7 @@ describe('PiscinaMappaDataProvider — mutazioni', () => {
       numero: 4,
       pos_x: 10,
       pos_y: 10,
+      gruppo: null,
       inventario: INVENTARIO_ID,
     });
     expect(result.current.postazioni.map((p) => p.id)).toEqual(['nuova']);
@@ -528,5 +530,84 @@ describe('PiscinaMappaDataProvider — mutazioni', () => {
 
     expect(result.current.postazioni[0].pos_x).toBe(50);
     expect(mockUpdatePostazione).not.toHaveBeenCalled();
+  });
+
+  it('dragPostazione su un gazebo con gruppo sposta TUTTI i membri dello stesso delta, distanze relative invariate', async () => {
+    const membro1 = buildPostazione({ id: 'g1', tipo: 'GAZEBO', gruppo: 'grp-1', pos_x: 50, pos_y: 40 });
+    const membro2 = buildPostazione({ id: 'g2', tipo: 'GAZEBO', gruppo: 'grp-1', pos_x: 50, pos_y: 45 });
+    const membro3 = buildPostazione({ id: 'g3', tipo: 'GAZEBO', gruppo: 'grp-1', pos_x: 50, pos_y: 50 });
+    mockGetInventario.mockResolvedValue(buildInventario());
+    mockListPostazioni.mockResolvedValue([membro1, membro2, membro3]);
+    mockListPrenotazioni.mockResolvedValue([]);
+    mockListOccupazioni.mockResolvedValue([]);
+    mockListGiorniPieni.mockResolvedValue([]);
+    mockUpdatePostazione.mockImplementation((id: string, patch: any) => Promise.resolve({ id, ...patch }) as any);
+
+    const { result } = await renderMappaData(oggiISO());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      // dxLogical=100 su CANVAS_WIDTH=1000 → +10 punti percentuali di pos_x; il drag parte dal
+      // membro "di mezzo" (g2), non dal primo, per verificare che il gruppo si muova a prescindere
+      // da quale segmento venga trascinato.
+      result.current.dragPostazione(membro2, 100, 0);
+    });
+
+    await waitFor(() => expect(result.current.postazioni.find((p) => p.id === 'g2')!.pos_x).toBeCloseTo(60));
+    const posDopo = new Map(result.current.postazioni.map((p) => [p.id, p]));
+    expect(posDopo.get('g1')!.pos_x).toBeCloseTo(60);
+    expect(posDopo.get('g3')!.pos_x).toBeCloseTo(60);
+    // pos_y (l'asse su cui la striscia è disposta) resta invariato per ciascuno: il gruppo si è
+    // solo traslato, non deformato.
+    expect(posDopo.get('g1')!.pos_y).toBe(40);
+    expect(posDopo.get('g2')!.pos_y).toBe(45);
+    expect(posDopo.get('g3')!.pos_y).toBe(50);
+    expect(mockUpdatePostazione).toHaveBeenCalledTimes(3);
+  });
+
+  it('dragPostazione su un gazebo SENZA gruppo sposta solo se stesso, anche se altri gazebo sono vicini', async () => {
+    const isolato = buildPostazione({ id: 'iso', tipo: 'GAZEBO', gruppo: null, pos_x: 50, pos_y: 50 });
+    const altro = buildPostazione({ id: 'altro', tipo: 'GAZEBO', gruppo: null, pos_x: 50, pos_y: 51 });
+    mockGetInventario.mockResolvedValue(buildInventario());
+    mockListPostazioni.mockResolvedValue([isolato, altro]);
+    mockListPrenotazioni.mockResolvedValue([]);
+    mockListOccupazioni.mockResolvedValue([]);
+    mockListGiorniPieni.mockResolvedValue([]);
+    mockUpdatePostazione.mockImplementation((id: string, patch: any) => Promise.resolve({ id, ...patch }) as any);
+
+    const { result } = await renderMappaData(oggiISO());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      result.current.dragPostazione(isolato, 100, 0);
+    });
+
+    await waitFor(() => expect(result.current.postazioni.find((p) => p.id === 'iso')!.pos_x).toBeCloseTo(60));
+    expect(result.current.postazioni.find((p) => p.id === 'altro')!.pos_x).toBe(50);
+    expect(mockUpdatePostazione).toHaveBeenCalledTimes(1);
+  });
+
+  it('dragPostazione di gruppo vicino al bordo trasla l\'intero blocco senza deformarlo (clamp in blocco, non per membro)', async () => {
+    const membro1 = buildPostazione({ id: 'g1', tipo: 'GAZEBO', gruppo: 'grp-bordo', pos_x: 95, pos_y: 50 });
+    const membro2 = buildPostazione({ id: 'g2', tipo: 'GAZEBO', gruppo: 'grp-bordo', pos_x: 98, pos_y: 50 });
+    mockGetInventario.mockResolvedValue(buildInventario());
+    mockListPostazioni.mockResolvedValue([membro1, membro2]);
+    mockListPrenotazioni.mockResolvedValue([]);
+    mockListOccupazioni.mockResolvedValue([]);
+    mockListGiorniPieni.mockResolvedValue([]);
+    mockUpdatePostazione.mockImplementation((id: string, patch: any) => Promise.resolve({ id, ...patch }) as any);
+
+    const { result } = await renderMappaData(oggiISO());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      // Richiesti +20 punti percentuali: porterebbe g2 a 118 (fuori canvas). Il delta condiviso
+      // va ridotto in blocco così g2 si ferma esattamente a 100 e g1 la segue mantenendo la
+      // distanza originale di 3 punti (95→97), non troncato indipendentemente a 100.
+      result.current.dragPostazione(membro2, 200, 0);
+    });
+
+    await waitFor(() => expect(result.current.postazioni.find((p) => p.id === 'g2')!.pos_x).toBeCloseTo(100));
+    expect(result.current.postazioni.find((p) => p.id === 'g1')!.pos_x).toBeCloseTo(97);
   });
 });

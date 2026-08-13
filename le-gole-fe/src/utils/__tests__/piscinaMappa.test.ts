@@ -1,15 +1,22 @@
+import type { Postazione } from '../../services/struttura';
 import {
   addDays,
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
   clamp,
+  computeBulkPositions,
   computeDefaultOrario,
   formatDateDDMMYYYY,
   formatIngressiSummary,
   formatOrarioInput,
   formatRelativeTime,
   formatTime,
+  groupGazeboAttaccati,
   isSameDay,
+  MARKER_STYLE,
   minutesToHHMM,
   nextAvailableNumero,
+  nextAvailableNumeri,
   parseHHMMToMinutes,
   parseISODate,
   remainingForTipo,
@@ -18,6 +25,21 @@ import {
   validateOrarioIngressoIntero,
   validateOrarioIngressoRidotto,
 } from '../piscinaMappa';
+
+function buildPostazione(overrides: Partial<Postazione> = {}): Postazione {
+  return {
+    id: 'p-1',
+    inventario: 'inv-1',
+    tipo: 'GAZEBO',
+    numero: 1,
+    pos_x: 50,
+    pos_y: 50,
+    gruppo: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('clamp', () => {
   it('lascia invariato un valore già dentro il range', () => {
@@ -280,6 +302,145 @@ describe('nextAvailableNumero', () => {
 
   it('ignora l\'ordine di inserimento delle postazioni', () => {
     expect(nextAvailableNumero([{ numero: 3 }, { numero: 1 }])).toBe(2);
+  });
+});
+
+describe('nextAvailableNumeri', () => {
+  it('riserva N numeri liberi in sequenza senza farli collidere tra loro', () => {
+    expect(nextAvailableNumeri([], 3)).toEqual([1, 2, 3]);
+  });
+
+  it('salta i numeri già in uso, anche non consecutivi', () => {
+    expect(nextAvailableNumeri([{ numero: 1 }, { numero: 3 }], 3)).toEqual([2, 4, 5]);
+  });
+
+  it('con quantita 1 si comporta come nextAvailableNumero', () => {
+    const postazioni = [{ numero: 1 }, { numero: 2 }, { numero: 4 }];
+    expect(nextAvailableNumeri(postazioni, 1)).toEqual([nextAvailableNumero(postazioni)]);
+  });
+});
+
+describe('computeBulkPositions', () => {
+  it('con quantita 1 ritorna una sola posizione al centro richiesto', () => {
+    expect(computeBulkPositions('GAZEBO', 1, 'verticale')).toEqual([{ pos_x: 50, pos_y: 50 }]);
+  });
+
+  it('dispone i gazebo in colonna con passo esattamente pari a GAZEBO_HEIGHT (rettangoli attaccati, nessun margine)', () => {
+    const posizioni = computeBulkPositions('GAZEBO', 3, 'verticale');
+    expect(posizioni).toHaveLength(3);
+    // Stessa pos_x per tutti (colonna), pos_y equispaziata sull'asse verticale.
+    expect(posizioni.every((p) => p.pos_x === 50)).toBe(true);
+    const passoAtteso = (MARKER_STYLE.GAZEBO.height / CANVAS_HEIGHT) * 100;
+    expect(posizioni[1].pos_y - posizioni[0].pos_y).toBeCloseTo(passoAtteso);
+    expect(posizioni[2].pos_y - posizioni[1].pos_y).toBeCloseTo(passoAtteso);
+    // Striscia centrata sul punto richiesto (50): il gazebo di mezzo resta a 50.
+    expect(posizioni[1].pos_y).toBeCloseTo(50);
+  });
+
+  it('dispone i gazebo in riga con passo esattamente pari a GAZEBO_WIDTH quando orizzontale', () => {
+    const posizioni = computeBulkPositions('GAZEBO', 2, 'orizzontale');
+    expect(posizioni.every((p) => p.pos_y === 50)).toBe(true);
+    const passoAtteso = (MARKER_STYLE.GAZEBO.width / CANVAS_WIDTH) * 100;
+    expect(posizioni[1].pos_x - posizioni[0].pos_x).toBeCloseTo(passoAtteso);
+  });
+
+  it('resta dentro i margini del canvas anche con molte postazioni richieste', () => {
+    const posizioni = computeBulkPositions('GAZEBO', 40, 'verticale');
+    for (const p of posizioni) {
+      expect(p.pos_y).toBeGreaterThanOrEqual(2);
+      expect(p.pos_y).toBeLessThanOrEqual(98);
+    }
+  });
+});
+
+describe('groupGazeboAttaccati', () => {
+  it('un gazebo senza gruppo (creato singolarmente) non compare nella mappa — riquadro singolo di default', () => {
+    const risultato = groupGazeboAttaccati([buildPostazione({ id: 'g1', gruppo: null, pos_x: 50, pos_y: 50 })]);
+    expect(risultato.has('g1')).toBe(false);
+  });
+
+  it('un gruppo con un solo membro effettivo non compare nella mappa (stesso trattamento di nessun gruppo)', () => {
+    // Caso limite: il campo gruppo è valorizzato ma nessun'altra postazione lo condivide.
+    const risultato = groupGazeboAttaccati([buildPostazione({ id: 'g1', gruppo: 'grp-solo', pos_x: 50, pos_y: 50 })]);
+    expect(risultato.has('g1')).toBe(false);
+  });
+
+  it('ignora completamente gli ombrelloni, anche se avessero un gruppo valorizzato', () => {
+    const risultato = groupGazeboAttaccati([
+      buildPostazione({ id: 'o1', tipo: 'OMBRELLONE', gruppo: 'grp-1', pos_x: 50, pos_y: 50 }),
+      buildPostazione({ id: 'o2', tipo: 'OMBRELLONE', gruppo: 'grp-1', pos_x: 60, pos_y: 50 }),
+    ]);
+    expect(risultato.size).toBe(0);
+  });
+
+  it('raggruppa i gazebo con lo stesso gruppo, ordinati per pos_y crescente (verticale)', () => {
+    const posizioni = computeBulkPositions('GAZEBO', 4, 'verticale');
+    const postazioni = posizioni.map((pos, i) => buildPostazione({ id: `g${i}`, gruppo: 'grp-v', ...pos }));
+    const risultato = groupGazeboAttaccati(postazioni);
+
+    expect(risultato.get('g0')).toEqual({ isFirst: true, isLast: false, orientamento: 'verticale' });
+    expect(risultato.get('g1')).toEqual({ isFirst: false, isLast: false, orientamento: 'verticale' });
+    expect(risultato.get('g2')).toEqual({ isFirst: false, isLast: false, orientamento: 'verticale' });
+    expect(risultato.get('g3')).toEqual({ isFirst: false, isLast: true, orientamento: 'verticale' });
+  });
+
+  it('raggruppa i gazebo con lo stesso gruppo, ordinati per pos_x crescente (orizzontale)', () => {
+    const posizioni = computeBulkPositions('GAZEBO', 3, 'orizzontale');
+    const postazioni = posizioni.map((pos, i) => buildPostazione({ id: `g${i}`, gruppo: 'grp-h', ...pos }));
+    const risultato = groupGazeboAttaccati(postazioni);
+
+    expect(risultato.get('g0')).toEqual({ isFirst: true, isLast: false, orientamento: 'orizzontale' });
+    expect(risultato.get('g1')).toEqual({ isFirst: false, isLast: false, orientamento: 'orizzontale' });
+    expect(risultato.get('g2')).toEqual({ isFirst: false, isLast: true, orientamento: 'orizzontale' });
+  });
+
+  it("l'ordine degli elementi nell'array in input non influisce sul risultato", () => {
+    const posizioni = computeBulkPositions('GAZEBO', 3, 'verticale');
+    const postazioni = posizioni.map((pos, i) => buildPostazione({ id: `g${i}`, gruppo: 'grp-v', ...pos }));
+    const risultato = groupGazeboAttaccati([...postazioni].reverse());
+    expect(risultato.get('g0')?.isFirst).toBe(true);
+    expect(risultato.get('g2')?.isLast).toBe(true);
+  });
+
+  it('due gazebo fisicamente adiacenti ma con gruppo DIVERSO non si uniscono mai (richiesta esplicita: niente unione via geometria)', () => {
+    const posizioni = computeBulkPositions('GAZEBO', 2, 'verticale');
+    const postazioni = [
+      buildPostazione({ id: 'g1', gruppo: 'grp-a', ...posizioni[0] }),
+      buildPostazione({ id: 'g2', gruppo: 'grp-b', ...posizioni[1] }),
+    ];
+    const risultato = groupGazeboAttaccati(postazioni);
+    // Nessuno dei due entra in mappa: ciascuno è un gruppo "di uno" (il proprio gruppo diverso da
+    // quello del vicino), quindi si comporta come un riquadro singolo nonostante il bordo a contatto.
+    expect(risultato.has('g1')).toBe(false);
+    expect(risultato.has('g2')).toBe(false);
+  });
+
+  it('due gazebo dello stesso gruppo restano attaccati anche se, per ipotesi, non fossero perfettamente allineati', () => {
+    // Il drag di gruppo (PiscinaMappaDataContext.dragPostazione) applica sempre lo stesso delta a
+    // tutti i membri, quindi in pratica le posizioni non driftano mai — mantenuta comunque una
+    // piccola tolleranza sull'asse perpendicolare come rete di sicurezza contro arrotondamenti.
+    const step = (MARKER_STYLE.GAZEBO.height / CANVAS_HEIGHT) * 100;
+    const postazioni = [
+      buildPostazione({ id: 'g1', gruppo: 'grp-v', pos_x: 50, pos_y: 50 }),
+      buildPostazione({ id: 'g2', gruppo: 'grp-v', pos_x: 50.3, pos_y: 50 + step }),
+    ];
+    const risultato = groupGazeboAttaccati(postazioni);
+    expect(risultato.get('g1')).toEqual({ isFirst: true, isLast: false, orientamento: 'verticale' });
+    expect(risultato.get('g2')).toEqual({ isFirst: false, isLast: true, orientamento: 'verticale' });
+  });
+
+  it('un gruppo di gazebo e un gazebo isolato senza gruppo altrove restano distinti', () => {
+    const posizioni = computeBulkPositions('GAZEBO', 2, 'verticale', { x: 20, y: 20 });
+    const postazioni = [
+      ...posizioni.map((pos, i) => buildPostazione({ id: `gruppo${i}`, gruppo: 'grp-v', ...pos })),
+      buildPostazione({ id: 'isolato', gruppo: null, pos_x: 80, pos_y: 80 }),
+      buildPostazione({ id: 'ombrellone', tipo: 'OMBRELLONE', pos_x: 50, pos_y: 50 }),
+    ];
+    const risultato = groupGazeboAttaccati(postazioni);
+    expect(risultato.get('gruppo0')).toEqual({ isFirst: true, isLast: false, orientamento: 'verticale' });
+    expect(risultato.get('gruppo1')).toEqual({ isFirst: false, isLast: true, orientamento: 'verticale' });
+    expect(risultato.has('isolato')).toBe(false);
+    expect(risultato.has('ombrellone')).toBe(false);
   });
 });
 

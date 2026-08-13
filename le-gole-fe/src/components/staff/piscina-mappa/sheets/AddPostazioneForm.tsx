@@ -3,8 +3,25 @@ import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
+import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
+import { AddIcon, RemoveIcon } from '@/components/ui/icon';
 import type { PiscinaSheetsValue } from '../../../../context/PiscinaSheetsContext';
+
+// Numeri contigui (il caso comune, dato che nextAvailableNumeri riempie prima i buchi liberi più
+// bassi) mostrati come intervallo compatto; altrimenti elencati singolarmente — raro, capita solo
+// se ci sono numeri liberi "sparsi" tra postazioni esistenti non consecutive. `numeri` è già
+// nell'ordine di assegnazione lungo la striscia (crescente o decrescente, sezione 5 CLAUDE.md,
+// 2026-08-13): il controllo di contiguità guarda la differenza assoluta tra elementi consecutivi
+// (non solo +1), così riconosce come "intervallo compatto" anche una sequenza decrescente — "da
+// #N a #M" riporta gli estremi nell'ordine reale (M può essere minore di N).
+function formatNumeriPreview(numeri: number[]): string {
+  if (numeri.length === 0) return '—';
+  if (numeri.length === 1) return `#${numeri[0]}`;
+  const contigui = numeri.every((n, i) => i === 0 || Math.abs(n - numeri[i - 1]) === 1);
+  return contigui
+    ? `da #${numeri[0]} a #${numeri[numeri.length - 1]} (${numeri.length} postazioni)`
+    : numeri.map((n) => `#${n}`).join(', ');
+}
 
 // Non chiama usePiscinaSheets() da sé: è un figlio di <Actionsheet>, teleportato fuori
 // dall'albero del Provider da gluestack-ui (vedi il commento in PostazioneSheet.tsx).
@@ -13,6 +30,13 @@ export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsVa
     newTipo,
     setNewTipo,
     newNumero,
+    newQuantita,
+    setNewQuantita,
+    newOrientamento,
+    setNewOrientamento,
+    newOrdineNumeri,
+    setNewOrdineNumeri,
+    newNumeriPreview,
     capacitaOmbrelloni,
     capacitaGazebi,
     sheetError,
@@ -21,7 +45,14 @@ export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsVa
   } = sheets;
 
   const capacita = newTipo === 'OMBRELLONE' ? capacitaOmbrelloni : capacitaGazebi;
-  const limiteRaggiunto = capacita.usati >= capacita.totale;
+  const postiResidui = Math.max(capacita.totale - capacita.usati, 0);
+  // La creazione in blocco è pensata solo per i gazebi (sezione 5 CLAUDE.md, 2026-08-12): gli
+  // ombrelloni di questo listino sono al massimo 15 e si posizionano bene uno alla volta, come
+  // da sempre — per un ombrellone la quantità è sempre 1, il campo sotto non compare per questo
+  // tipo. `newNumero` (invariato) resta il numero della prima/unica postazione.
+  const isGazebo = newTipo === 'GAZEBO';
+  const quantita = isGazebo ? Number.parseInt(newQuantita, 10) || 1 : 1;
+  const limiteRaggiunto = postiResidui <= 0 || quantita > postiResidui;
 
   return (
     <>
@@ -75,20 +106,124 @@ export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsVa
           </Text>
         </VStack>
       </HStack>
+
+      {isGazebo ? (
+        <VStack space="sm" className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+          <Text size="sm" className="font-medium text-sky-900">
+            Posiziona più gazebi in una volta
+          </Text>
+          <Text size="2xs" className="text-sky-900/70">
+            Scegli quanti gazebi aggiungere, se metterli in colonna (verticale) o in riga
+            (orizzontale) e se numerarli in ordine crescente o decrescente: vengono piazzati uno
+            dopo l'altro in automatico, come un unico blocco che si sposta sempre tutto insieme
+            (non si divide né si unisce trascinando un singolo gazebo).
+          </Text>
+          <HStack space="sm" className="items-center">
+            <Text size="sm" className="flex-1 font-medium">
+              Quantità
+            </Text>
+            <HStack space="xs" className="items-center">
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-9 w-9 rounded-full border-2 border-sky-300 bg-white"
+                onPress={() => setNewQuantita(String(Math.max(1, quantita - 1)))}
+                disabled={quantita <= 1}
+                accessibilityLabel="Diminuisci quantità gazebi"
+              >
+                <ButtonIcon as={RemoveIcon} className="text-sky-900" />
+              </Button>
+              <Text size="md" className="w-8 text-center font-bold text-sky-900">
+                {quantita}
+              </Text>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-9 w-9 rounded-full border-2 border-sky-300 bg-white"
+                onPress={() => setNewQuantita(String(quantita + 1))}
+                disabled={quantita >= postiResidui}
+                accessibilityLabel="Aumenta quantità gazebi"
+              >
+                <ButtonIcon as={AddIcon} className="text-sky-900" />
+              </Button>
+            </HStack>
+          </HStack>
+          <VStack space="xs">
+            <Text size="sm" className="font-medium">
+              Orientamento
+            </Text>
+            <HStack space="sm">
+              <Button
+                size="sm"
+                className="flex-1"
+                variant={newOrientamento === 'verticale' ? 'default' : 'outline'}
+                onPress={() => setNewOrientamento('verticale')}
+              >
+                <ButtonText className={newOrientamento === 'verticale' ? '' : 'font-semibold text-sky-900'}>
+                  ↕️ In colonna
+                </ButtonText>
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1"
+                variant={newOrientamento === 'orizzontale' ? 'default' : 'outline'}
+                onPress={() => setNewOrientamento('orizzontale')}
+              >
+                <ButtonText className={newOrientamento === 'orizzontale' ? '' : 'font-semibold text-sky-900'}>
+                  ↔️ In riga
+                </ButtonText>
+              </Button>
+            </HStack>
+          </VStack>
+          <VStack space="xs">
+            <Text size="sm" className="font-medium">
+              Numerazione
+            </Text>
+            <HStack space="sm">
+              <Button
+                size="sm"
+                className="flex-1"
+                variant={newOrdineNumeri === 'crescente' ? 'default' : 'outline'}
+                onPress={() => setNewOrdineNumeri('crescente')}
+              >
+                <ButtonText className={newOrdineNumeri === 'crescente' ? '' : 'font-semibold text-sky-900'}>
+                  🔼 Crescenti
+                </ButtonText>
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1"
+                variant={newOrdineNumeri === 'decrescente' ? 'default' : 'outline'}
+                onPress={() => setNewOrdineNumeri('decrescente')}
+              >
+                <ButtonText className={newOrdineNumeri === 'decrescente' ? '' : 'font-semibold text-sky-900'}>
+                  🔽 Decrescenti
+                </ButtonText>
+              </Button>
+            </HStack>
+          </VStack>
+        </VStack>
+      ) : null}
+
       <VStack space="xs">
         <Text size="sm" className="font-medium">
-          Numero assegnato
+          {quantita > 1 ? 'Numeri assegnati' : 'Numero assegnato'}
         </Text>
         <Box className="min-h-9 w-full justify-center rounded-md border border-border bg-sky-50 px-3 py-2">
           <Text size="sm" className="font-semibold text-sky-900">
-            #{newNumero || '—'}
+            {quantita > 1 ? formatNumeriPreview(newNumeriPreview) : `#${newNumero || '—'}`}
           </Text>
         </Box>
       </VStack>
       {limiteRaggiunto ? (
         <Text size="sm" className="text-center text-destructive">
-          Limite raggiunto: il listino prevede al massimo {capacita.totale}{' '}
-          {newTipo === 'OMBRELLONE' ? 'ombrelloni' : 'gazebi'}.
+          {postiResidui <= 0
+            ? `Limite raggiunto: il listino prevede al massimo ${capacita.totale} ${
+                newTipo === 'OMBRELLONE' ? 'ombrelloni' : 'gazebi'
+              }.`
+            : `Il listino prevede al massimo ${capacita.totale} ${
+                newTipo === 'OMBRELLONE' ? 'ombrelloni' : 'gazebi'
+              }: ne restano da posizionare solo ${postiResidui}.`}
         </Text>
       ) : null}
       {sheetError ? (
@@ -97,7 +232,11 @@ export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsVa
         </Text>
       ) : null}
       <Button onPress={confirmAddPostazione} disabled={isSubmittingSheet || limiteRaggiunto}>
-        {isSubmittingSheet ? <ButtonSpinner /> : <ButtonText>Aggiungi</ButtonText>}
+        {isSubmittingSheet ? (
+          <ButtonSpinner />
+        ) : (
+          <ButtonText>{quantita > 1 ? `Aggiungi ${quantita} gazebi` : 'Aggiungi'}</ButtonText>
+        )}
       </Button>
     </>
   );

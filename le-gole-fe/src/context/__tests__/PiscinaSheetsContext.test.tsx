@@ -69,6 +69,7 @@ function buildPostazione(overrides: Partial<Postazione> = {}): Postazione {
     numero: 1,
     pos_x: 50,
     pos_y: 50,
+    gruppo: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -238,8 +239,139 @@ describe('PiscinaSheetsContext — foglio "Aggiungi postazione"', () => {
       numero: 3,
       pos_x: 50,
       pos_y: 50,
+      gruppo: null,
     });
     expect(result.current.sheetMode).toBeNull();
+  });
+});
+
+describe('PiscinaSheetsContext — creazione in blocco di più gazebo attaccati', () => {
+  it('confirmAddPostazione crea N gazebo in sequenza con numeri liberi e una striscia verticale equispaziata', async () => {
+    const mappaData = setupMocks({
+      postazioni: [buildPostazione({ id: 'p1', numero: 1, tipo: 'OMBRELLONE' })],
+    });
+    const { result } = await renderSheets();
+
+    await act(async () => {
+      result.current.openAddPostazioneSheet();
+    });
+    await act(async () => {
+      result.current.setNewTipo('GAZEBO');
+    });
+    await act(async () => {
+      result.current.setNewQuantita('3');
+    });
+    // Il numero 1 è già usato dall'ombrellone esistente (unico per inventario a prescindere dal
+    // tipo): i tre gazebo prendono i primi 3 numeri liberi successivi.
+    expect(result.current.newNumeriPreview).toEqual([2, 3, 4]);
+    expect(result.current.newOrientamento).toBe('verticale'); // default all'apertura del foglio
+
+    await act(async () => {
+      await result.current.confirmAddPostazione();
+    });
+
+    expect(mappaData.addPostazione).toHaveBeenCalledTimes(3);
+    expect(mappaData.addPostazione).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ tipo: 'GAZEBO', numero: 2 })
+    );
+    expect(mappaData.addPostazione).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ tipo: 'GAZEBO', numero: 3 })
+    );
+    expect(mappaData.addPostazione).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ tipo: 'GAZEBO', numero: 4 })
+    );
+    // Colonna verticale: stessa pos_x per tutti, pos_y crescente e equispaziata.
+    const posizioni = (mappaData.addPostazione as jest.Mock).mock.calls.map(
+      ([payload]: [{ pos_x: number; pos_y: number }]) => payload
+    );
+    expect(posizioni[0].pos_x).toBe(posizioni[1].pos_x);
+    expect(posizioni[1].pos_x).toBe(posizioni[2].pos_x);
+    expect(posizioni[0].pos_y).toBeLessThan(posizioni[1].pos_y);
+    expect(posizioni[1].pos_y).toBeLessThan(posizioni[2].pos_y);
+    // I tre gazebo condividono lo stesso `gruppo` (non nullo): da questo momento si spostano
+    // sempre insieme e non si possono più dividere/unire trascinando (sezione 5 CLAUDE.md).
+    const gruppi = (mappaData.addPostazione as jest.Mock).mock.calls.map(([payload]: [{ gruppo: string | null }]) => payload.gruppo);
+    expect(gruppi[0]).toEqual(expect.any(String));
+    expect(gruppi[1]).toBe(gruppi[0]);
+    expect(gruppi[2]).toBe(gruppi[0]);
+    expect(result.current.sheetMode).toBeNull();
+  });
+
+  it('un gazebo creato singolarmente (quantità 1) non genera un gruppo', async () => {
+    const mappaData = setupMocks({ postazioni: [] });
+    const { result } = await renderSheets();
+
+    await act(async () => {
+      result.current.openAddPostazioneSheet();
+    });
+    await act(async () => {
+      result.current.setNewTipo('GAZEBO');
+    });
+    // Quantità resta '1' (default all'apertura del foglio).
+
+    await act(async () => {
+      await result.current.confirmAddPostazione();
+    });
+
+    expect(mappaData.addPostazione).toHaveBeenCalledWith(
+      expect.objectContaining({ tipo: 'GAZEBO', gruppo: null })
+    );
+  });
+
+  it("con ordine 'decrescente' il numero più alto riservato va al primo elemento della striscia", async () => {
+    const mappaData = setupMocks({ postazioni: [] });
+    const { result } = await renderSheets();
+
+    await act(async () => {
+      result.current.openAddPostazioneSheet();
+    });
+    await act(async () => {
+      result.current.setNewTipo('GAZEBO');
+    });
+    await act(async () => {
+      result.current.setNewQuantita('3');
+    });
+    await act(async () => {
+      result.current.setNewOrdineNumeri('decrescente');
+    });
+    // L'insieme riservato resta {1,2,3} (i più bassi liberi), solo l'ordine di assegnazione si inverte.
+    expect(result.current.newNumeriPreview).toEqual([3, 2, 1]);
+
+    await act(async () => {
+      await result.current.confirmAddPostazione();
+    });
+
+    expect(mappaData.addPostazione).toHaveBeenNthCalledWith(1, expect.objectContaining({ numero: 3 }));
+    expect(mappaData.addPostazione).toHaveBeenNthCalledWith(2, expect.objectContaining({ numero: 2 }));
+    expect(mappaData.addPostazione).toHaveBeenNthCalledWith(3, expect.objectContaining({ numero: 1 }));
+  });
+
+  it('confirmAddPostazione rifiuta se la quantità richiesta supera i posti gazebo ancora residui', async () => {
+    const mappaData = setupMocks({
+      inventario: buildInventario({ totale_gazebi: 2 }),
+      postazioni: [],
+    });
+    const { result } = await renderSheets();
+
+    await act(async () => {
+      result.current.openAddPostazioneSheet();
+    });
+    await act(async () => {
+      result.current.setNewTipo('GAZEBO');
+    });
+    await act(async () => {
+      result.current.setNewQuantita('5'); // il backend/UI ne permetterebbe al massimo 2
+    });
+
+    await act(async () => {
+      await result.current.confirmAddPostazione();
+    });
+
+    expect(result.current.sheetError).toMatch(/al massimo 2 gazebi/);
+    expect(mappaData.addPostazione).not.toHaveBeenCalled();
   });
 });
 

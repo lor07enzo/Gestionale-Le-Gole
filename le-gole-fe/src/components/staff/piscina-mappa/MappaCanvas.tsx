@@ -1,9 +1,17 @@
+import { useMemo } from 'react';
 import { Box } from '@/components/ui/box';
 import { usePiscinaMappaData } from '../../../context/PiscinaMappaDataContext';
 import { usePiscinaSelection } from '../../../context/PiscinaSelectionContext';
 import { usePiscinaSheets } from '../../../context/PiscinaSheetsContext';
 import { ZoomPanCanvas } from '../../shared/ZoomPanCanvas';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, MAX_SCALE, MIN_SCALE, remainingForTipo } from '../../../utils/piscinaMappa';
+import {
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  groupGazeboAttaccati,
+  MAX_SCALE,
+  MIN_SCALE,
+  remainingForTipo,
+} from '../../../utils/piscinaMappa';
 import { EditModeToggle } from './EditModeToggle';
 import { PostazioneMarker } from './PostazioneMarker';
 import { ZoomControls } from './ZoomControls';
@@ -21,6 +29,10 @@ export function MappaCanvas() {
   } = usePiscinaMappaData();
   const { selectedPrenotazioneId } = usePiscinaSelection();
   const { handleMarkerPress } = usePiscinaSheets();
+  // Gazebo attaccati (bordo a contatto) disegnati come un unico rettangolo allungato invece di N
+  // riquadri separati — sezione 5 CLAUDE.md, 2026-08-13. Ricalcolato ad ogni cambio di postazioni
+  // (es. dopo un drag che stacca/riattacca un segmento dal gruppo).
+  const gazeboGroupById = useMemo(() => groupGazeboAttaccati(postazioni), [postazioni]);
 
   return (
     <Box className="relative h-105 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50">
@@ -51,6 +63,7 @@ export function MappaCanvas() {
             isOccupied={occupazioneByPostazione.has(postazione.id)}
             clienteNome={occupazioneByPostazione.get(postazione.id)?.cliente_nome}
             arrivato={occupazioneByPostazione.get(postazione.id)?.arrivato}
+            groupInfo={gazeboGroupById.get(postazione.id) ?? null}
             isSelectable={
               !isEditMode &&
               !occupazioneByPostazione.has(postazione.id) &&
