@@ -28,8 +28,7 @@ import {
   PhoneIcon,
   RemoveIcon,
 } from '@/components/ui/icon';
-// Caricato dinamicamente, stesso motivo di app/cliente/_layout.tsx (bug Metro/FlatList, sezione
-// 14 CLAUDE.md): un import statico lo renderebbe parte del bundle valutato su ogni pagina.
+// Caricato dinamicamente per non farlo entrare nel bundle valutato su ogni pagina.
 const TimePickerModal = lazy(() =>
   import('react-native-paper-dates').then((m) => ({ default: m.TimePickerModal }))
 );
@@ -75,8 +74,7 @@ type FormState = {
   sdraia: string;
 };
 
-// Ombrellone/gazebo non sono più campi numerici: la quantità è derivata dalla selezione sulla
-// mappa (PiscinaMappaSelettore) — restano qui solo le due risorse ancora scelte per quantità.
+// Ombrellone/gazebo sono derivati dalla selezione sulla mappa, non campi numerici.
 const RISORSE_KEYS = ['lettino', 'sdraia'] as const;
 
 function defaultOrario(inventario: PiscinaInventario, selectedDate: Date): string {
@@ -110,10 +108,7 @@ function validateOrario(value: string, inventario: PiscinaInventario, selectedDa
   return null;
 }
 
-// Distribuisce un totale (lettini/sdraie del form) il più equamente possibile tra le `n`
-// postazioni scelte sulla mappa, resto alle prime — usato per assegnare automaticamente
-// numero_lettini/numero_sdraie ad ogni OccupazionePostazione creata al submit, invece di lasciarle
-// a 0 in attesa di una correzione manuale dello staff.
+// Distribuisce un totale tra le `n` postazioni scelte il più equamente possibile, resto alle prime.
 function distribuisciSuPostazioni(totale: number, n: number): number[] {
   if (n <= 0) return [];
   const base = Math.floor(totale / n);
@@ -214,11 +209,7 @@ function DateNav({
   );
 }
 
-// Pulsanti "－"/quantità/"＋" invece di un campo numerico da tastiera: più veloce da toccare per
-// piccole quantità (il caso comune di una prenotazione) e senza la tastiera numerica che copre
-// mezzo schermo su mobile. `onChangeText` riceve comunque una stringa (stessa firma di prima, i
-// chiamanti — `setField(...)` — restano invariati): l'incremento/decremento è solo un modo diverso
-// di produrre lo stesso valore.
+// Pulsanti "－"/quantità/"＋" invece di un campo numerico da tastiera.
 function RisorsaField({
   icon,
   label,
@@ -238,9 +229,6 @@ function RisorsaField({
   residuo?: number;
 }>) {
   const quantita = Number.parseInt(value, 10) || 0;
-  // `residuo` (quando presente) è già il massimo assoluto selezionabile per questa prenotazione
-  // (calcolato escludendo la prenotazione corrente, che non esiste ancora essendo una creazione),
-  // non un residuo-meno-selezione: usato direttamente come tetto dello stepper.
   const maxRaggiunto = typeof residuo === 'number' && quantita >= residuo;
 
   return (
@@ -331,8 +319,7 @@ export default function ClientePiscinaBookingScreen() {
       })
       .catch(() => setLoadError('Impossibile trovare questa piscina.'))
       .finally(() => setIsLoadingInventario(false));
-    // Solo al primo caricamento, non ad ogni cambio data (altrimenti sovrascriverebbe l'orario
-    // già scelto dall'utente).
+    // Solo al primo caricamento, non ad ogni cambio data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inventarioId]);
 
@@ -362,8 +349,6 @@ export default function ClientePiscinaBookingScreen() {
     return somma;
   }, [inventario, form, selezionePostazioni]);
 
-  // Precompila TimePickerModal con l'orario già scelto (se valido), altrimenti apre sui valori
-  // di default della libreria.
   const orarioMinutiCorrenti = parseHHMMToMinutes(form.orario);
 
   const mostraMappaPostazioni = Boolean(
@@ -449,8 +434,6 @@ export default function ClientePiscinaBookingScreen() {
         cliente_id: cliente.id,
         data: toISODate(selectedDate),
         ora: form.orario.trim(),
-        // Prenotazione self-service confermata subito all'invio, stesso stato del walk-in
-        // creato dalla mappa staff (sezione 5) — nessuna attesa di conferma manuale.
         stato: 'CONFIRMED',
         inventario: inventarioId,
         note: form.note.trim(),
@@ -473,13 +456,8 @@ export default function ClientePiscinaBookingScreen() {
           Number.parseInt(form.sdraia, 10) || 0,
           selezionePostazioni.ids.length
         );
-        // Best-effort (Promise.allSettled, non Promise.all): la prenotazione è già stata creata e
-        // ha già "riservato" le quantità (anti-overbooking sul conteggio, non sulla postazione
-        // fisica) — se una postazione scelta minuti prima non fosse più libera (un altro cliente
-        // self-service o lo staff l'ha occupata nel frattempo), quella singola assegnazione fallisce
-        // silenziosamente e la prenotazione resta comunque valida: lo staff la assegnerà a mano
-        // dalla mappa (sezione 5), come già avveniva per ogni prenotazione self-service prima di
-        // questa modifica.
+        // Best-effort: se una postazione non fosse più libera, l'assegnazione fallisce
+        // silenziosamente e la prenotazione resta comunque valida (lo staff la assegnerà a mano).
         await Promise.allSettled(
           selezionePostazioni.ids.map((postazioneId, index) =>
             createOccupazione({

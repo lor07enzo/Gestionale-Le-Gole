@@ -36,13 +36,8 @@ function contaSelezione(selectedIds: Set<string>, postazioni: Postazione[]): Pis
   return { ombrellone, gazebo, ids };
 }
 
-// Mappa piscina di sola scelta per l'Area Cliente: stesso canvas/marker della mappa staff
-// (sezione 5 CLAUDE.md), ma senza drag/editing/fogli — il tap su una postazione libera la
-// seleziona/deseleziona, sostituendo gli input numerici di ombrellone/gazebo (sezione 7). La
-// scelta di una postazione specifica non viene persistita lato backend (Prenotazione_Piscina non
-// ha un legame diretto con una Postazione, solo un conteggio — l'assegnazione fisica resta
-// un'azione dello staff): qui serve solo a determinare la quantità e a far scegliere al cliente
-// dove preferirebbe sedersi, in modo più naturale di due campi numerici.
+// Mappa piscina di sola scelta per l'Area Cliente: stesso canvas/marker della mappa staff, ma
+// senza drag/editing/fogli — il tap su una postazione libera la seleziona/deseleziona.
 export function PiscinaMappaSelettore({
   inventarioId,
   selectedDate,
@@ -61,18 +56,13 @@ export function PiscinaMappaSelettore({
   const [scale, setScale] = useState(1);
 
   const dataISO = toISODate(selectedDate);
-  // Stesso rendering "un unico rettangolo allungato" per i gazebo attaccati già usato dalla mappa
-  // staff (sezione 5 CLAUDE.md, 2026-08-13) — nessuna differenza di logica tra le due mappe, solo
-  // qui il cliente non può trascinare/staccare i segmenti (mappa di sola scelta, readOnly).
   const gazeboGroupById = useMemo(() => groupGazeboAttaccati(postazioni), [postazioni]);
 
   useEffect(() => {
     let isCurrent = true;
     setIsLoading(true);
     setLoadError(null);
-    // Un giorno diverso ha occupazioni diverse: una postazione scelta per il giorno precedente
-    // potrebbe non essere più libera (o non avere più senso) su quello nuovo — la selezione
-    // riparte da zero ad ogni cambio di data/piscina.
+    // La selezione riparte da zero ad ogni cambio di data/piscina.
     onSelectionChange({ ombrellone: 0, gazebo: 0, ids: [] });
 
     Promise.all([

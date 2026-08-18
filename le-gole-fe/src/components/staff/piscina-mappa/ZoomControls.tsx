@@ -4,11 +4,7 @@ import { AddIcon, RemoveIcon } from '@/components/ui/icon';
 import { usePiscinaMappaData } from '../../../context/PiscinaMappaDataContext';
 import { clamp, MAX_SCALE, MIN_SCALE, SCALE_STEP } from '../../../utils/piscinaMappa';
 
-// Stesso "look" di EditModeToggle (border-2 border-sky-300 bg-white shadow-sm rounded-full, un
-// cerchio indipendente per pulsante) invece di un contenitore a pillola con pulsanti "ghost" al
-// suo interno: normalizza i due overlay del canvas (zoom in alto a sinistra, modifica in alto a
-// destra) sullo stesso linguaggio visivo già usato altrove nell'app (DateNavigator, ActionToolbar,
-// GiornoPienoToggle) invece di introdurne uno nuovo solo per questo controllo.
+// Stesso "look" di EditModeToggle (cerchio indipendente per pulsante), non una pillola unica.
 export function ZoomControls() {
   const { scale, setScale } = usePiscinaMappaData();
 

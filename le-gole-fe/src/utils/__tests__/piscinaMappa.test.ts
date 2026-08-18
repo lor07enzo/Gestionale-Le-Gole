@@ -202,11 +202,7 @@ describe('formatOrarioInput', () => {
   });
 
   it('il backspace esattamente sul separatore ":" rimuove anche l\'ultima cifra', () => {
-    // A video "14:3": l'utente posiziona il cursore subito dopo ":" e preme backspace,
-    // cancellando SOLO quel carattere — le cifre digitate ("143") restano invariate, un solo
-    // carattere in meno rispetto a "previous". Senza il ramo dedicato per questo caso, il ":"
-    // verrebbe semplicemente re-inserito dal ricalcolo (digits.length > 2), dando di nuovo
-    // "14:3" e facendo sembrare il backspace privo di effetto.
+    // Senza il ramo dedicato, il ":" verrebbe re-inserito dal ricalcolo, rendendo il backspace privo di effetto.
     expect(formatOrarioInput('14:3', '143')).toBe('14');
   });
 
@@ -416,9 +412,7 @@ describe('groupGazeboAttaccati', () => {
   });
 
   it('due gazebo dello stesso gruppo restano attaccati anche se, per ipotesi, non fossero perfettamente allineati', () => {
-    // Il drag di gruppo (PiscinaMappaDataContext.dragPostazione) applica sempre lo stesso delta a
-    // tutti i membri, quindi in pratica le posizioni non driftano mai — mantenuta comunque una
-    // piccola tolleranza sull'asse perpendicolare come rete di sicurezza contro arrotondamenti.
+    // Tolleranza sull'asse perpendicolare come rete di sicurezza contro arrotondamenti.
     const step = (MARKER_STYLE.GAZEBO.height / CANVAS_HEIGHT) * 100;
     const postazioni = [
       buildPostazione({ id: 'g1', gruppo: 'grp-v', pos_x: 50, pos_y: 50 }),

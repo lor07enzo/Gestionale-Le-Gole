@@ -1,15 +1,9 @@
-# Blueprint Render per il solo backend (Django + gunicorn, sezione 10 di CLAUDE.md) — il
-# database è Supabase (Postgres gestito esterno, non un servizio Render), il frontend Expo/React
-# Native non è coperto da questo file (sezione 12 di CLAUDE.md). Import come "Blueprint" dalla
-# dashboard Render puntando a questo repo.
+# Blueprint Render per il solo backend: il database è Supabase (esterno), il frontend non è coperto da questo file.
 services:
   - name: le-gole-backend
     type: web
     runtime: docker
-    # Starter ($7/mese, 512 MB RAM / 0.5 CPU) — passato dal piano Free l'8/8/2026 per eliminare
-    # lo sleep dopo inattività (il polling notifiche staff ogni 20s teneva comunque sveglio il
-    # servizio quasi tutto l'orario di apertura, sezione 11/12). RAM invariata rispetto al Free
-    # (stesso 512 MB), solo CPU maggiore — GUNICORN_WORKERS resta a 2 di conseguenza (sotto).
+    # Starter: elimina lo sleep dopo inattività (il polling notifiche teneva comunque sveglio il servizio).
     plan: starter
     dockerfilePath: ./le-gole-be/Dockerfile
     dockerContext: ./le-gole-be
@@ -19,26 +13,15 @@ services:
         generateValue: true
       - key: DEBUG
         value: "False"
-      # Host esatti, non più il wildcard *.onrender.com (usato solo nella fase di test, prima che
-      # il dominio custom fosse stabile) — le-gole-backend.onrender.com resta comunque valido
-      # (Render lo tiene sempre raggiungibile insieme al dominio custom, ed è l'host che riceve
-      # l'health check interno se mai instradato lì) più api.osterialegole.com (sezione 14/12,
-      # l'host reale usato in produzione dal frontend e dall'health check). Senza uno dei due
-      # Django risponde 400 DisallowedHost a ogni richiesta con quell'Host header.
+      # Host esatti, non il wildcard *.onrender.com: senza uno dei due Django risponde 400 DisallowedHost.
       - key: ALLOWED_HOSTS
         value: le-gole-backend.onrender.com,api.osterialegole.com
-      # Frontend in produzione (Netlify, dominio custom osterialegole.com, sezione 14) — uniche
-      # origini autorizzate a chiamare l'API da un browser. Sostituisce CORS_ALLOW_ALL_ORIGINS
-      # (era True, TODO da tempo). Storicamente https://legole.expo.app (EAS Hosting, dismesso
-      # l'8/8/2026 per il costo del dominio custom su quel piano — sezione 14).
+      # Uniche origini autorizzate a chiamare l'API da un browser.
       - key: CORS_ALLOWED_ORIGINS
         value: https://osterialegole.com,https://www.osterialegole.com
-      # Credenziali Supabase (sezione 12) — da inserire manualmente in dashboard dopo aver
-      # creato il progetto Supabase, mai salvate in questo file. Se la connessione diretta
-      # (porta 5432, host db.<ref>.supabase.co) non funziona da Render, è quasi certamente
-      # perché quell'host è raggiungibile solo via IPv6 — usare invece il Session Pooler di
-      # Supabase (host aws-0-<regione>.pooler.supabase.com, porta 5432, IPv4), con DB_USER nel
-      # formato postgres.<project-ref> invece del semplice "postgres".
+      # Credenziali Supabase, da inserire manualmente in dashboard, mai salvate qui. Se la
+      # connessione diretta (porta 5432) fallisce, è probabile che l'host sia solo IPv6: usare
+      # il Session Pooler di Supabase (IPv4), con DB_USER nel formato postgres.<project-ref>.
       - key: DB_NAME
         sync: false
       - key: DB_USER
@@ -53,22 +36,15 @@ services:
         value: require
       - key: DB_CONN_HEALTH_CHECKS
         value: "True"
-      # Riusa la connessione TLS al DB tra richieste invece di riaprirla ogni volta (default
-      # Django CONN_MAX_AGE=0) — senza, ogni richiesta paga per intero l'handshake TLS verso un
-      # DB remoto (misurato ~1,5s costanti su Neon anche a backend caldo). Vale a prescindere dal
-      # provider, mantenuto passando a Supabase.
+      # Riusa la connessione TLS al DB tra richieste invece di riaprirla ogni volta (default Django CONN_MAX_AGE=0).
       - key: DB_CONN_MAX_AGE
         value: "60"
-      # RAM limitata (512 MB, invariata passando a Starter sopra): meno worker gunicorn del
-      # default Docker locale (3, sezione 10).
+      # RAM limitata (512 MB): meno worker gunicorn del default Docker locale.
       - key: GUNICORN_WORKERS
         value: "2"
       - key: RESEND_API_KEY
         sync: false
-      # Da impostare manualmente in dashboard (sync: false) su https://osterialegole.com/activate
-      # e https://osterialegole.com/reset-password ora che il frontend ha un dominio reale
-      # (sezione 14) — finché non vengono aggiornati restano sui placeholder legole://... che
-      # non risolvono da un link email aperto in un browser.
+      # Da impostare manualmente su https://osterialegole.com/activate e /reset-password.
       - key: FRONTEND_ACTIVATION_URL
         sync: false
       - key: FRONTEND_RESET_URL

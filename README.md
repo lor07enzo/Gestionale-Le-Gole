@@ -9,7 +9,7 @@ Applicazione di gestione prenotazioni per Osteria/Pizzeria Le Gole: area piscina
 **Sito in produzione:** [osterialegole.com](https://osterialegole.com)
 **API in produzione:** `https://api.osterialegole.com/api/v1/`
 
-> Per la documentazione tecnica completa (rationale delle scelte architetturali, gotcha, bug risolti, cronologia delle decisioni) vedi [`CLAUDE.md`](CLAUDE.md) — questo README è un riepilogo orientato all'onboarding e allo stato del progetto.
+> Documentazione tecnica: [diagrammi UML](UML.md) · [diagramma ER](ER.md)
 
 ---
 
@@ -165,8 +165,6 @@ npx expo start --web
 docker compose up
 ```
 
-Vedi [`CLAUDE.md`, sezione 10](CLAUDE.md#10-docker-backend--postgres) per la configurazione completa (variabili d'ambiente, porte, differenze tra `.env` e `.env.prod`).
-
 ---
 
 ## Testing
@@ -192,4 +190,5 @@ npm run test:coverage
 
 ## Documentazione aggiuntiva
 
-Per il dettaglio completo di ogni funzionalità (logica di business, decisioni di design, bug risolti e relativa causa, gotcha di piattaforma) fare riferimento a [`CLAUDE.md`](CLAUDE.md), il documento di riferimento tecnico del progetto, aggiornato ad ogni modifica rilevante.
+- [Diagrammi UML](UML.md) — architettura, casi d'uso, classi, stati, sequenze
+- [Diagramma ER](ER.md) — schema del database, vincoli, comportamento `ON DELETE`

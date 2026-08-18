@@ -64,8 +64,7 @@ type PiscinaMappaDataValue = {
   scale: number;
   setScale: Dispatch<SetStateAction<number>>;
 
-  // Modalità modifica posizioni: attiva = postazioni trascinabili ma non assegnabili; disattiva
-  // = l'opposto. Si disattiva ad ogni cambio data e non ha effetto sui giorni passati.
+  // Attiva = postazioni trascinabili ma non assegnabili. Si disattiva ad ogni cambio data.
   isEditMode: boolean;
   setIsEditMode: Dispatch<SetStateAction<boolean>>;
 
@@ -76,8 +75,7 @@ type PiscinaMappaDataValue = {
   clientiDelGiorno: ClienteDelGiornoEntry[];
   disponibilita: DisponibilitaItem[] | null;
 
-  // "Giorno pieno" (sezione 5 CLAUDE.md): marcatura manuale staff, blocca solo le nuove
-  // prenotazioni self-service pubbliche per la data selezionata — null quando non segnato.
+  // Marcatura manuale staff: blocca solo le nuove prenotazioni self-service — null se non segnato.
   giornoPieno: GiornoPienoPiscina | null;
   isTogglingGiornoPieno: boolean;
   toggleGiornoPieno: () => Promise<void>;
@@ -96,11 +94,8 @@ type PiscinaMappaDataValue = {
     id: string,
     payload: UpdatePrenotazionePiscinaPayload
   ) => Promise<PrenotazionePiscina>;
-  // Annulla (PATCH stato='CANCELLED') — dal 2026-08-07 unica azione di rimozione disponibile per
-  // lo staff, l'eliminazione definitiva (DELETE reale) non è più esposta lato UI: la prenotazione
-  // resta nello storico cliente (sezione 5 CLAUDE.md), il backend libera da sé le postazioni
-  // assegnate (PrenotazionePiscinaViewSet.perform_update), qui rispecchiamo subito la stessa
-  // pulizia in locale rimuovendo la prenotazione dalle liste del giorno e le occupazioni collegate.
+  // Annulla (PATCH stato='CANCELLED'), unica azione di rimozione lato staff: il backend libera da
+  // sé le postazioni assegnate, qui rimuoviamo la prenotazione dalle liste del giorno in locale.
   cancelPrenotazione: (id: string) => Promise<void>;
 };
 
@@ -113,10 +108,8 @@ function filterPrenotazioniAttive(
   return prenotazioni.filter((p) => p.inventario === inventarioId && p.stato !== 'CANCELLED');
 }
 
-// Il più presto tra gli orari di arrivo delle postazioni già assegnate a questa prenotazione, se
-// ce n'è almeno una — altrimenti l'orario originale della prenotazione. Più postazioni potrebbero
-// avere orari diversi (modificabili singolarmente, sezione 5): mostriamo il più presto perché è
-// il dato più utile per lo staff (il primo momento in cui aspettarsi qualcuno di questo gruppo).
+// Il più presto tra gli orari di arrivo delle postazioni già assegnate, altrimenti l'orario
+// originale della prenotazione.
 function calcolaOrarioEffettivo(prenotazione: PrenotazionePiscina, occupazioni: OccupazionePostazione[]): string {
   if (occupazioni.length === 0) return prenotazione.ora;
   return occupazioni.reduce(
@@ -131,8 +124,7 @@ export function PiscinaMappaDataProvider({
   children,
 }: Readonly<{
   inventarioId: string;
-  // 'YYYY-MM-DD' opzionale (es. dal query param ?data= impostato dal pannello notifiche staff,
-  // NotificationsBell): se presente, la mappa si apre già su quel giorno invece che su oggi.
+  // 'YYYY-MM-DD' opzionale: se presente, la mappa si apre già su quel giorno invece che su oggi.
   initialDate?: string;
   children: ReactNode;
 }>) {
@@ -148,17 +140,13 @@ export function PiscinaMappaDataProvider({
   const [isTogglingGiornoPieno, setIsTogglingGiornoPieno] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  // Cambiare data esce sempre dalla modalità modifica: evita di lasciarla accesa per errore
-  // navigando su un altro giorno (le postazioni sono comunque una risorsa strutturale condivisa
-  // da tutte le date, non ha senso restare "in modifica" attraversando giorni diversi).
+  // Cambiare data esce sempre dalla modalità modifica.
   useEffect(() => {
     setIsEditMode(false);
   }, [selectedDate]);
 
-  // Risincronizza selectedDate se initialDate cambia mentre il componente resta montato — es.
-  // due notifiche diverse per la stessa piscina aperte in sequenza dal pannello notifiche
-  // (NotificationsBell), dove solo il query param ?data= cambia senza uno smontaggio della
-  // pagina. Il useState iniziale sopra copre solo il primissimo mount.
+  // Risincronizza selectedDate se initialDate cambia a componente già montato (il query param
+  // ?data= cambia senza smontare la pagina) — il useState iniziale copre solo il primo mount.
   useEffect(() => {
     if (initialDate) {
       setSelectedDate(parseISODate(initialDate));
@@ -201,8 +189,6 @@ export function PiscinaMappaDataProvider({
     };
   }, [inventarioId, selectedDate]);
 
-  // Confronto per data (non per istante): un giorno passato resta tale per tutta la sua durata,
-  // indipendentemente dall'ora corrente.
   const isPastDate = toISODate(selectedDate) < toISODate(new Date());
 
   const occupazioneByPostazione = useMemo(
@@ -210,8 +196,6 @@ export function PiscinaMappaDataProvider({
     [occupazioni]
   );
 
-  // Tutte le OccupazionePostazione collegate a ciascuna prenotazione (es. 3 gazebi -> 3 voci) —
-  // usato per l'orario effettivo e il conteggio arrivi in clientiDelGiorno, sotto.
   const occupazioniByPrenotazione = useMemo(() => {
     const map = new Map<string, OccupazionePostazione[]>();
     for (const occ of occupazioni) {
@@ -223,9 +207,7 @@ export function PiscinaMappaDataProvider({
     return map;
   }, [occupazioni]);
 
-  // Un cliente che prenota più ombrelloni e/o gazebi va assegnato una volta per unità prenotata:
-  // per ogni prenotazione contiamo quante occupazioni sono già collegate, distinte per tipo
-  // (una prenotazione con 2 ombrelloni + 1 gazebo richiede 2 postazioni ombrellone + 1 gazebo).
+  // Un cliente con più ombrelloni/gazebi va assegnato una volta per unità prenotata, per tipo.
   const remainingByPrenotazione = useMemo(() => {
     const postazioneById = new Map(postazioni.map((p) => [p.id, p]));
     const usedByPren = new Map<string, ResiduiPrenotazione>();
@@ -272,8 +254,7 @@ export function PiscinaMappaDataProvider({
     [prenotazioni]
   );
 
-  // "Completo" = nessuna unità ombrellone/gazebo residua (solo-ingresso sempre completo).
-  // Ordinati: da assegnare in cima, poi per orario effettivo crescente (vedi calcolaOrarioEffettivo).
+  // "Completo" = nessuna unità residua. Ordinati: da assegnare in cima, poi per orario effettivo.
   const clientiDelGiorno = useMemo<ClienteDelGiornoEntry[]>(
     () =>
       [...prenotazioni]
@@ -296,8 +277,7 @@ export function PiscinaMappaDataProvider({
     [prenotazioni, remainingByPrenotazione, occupazioniByPrenotazione]
   );
 
-  // Rispecchia il conteggio anti-overbooking del backend (prenotazioni/serializers.py):
-  // somma le risorse già prenotate per la data selezionata ed escludi dal totale dell'inventario.
+  // Rispecchia il conteggio anti-overbooking del backend.
   const disponibilita = useMemo<DisponibilitaItem[] | null>(() => {
     if (!inventario) return null;
     const occupati = prenotazioni.reduce(
@@ -317,14 +297,10 @@ export function PiscinaMappaDataProvider({
   }, [inventario, prenotazioni]);
 
   const dragPostazione = (postazione: Postazione, dxLogical: number, dyLogical: number) => {
-    // Backstop difensivo: l'interazione di drag è già disabilitata lato UI (PostazioneMarker)
-    // per i giorni passati, ma qui evitiamo comunque qualunque scrittura se richiamata a monte.
     if (isPastDate) return;
 
-    // Un gazebo con `gruppo` valorizzato trascina sempre l'intero blocco come un corpo rigido
-    // (sezione 5 CLAUDE.md, 2026-08-13) — il gruppo non si può più dividere/unire trascinando un
-    // singolo segmento, quindi ogni drag su un membro sposta tutti i membri dello stesso delta.
-    // Un ombrellone o un gazebo senza gruppo trascina solo se stesso (membriGruppo = [postazione]).
+    // Un gazebo con `gruppo` trascina sempre l'intero blocco come corpo rigido, stesso delta per
+    // tutti i membri. Senza gruppo trascina solo se stesso.
     const membriGruppo = postazione.gruppo
       ? postazioni.filter((p) => p.gruppo === postazione.gruppo)
       : [postazione];
@@ -332,10 +308,8 @@ export function PiscinaMappaDataProvider({
     const deltaXPercent = (dxLogical / CANVAS_WIDTH) * 100;
     const deltaYPercent = (dyLogical / CANVAS_HEIGHT) * 100;
 
-    // Il delta è applicato in blocco: se spostare l'intero gruppo del delta richiesto farebbe
-    // uscire anche un solo membro dal canvas (0-100%), il delta viene ridotto in blocco per
-    // restare dentro i margini SENZA deformare le distanze relative tra i membri — clampare ogni
-    // membro singolarmente romperebbe l'allineamento "attaccato" (il punto dell'intera funzionalità).
+    // Il delta è ridotto in blocco se farebbe uscire un membro dal canvas, senza deformare le
+    // distanze relative (clampare ogni membro singolarmente romperebbe l'allineamento).
     const xs = membriGruppo.map((m) => m.pos_x);
     const ys = membriGruppo.map((m) => m.pos_y);
     let dx = deltaXPercent;
@@ -369,8 +343,6 @@ export function PiscinaMappaDataProvider({
       const originali = new Map(membriGruppo.map((m) => [m.id, m]));
       setPostazioni((prev) => prev.map((p) => originali.get(p.id) ?? p));
     });
-    // Il backend registra da sé lo storico posizione per oggi (PostazioneViewSet.perform_update
-    // → registra_posizione_storico), niente da sincronizzare qui lato frontend.
   };
 
   const addPostazione = async (
@@ -427,10 +399,7 @@ export function PiscinaMappaDataProvider({
 
   const cancelPrenotazione = async (id: string): Promise<void> => {
     await updatePrenotazionePiscina(id, { stato: 'CANCELLED' });
-    // Il record non viene eliminato lato backend (resta nello storico cliente) — ma sulla mappa
-    // del giorno una prenotazione CANCELLED non ha più nulla da fare (stesso filtro già applicato
-    // al caricamento, filterPrenotazioniAttive sopra): la togliamo dallo stato locale invece di
-    // lasciarla come riga "fantasma" a 0 residui.
+    // Il record resta nello storico cliente lato backend; qui la togliamo dalla vista del giorno.
     setPrenotazioni((prev) => prev.filter((p) => p.id !== id));
     setOccupazioni((prev) => prev.filter((o) => o.prenotazione !== id));
   };

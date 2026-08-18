@@ -1,8 +1,7 @@
 import type { PiscinaInventario, Postazione, TipoPostazione } from '../services/struttura';
 import type { StatoPrenotazione } from '../services/prenotazioni';
 
-// Etichette/colori badge per stato prenotazione, condivisi tra la scheda cliente
-// (app/staff/clienti/[clienteId].tsx) e la lista "Clienti del giorno" della mappa staff.
+// Etichette/colori badge stato prenotazione, condivisi tra più schermate staff.
 export const STATO_PRENOTAZIONE_LABEL: Record<StatoPrenotazione, string> = {
   PENDING: 'In attesa',
   CONFIRMED: 'Confermata',
@@ -19,35 +18,21 @@ export const CANVAS_WIDTH = 1000;
 export const CANVAS_HEIGHT = 560;
 
 export type MarkerStyle = {
-  // 'circle' = cerchio con nome cliente in un cartellino esterno sotto l'icona (ombrellone, stile
-  // originale). 'rectangle' = rettangolo compatto con numero (e nome cliente, se occupato)
-  // scritti DENTRO il rettangolo stesso, non in un cartellino esterno — necessario per il gazebo
-  // (sotto): quando più gazebi sono "attaccati" in colonna (computeBulkPositions, passo = altezza
-  // esatta, nessun margine) un cartellino esterno sotto l'icona finirebbe coperto dal gazebo
-  // immediatamente successivo nella striscia, che lo tocca senza alcuno spazio in mezzo.
+  // 'rectangle' scrive numero/nome dentro il marker: per il gazebo, un cartellino esterno
+  // finirebbe coperto dal gazebo successivo quando sono "attaccati" in blocco.
   shape: 'circle' | 'rectangle';
   width: number;
   height: number;
   iconFontSize: number;
   labelFontSize: number;
-  // Usati solo per shape 'circle' (cartellino esterno sotto l'icona) — ignorati per 'rectangle',
-  // che tronca invece a nameLabelMaxChars ma disegna il nome dentro al rettangolo stesso.
+  // Usati solo per shape 'circle'; 'rectangle' tronca a nameLabelMaxChars e disegna il nome dentro.
   nameLabelWidth: number;
   nameLabelMaxChars: number;
 };
 
-// Dimensioni/forma marker per tipo (sezione 5 CLAUDE.md, 2026-08-12/13/14). I gazebi possono
-// arrivare a 15+ posizionati in una sola colonna (CANVAS_HEIGHT, 560px logici, è il vincolo
-// stretto): non più cerchi ma rettangoli compatti, pensati per essere piazzati "attaccati" in
-// blocco da computeBulkPositions() sotto (uno accanto/sotto l'altro, in riga o in colonna) invece
-// che uno a uno, e renderizzati come un unico rettangolo allungato da groupGazeboAttaccati()/
-// PostazioneMarker più sotto (non N riquadri separati).
-// L'ombrellone (sempre un cerchio singolo, mai in blocco) aveva invece un diametro di 48px
-// (nessun bisogno di comprimerlo quanto il gazebo, essendo al massimo 15 in tutto) — visivamente
-// però risultava sproporzionato accanto ai gazebi da 30px di altezza sulla stessa mappa (segnalato
-// dall'utente, 2026-08-14): un cerchio nettamente più grande del rettangolo adiacente. Diametro
-// ridotto a 30px, pari all'altezza del gazebo, per un ingombro visivo coerente tra i due tipi
-// quando condividono la stessa mappa — font/cartellino nome ridimensionati di conseguenza.
+// Il gazebo è un rettangolo compatto (non un cerchio) per poterne piazzare 15+ in colonna,
+// attaccati l'uno all'altro (computeBulkPositions). Diametro ombrellone allineato all'altezza
+// del gazebo (30px) per coerenza visiva quando condividono la stessa mappa.
 export const MARKER_STYLE: Record<TipoPostazione, MarkerStyle> = {
   OMBRELLONE: {
     shape: 'circle',
@@ -71,28 +56,20 @@ export const MARKER_STYLE: Record<TipoPostazione, MarkerStyle> = {
 export const MIN_SCALE = 0.6;
 export const MAX_SCALE = 2.4;
 export const SCALE_STEP = 0.2;
-// Una soglia troppo stretta classifica un tap reale (mai a 0px esatti) come drag. Va confrontata
-// con lo spostamento in pixel reali sullo schermo, non con le unità logiche del canvas.
+// Un tap reale non è mai a 0px esatti: una soglia troppo stretta lo classificherebbe come drag.
 export const TAP_MOVE_THRESHOLD_PX = 8;
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-// UUID v4 per raggruppare un blocco di gazebo creati insieme (Postazione.gruppo, sezione 5
-// CLAUDE.md, 2026-08-13) — solo una chiave di raggruppamento locale, non un segreto, ma deve
-// comunque essere un UUID sintatticamente valido perché il backend lo salva in un UUIDField.
-// Preferisce `crypto.randomUUID()` (browser reali) e ricade su un generatore manuale altrimenti —
-// **non solo per compatibilità nativa**: l'ambiente jsdom usato dalla suite Jest (sezione 9)
-// espone un `crypto` globale ma SENZA `randomUUID` (gotcha reale, scoperto scrivendo i test di
-// questa funzionalità), quindi affidarsi solo all'API nativa avrebbe fatto fallire silenziosamente
-// ogni creazione in blocco durante i test.
+// UUID per raggruppare un blocco di gazebo creati insieme (Postazione.gruppo). Fallback manuale
+// perché jsdom (test Jest) espone `crypto` senza `randomUUID`.
 export function generateGruppoId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  // NOSONAR: pseudo-casuale non crittografico, adatto: `gruppo` è solo una chiave di
-  // raggruppamento locale (vedi commento sopra), non un token/segreto che richieda CSPRNG.
+  // NOSONAR: pseudo-casuale non crittografico, adatto — `gruppo` non è un segreto.
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = Math.trunc(Math.random() * 16);
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -107,10 +84,7 @@ export function toISODate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// "YYYY-MM-DD" -> Date locale a mezzanotte (simmetrico a toISODate sopra: usa i componenti
-// anno/mese/giorno diretti, non new Date(iso) che parserebbe come UTC e potrebbe spostare il
-// giorno in fusi con offset negativo). Usato per riportare la mappa staff sulla data di una
-// prenotazione quando si arriva da un link diretto (es. il pannello notifiche).
+// Simmetrico a toISODate: componenti diretti, non new Date(iso) (parserebbe UTC, spostando il giorno).
 export function parseISODate(iso: string): Date {
   const [year, month, day] = iso.split('-').map(Number);
   return new Date(year, month - 1, day);
@@ -183,10 +157,8 @@ export function parseHHMMToMinutes(value: string): number | null {
   return h * 60 + m;
 }
 
-// Default per "orario di arrivo previsto": usa l'orario della prenotazione se ancora valido
-// (>= adesso, solo per oggi), altrimenti ricade sull'orario attuale (o vuoto per altre date).
-// `orarioMinimo` (opzionale): soglia sotto cui il default non deve mai scendere (es.
-// orario_inizio_ridotto, per un cliente con ingressi ridotti pomeridiani).
+// Usa l'orario della prenotazione se ancora valido (>= adesso, solo per oggi), altrimenti l'ora
+// attuale. `orarioMinimo`: soglia sotto cui il default non deve mai scendere.
 export function computeDefaultOrario(
   baseOra: string | null | undefined,
   selectedDate: Date,
@@ -215,9 +187,8 @@ export function computeDefaultOrario(
   return risultato;
 }
 
-// Maschera "solo cifre, ':' automatico" per i campi orario testuali. Richiede il valore
-// precedente per il backspace: se l'utente cancella il ':' (cifre invariate), rimuove anche
-// l'ultima cifra, altrimenti il ':' si "ri-materializzerebbe" subito dopo.
+// Maschera "solo cifre, ':' automatico". Richiede il valore precedente: se l'utente cancella il
+// ':' (cifre invariate), rimuove anche l'ultima cifra, altrimenti si "ri-materializzerebbe" subito.
 export function formatOrarioInput(previous: string, rawNext: string): string {
   let digits = rawNext.replace(/\D/g, '').slice(0, 4);
   const previousDigits = previous.replace(/\D/g, '');
@@ -229,9 +200,7 @@ export function formatOrarioInput(previous: string, rawNext: string): string {
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
 }
 
-// A differenza dell'età bambini (solo testo guida), l'orario ridotto pomeridiano lega due campi
-// della stessa prenotazione ed è verificabile davvero — stessa regola replicata lato backend.
-// Ritorna il messaggio d'errore, o null se l'orario rispetta la soglia.
+// Ritorna il messaggio d'errore, o null se l'orario rispetta la soglia (stessa regola lato backend).
 export function validateOrarioIngressoRidotto(
   orario: string,
   ingressiRidotti: number,
@@ -247,9 +216,8 @@ export function validateOrarioIngressoRidotto(
   return null;
 }
 
-// Complementare a validateOrarioIngressoRidotto: dalla soglia in poi un ingresso intero andrebbe
-// venduto come ridotto. Il chiamante deve invocarla solo se la tariffa ridotta è configurata
-// (prezzo > 0), altrimenti la soglia è solo un default non realmente disponibile.
+// Complementare a validateOrarioIngressoRidotto. Va invocata solo se la tariffa ridotta è
+// configurata (prezzo > 0), altrimenti la soglia non è realmente disponibile.
 export function validateOrarioIngressoIntero(
   orario: string,
   ingressiInteri: number,
@@ -284,9 +252,7 @@ export function validateOrarioArrivo(value: string, selectedDate: Date): OrarioV
   return { valid: true, minutes };
 }
 
-// Numero più basso non ancora in uso tra le postazioni attive dell'inventario — `numero` è unico
-// per (inventario, numero) a prescindere dal tipo (sezione 5 CLAUDE.md, vincolo condiviso tra
-// ombrelloni e gazebi), quindi il calcolo ignora il tipo scelto per la nuova postazione.
+// Numero più basso non in uso: `numero` è unico per inventario a prescindere dal tipo.
 export function nextAvailableNumero(postazioni: { numero: number }[]): number {
   const usati = new Set(postazioni.map((p) => p.numero));
   let candidato = 1;
@@ -294,10 +260,7 @@ export function nextAvailableNumero(postazioni: { numero: number }[]): number {
   return candidato;
 }
 
-// Stessa logica di nextAvailableNumero, ma riserva `quantita` numeri in un colpo solo (usata
-// dalla creazione in blocco dei gazebi, sotto) — ogni numero scelto viene aggiunto all'insieme
-// "usati" prima di cercare il successivo, così i numeri restituiti non collidono mai tra loro
-// anche se nessuno dei due esiste ancora nelle postazioni reali.
+// Come nextAvailableNumero, ma riserva `quantita` numeri in un colpo solo (creazione in blocco).
 export function nextAvailableNumeri(postazioni: { numero: number }[], quantita: number): number[] {
   const usati = new Set(postazioni.map((p) => p.numero));
   const risultato: number[] = [];
@@ -314,16 +277,8 @@ export function nextAvailableNumeri(postazioni: { numero: number }[], quantita: 
 
 export type OrientamentoGriglia = 'verticale' | 'orizzontale';
 
-// Passo (in punti percentuali di pos_x/pos_y) tra due postazioni consecutive create in blocco.
-// Usa la dimensione reale del marker sull'asse di disposizione (width per una fila orizzontale,
-// height per una colonna verticale — un rettangolo non è quadrato come un cerchio, le due
-// dimensioni divergono). Le due dimensioni del canvas non sono quadrate (1000x560 unità logiche),
-// quindi lo stesso spostamento in pixel corrisponde a percentuali diverse su orizzontale/verticale.
-//
-// I rettangoli (gazebo) devono risultare "attaccati" — bordi a contatto, nessuno spazio in mezzo,
-// come richiesto esplicitamente per poterne impilare più di 15 in colonna — quindi il passo è
-// esattamente pari alla dimensione del marker. I cerchi (ombrellone, mai usati in blocco dalla UI
-// oggi) restano invece con un piccolo margine (+10%) per non sembrare incollati l'uno all'altro.
+// Passo tra due postazioni consecutive create in blocco: i rettangoli (gazebo) restano a contatto
+// (passo = dimensione esatta), i cerchi hanno un margine +10%.
 function bulkStepPercent(tipo: TipoPostazione, orientamento: OrientamentoGriglia): number {
   const style = MARKER_STYLE[tipo];
   const dimensioneReale = orientamento === 'verticale' ? style.height : style.width;
@@ -333,13 +288,9 @@ function bulkStepPercent(tipo: TipoPostazione, orientamento: OrientamentoGriglia
   return (pixelStep / canvasDim) * 100;
 }
 
-// Calcola le posizioni pos_x/pos_y (percentuali 0-100) per `quantita` postazioni create in
-// blocco, centrate sul punto di partenza e distribuite in colonna o in riga — usato dal foglio
-// "+ Aggiungi postazione" per posizionare più gazebi in fila senza doverli trascinare
-// manualmente uno per uno (sezione 5 CLAUDE.md, 2026-08-12). Se il passo "naturale" (bulkStepPercent)
-// farebbe uscire la fila dai margini del canvas (tanti elementi richiesti), viene ridotto quel
-// tanto che basta a farli stare tutti tra il 2% e il 98% — un affollamento leggermente superiore
-// all'ideale è preferibile a postazioni piazzate fuori dall'area visibile.
+// Posizioni pos_x/pos_y per `quantita` postazioni create in blocco, centrate e distribuite in
+// colonna o riga. Se il passo naturale farebbe uscire la fila dal canvas, viene ridotto per
+// restare tra il 2% e il 98%.
 export function computeBulkPositions(
   tipo: TipoPostazione,
   quantita: number,
@@ -369,30 +320,16 @@ export function computeBulkPositions(
   return posizioni;
 }
 
-// Info di gruppo per un singolo gazebo (sezione 5 CLAUDE.md, 2026-08-13): i gazebo con lo stesso
-// `Postazione.gruppo` si disegnano come un unico rettangolo allungato (un solo bordo esterno)
-// invece che come N riquadri separati — vedi PostazioneMarker. `isFirst`/`isLast` riferiti
-// all'ordine lungo l'asse di disposizione (pos_y crescente per un gruppo verticale, pos_x
-// crescente per uno orizzontale): un gazebo senza gruppo (o l'unico membro di un gruppo) ha
-// entrambi `true` (nessun lato "interno" da nascondere, si comporta come un riquadro singolo).
+// I gazebo con lo stesso `Postazione.gruppo` si disegnano come un unico rettangolo allungato
+// (vedi PostazioneMarker). `isFirst`/`isLast`: entrambi `true` se non raggruppato.
 export type GazeboGroupInfo = { isFirst: boolean; isLast: boolean; orientamento: OrientamentoGriglia };
 
-// Tolleranza (punti percentuali di pos_x/pos_y) usata solo per stabilire su quale asse si
-// dispone un gruppo (tutti sulla stessa pos_x → verticale, tutti sulla stessa pos_y →
-// orizzontale) — non per decidere l'appartenenza al gruppo, che è data unicamente dal campo
-// `gruppo` (sotto). In teoria i membri di un gruppo non driftano mai (si spostano sempre insieme,
-// stesso delta, PiscinaMappaDataContext.dragPostazione), quindi le posizioni restano bit-esatte;
-// la tolleranza resta solo come margine di sicurezza contro arrotondamenti.
+// Solo per stabilire l'asse di un gruppo (stessa pos_x → verticale), non l'appartenenza (data dal
+// campo `gruppo`) — margine di sicurezza contro arrotondamenti.
 const TOLLERANZA_ASSE = 0.6;
 
-// Raggruppa i gazebo per `Postazione.gruppo` (sezione 5 CLAUDE.md, 2026-08-13) — usato da
-// MappaCanvas.tsx/PiscinaMappaSelettore.tsx per calcolare `GazeboGroupInfo` per ogni postazione.
-// A differenza di una prima versione puramente geometrica (adiacenza per posizione, scartata su
-// richiesta esplicita dell'utente), l'appartenenza al gruppo è ora un dato persistito: un blocco
-// creato insieme non si divide né si unisce mai trascinando (il drag sposta l'intero gruppo in
-// blocco, PiscinaMappaDataContext.dragPostazione) — l'unico modo di cambiare composizione di un
-// gruppo è ricrearlo. I gazebo con `gruppo` nullo (creati singolarmente, o storico pre-2026-08-13)
-// restano semplicemente riquadri singoli, mai raggruppati con nessun altro.
+// Raggruppa i gazebo per `Postazione.gruppo`: l'appartenenza è un dato persistito (un blocco
+// creato insieme si sposta sempre come corpo unico), non geometrico.
 export function groupGazeboAttaccati(postazioni: Postazione[]): Map<string, GazeboGroupInfo> {
   const gazebi = postazioni.filter((p) => p.tipo === 'GAZEBO');
   const perGruppo = new Map<string, Postazione[]>();
@@ -405,10 +342,7 @@ export function groupGazeboAttaccati(postazioni: Postazione[]): Map<string, Gaze
 
   const risultato = new Map<string, GazeboGroupInfo>();
   for (const membri of perGruppo.values()) {
-    if (membri.length <= 1) continue; // gruppo di un solo elemento: si comporta come non raggruppato
-    // Asse di disposizione: se tutti i membri condividono la stessa pos_x, il gruppo è verticale
-    // (si estende su pos_y), altrimenti si assume orizzontale — gli unici due layout che
-    // computeBulkPositions() può aver prodotto per un gruppo reale.
+    if (membri.length <= 1) continue;
     const stessaX = membri.every((m) => Math.abs(m.pos_x - membri[0].pos_x) < TOLLERANZA_ASSE);
     const orientamento: OrientamentoGriglia = stessaX ? 'verticale' : 'orizzontale';
     const ordinati = [...membri].sort((a, b) =>
@@ -428,9 +362,7 @@ export function remainingForTipo(residui: ResiduiPrenotazione | undefined, tipo:
   return tipo === 'GAZEBO' ? residui.gazebo : residui.ombrellone;
 }
 
-// Riepilogo ingressi "🎟️ N 🌇 N 🧒 N 🆓 N" per le liste staff (ClientiDelGiornoSheet, scheda
-// cliente): interi sempre mostrati (anche 0, per coerenza con le altre risorse), le altre tre
-// tariffe solo se > 0 — condiviso per non duplicare la stessa concatenazione in più file.
+// Riepilogo ingressi "🎟️ N 🌇 N 🧒 N 🆓 N": interi sempre mostrati, le altre tariffe solo se > 0.
 export function formatIngressiSummary(p: {
   ingressi: number;
   ingressi_ridotti: number;

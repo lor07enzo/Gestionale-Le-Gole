@@ -2,13 +2,8 @@ import { Button, ButtonIcon } from '@/components/ui/button';
 import { CheckIcon, EditIcon } from '@/components/ui/icon';
 import { usePiscinaMappaData } from '../../../context/PiscinaMappaDataContext';
 
-// Modalità modifica posizioni postazioni (sezione 5 CLAUDE.md): fuori da questa modalità le
-// postazioni sono ferme ma assegnabili col tap (comportamento storico), dentro sono trascinabili
-// ma il tap non assegna più nulla — le due interazioni condividono lo stesso gesto sul marker
-// (PostazioneMarker) e quindi non possono restare attive entrambe insieme. Pulsante solo icona
-// (nessuna descrizione testuale, solo `accessibilityLabel` per lo screen reader), montato da
-// `MappaCanvas` come overlay assoluto in alto a destra sopra il canvas — non una riga separata
-// sopra la mappa.
+// Fuori da questa modalità le postazioni sono assegnabili col tap; dentro sono trascinabili ma
+// il tap non assegna più nulla — le due interazioni condividono lo stesso gesto sul marker.
 export function EditModeToggle() {
   const { isEditMode, setIsEditMode, isPastDate } = usePiscinaMappaData();
 

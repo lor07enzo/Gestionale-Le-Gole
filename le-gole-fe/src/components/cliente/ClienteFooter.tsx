@@ -8,8 +8,7 @@ import { Text } from '@/components/ui/text';
 import { Icon, MailIcon, MapPinIcon, MessageCircleIcon, PhoneIcon } from '@/components/ui/icon';
 import { FacebookIcon, InstagramIcon, WhatsAppIcon } from './SocialIcons';
 
-// Variante bianca del logo (sfondo trasparente): l'unica leggibile sul footer scuro, a
-// differenza della variante nera usata ovunque altrove nell'app (sfondi chiari).
+// Variante bianca: l'unica leggibile sul footer scuro.
 const logo = require('../../../assets/logo-le-gole-bianco.png');
 
 const CONTATTI = {
@@ -17,22 +16,14 @@ const CONTATTI = {
   telefonoHref: 'tel:+393334528903',
   email: 'osterialegole@icloud.com',
   emailHref: 'mailto:osterialegole@icloud.com',
-  // Stesso indirizzo di TITOLARE.indirizzo in app/privacy.tsx (sede legale) — duplicato qui
-  // invece di importato da quel file: è una route, non un modulo di dominio, e il valore non
-  // cambia mai indipendentemente da quel file (stesso trattamento già riservato a CONTATTI.telefono,
-  // ripetuto anche nell'href WhatsApp di SOCIAL_LINKS sotto).
+  // Stesso indirizzo di TITOLARE.indirizzo in app/privacy.tsx, duplicato: quella è una route, non un modulo di dominio.
   indirizzo: 'Via Salaria SS4 km 98,865 snc, 02013 Antrodoco (RI)',
 };
 
-// Link universale Google Maps (query testuale, nessuna API key richiesta): su mobile apre l'app
-// Maps se installata, altrimenti ricade sul sito — stesso principio "apri con il sistema" già
-// usato per tel:/mailto: sopra.
+// Link universale Google Maps, nessuna API key richiesta.
 const MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(CONTATTI.indirizzo)}`;
 
-// Contatto tecnico dedicato ai problemi/feedback sul sito, distinto da CONTATTI.email (la casella
-// del ristorante, per richieste ai clienti) — la piattaforma è ancora in fase di sviluppo/test
-// (banner dedicato in app/cliente/index.tsx), e serve un canale separato per chi segnala bug o
-// suggerimenti sulla piattaforma stessa, non per prenotazioni/informazioni sul locale.
+// Contatto tecnico per bug/feedback sul sito, distinto da CONTATTI.email (la casella del ristorante).
 const ASSISTENZA = {
   email: 'seniority55@outlook.it',
   emailHref: 'mailto:seniority55@outlook.it',
@@ -140,10 +131,7 @@ export function ClienteFooter() {
 
         <Box className="h-px w-full bg-white/10" />
 
-        {/* Sezione dedicata a bug/feedback sul sito, distinta dalla colonna "Contatti" sopra
-            (quella è la casella del ristorante, per prenotazioni/informazioni sul locale) —
-            riquadro bordato per farla leggere come un blocco a sé, coerente con il banner "in
-            fase di sviluppo" in app/cliente/index.tsx che rimanda qui. */}
+        {/* Sezione dedicata a bug/feedback, distinta dalla colonna "Contatti" sopra. */}
         <Box className="w-full rounded-xl border border-white/10 bg-white/5 p-4">
           <VStack space="xs">
             <HStack space="xs" className="items-center">

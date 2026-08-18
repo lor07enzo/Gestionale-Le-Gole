@@ -1,8 +1,6 @@
 import { z } from 'zod';
 
-// Usato sia per l'attivazione account (prima password) sia per la conferma di un reset:
-// il backend valida ulteriormente con Django validate_password (lunghezza, similarità con
-// l'utente, password comuni...), qui controlliamo solo la lunghezza minima e la conferma.
+// Il backend rivalida con Django validate_password; qui solo lunghezza minima e conferma.
 export const setPasswordSchema = z
   .object({
     password: z.string().min(8, 'La password deve avere almeno 8 caratteri.'),

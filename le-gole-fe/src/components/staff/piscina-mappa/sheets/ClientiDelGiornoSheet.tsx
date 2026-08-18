@@ -183,9 +183,7 @@ export function ClientiDelGiornoSheet() {
     confirmingPrenotazioneId,
   } = usePiscinaSheets();
 
-  // clientiDelGiorno arriva già ordinato per stato di assegnazione + orario (vedi
-  // PiscinaMappaDataContext): qui lo dividiamo solo per renderizzare due sezioni separate,
-  // l'ordine relativo all'interno di ciascuna resta invariato.
+  // clientiDelGiorno arriva già ordinato: qui lo dividiamo solo in due sezioni separate.
   const daAssegnare = clientiDelGiorno.filter((c) => !c.completo);
   const assegnati = clientiDelGiorno.filter((c) => c.completo);
 

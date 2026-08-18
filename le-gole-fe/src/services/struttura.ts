@@ -5,8 +5,7 @@ export type PiscinaInventario = {
   nome: string;
   descrizione: string;
   prezzo_ingresso: string;
-  // Tariffe alternative opzionali (0.00 = non configurata): contatori con prezzo proprio, come
-  // ombrellone/gazebo/lettino/sdraia, nessuna verifica automatica di orario/età lato server.
+  // 0.00 = non configurata.
   prezzo_ingresso_ridotto: string;
   prezzo_ingresso_bambino: string;
   prezzo_ombrellone: string;
@@ -19,10 +18,8 @@ export type PiscinaInventario = {
   totale_sdraie: number;
   orario_apertura: string;
   orario_chiusura: string;
-  // Soglie indicative (testo guida nei form, non validate) per le due tariffe alternative sopra.
   orario_inizio_ridotto: string;
-  // Fascia d'età [eta_minima_bambino, eta_massima_bambino] per la tariffa bambini; sotto
-  // eta_minima_bambino l'ingresso è indicativamente gratuito.
+  // Fascia [eta_minima_bambino, eta_massima_bambino]; sotto il minimo, gratuito.
   eta_minima_bambino: number;
   eta_massima_bambino: number;
   isActive: boolean;
@@ -44,10 +41,8 @@ export type Postazione = {
   numero: number;
   pos_x: number;
   pos_y: number;
-  // Gazebo creati in blocco dal foglio "+ Aggiungi postazione" condividono lo stesso `gruppo`
-  // (UUID generato lato frontend per l'intero blocco) — un gruppo così creato non si può più
-  // dividere/unire trascinando, si sposta sempre tutto insieme (sezione 5 CLAUDE.md, 2026-08-13).
-  // null per l'ombrellone e per un gazebo creato singolarmente.
+  // Gazebo creati in blocco condividono lo stesso `gruppo` e si spostano sempre insieme. Null per
+  // l'ombrellone e per un gazebo creato singolarmente.
   gruppo: string | null;
   created_at: string;
   updated_at: string;

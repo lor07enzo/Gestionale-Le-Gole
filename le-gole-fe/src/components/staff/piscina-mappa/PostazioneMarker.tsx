@@ -13,17 +13,9 @@ import {
   type OrientamentoGriglia,
 } from '../../../utils/piscinaMappa';
 
-// Bordo/arrotondamento per singolo segmento di un rettangolo gazebo (sezione 5 CLAUDE.md,
-// 2026-08-13): un gruppo di N gazebo attaccati si disegna come un unico rettangolo allungato — un
-// solo bordo esterno spesso 2px sul perimetro della striscia, NESSUN bordo (larghezza 0, non solo
-// più sottile) sui lati condivisi con il segmento adiacente, così il colore di sfondo continua
-// senza soluzione di continuità da un segmento all'altro. Un divisore sottile separato (SegmentDivider
-// sotto) marca comunque dove finisce un gazebo e inizia il successivo. Un gazebo isolato (groupInfo
-// null, o isFirst===isLast===true) e il cerchio ombrellone (sempre groupInfo null) restano bordati
-// su tutti e quattro i lati come prima — nessuna regressione per quei casi.
-// Combinazioni scritte per esteso (non composte con interpolazione di frammenti): NativeWind/
-// Tailwind scansiona il sorgente alla ricerca di stringhe di classe letterali complete, un
-// `border-t-${x}` costruito a runtime non verrebbe rilevato dallo scanner.
+// Un gruppo di gazebo attaccati si disegna come un unico rettangolo: nessun bordo sui lati
+// condivisi, solo sul perimetro esterno. Classi scritte per esteso, non interpolate: NativeWind
+// scansiona il sorgente alla ricerca di stringhe letterali complete.
 function edgeClassName(shape: 'circle' | 'rectangle', groupInfo: GazeboGroupInfo | null | undefined): string {
   const angoli = shape === 'circle' ? 'rounded-full' : 'rounded-md';
   if (!groupInfo || (groupInfo.isFirst && groupInfo.isLast)) {
@@ -39,9 +31,6 @@ function edgeClassName(shape: 'circle' | 'rectangle', groupInfo: GazeboGroupInfo
   return 'border-t-2 border-r-0 border-b-2 border-l-0 rounded-none';
 }
 
-// Colore bordo/sfondo in base allo stato — libero/occupato/selezionato/selezionabile, più il
-// tratteggio quando il marker è trascinabile (modalità modifica). Estratto a parte per lo stesso
-// motivo di edgeClassName sopra: tenere il componente principale più semplice da seguire.
 function stateColorClassName(
   isOccupied: boolean,
   isSelected: boolean,
@@ -56,37 +45,18 @@ function stateColorClassName(
   } else if (isSelectable) {
     colore = 'border-amber-400 bg-amber-50';
   }
-  // In modalità modifica il marker diventa trascinabile: un bordo tratteggiato distingue a colpo
-  // d'occhio le postazioni "in editing" da quelle normali, senza dover leggere alcun testo.
   return draggable ? `${colore} border-dashed` : colore;
 }
 
-// Troncamento manuale invece di `numberOfLines`: il componente Text di gluestack-ui ha due
-// implementazioni parallele (index.tsx nativo, index.web.tsx un semplice <span>) — su web
-// `numberOfLines` non viene riconosciuto e finisce spatasciato come attributo DOM grezzo
-// (warning React "does not recognize the numberOfLines prop"). Troncare la stringa qui evita
-// del tutto la dipendenza da un comportamento che diverge tra le due piattaforme. `maxChars`
-// dipende dal tipo di postazione (MARKER_STYLE, sezione 5 CLAUDE.md) — un ombrellone ha un
-// cartellino più largo di un gazebo, quindi ammette qualche carattere in più prima di troncare.
+// Troncamento manuale invece di `numberOfLines`: su web il Text di gluestack-ui è un <span> e
+// non riconosce quella prop RN-only.
 function truncateNome(nome: string, maxChars: number): string {
   return nome.length > maxChars ? `${nome.slice(0, maxChars - 1).trimEnd()}…` : nome;
 }
 
-// Contenuto testuale dentro al marker — estratto a parte per tenere la logica di rendering del
-// marker principale più semplice da seguire (il componente principale gestisce già da solo tap/
-// drag su due piattaforme, sezione 5 CLAUDE.md).
-//
-// Gotcha scoperto verificando i gazebo attaccati (2026-08-13) — MAI passare un `lineHeight`
-// NUMERICO uguale/vicino al fontSize in questo file: su web, NativeWind/react-native-css (alpha,
-// sezione 4 CLAUDE.md) emette `line-height: <numero>` SENZA unità nel CSS finale, e senza unità
-// il browser lo interpreta secondo lo standard CSS come un MOLTIPLICATORE del font-size, non come
-// pixel — `lineHeight: 9` con `fontSize: 8` diventa quindi `line-height: 72px` (9× l'atteso), non
-// gestibile su React Native nativo (dove lineHeight è sempre in dp). Effetto osservato: il nome
-// cliente dentro un gazebo occupato riempiva un riquadro di testo alto 72px invece di ~9px,
-// sconfinando visivamente nei gazebo adiacenti della stessa colonna. Nessun altro Text di questo
-// file imposta `lineHeight` esplicito (il default del browser/RN basta), fix applicato rimuovendo
-// la prop invece di provare a "correggere" il numero (qualunque valore numerico diretto sarebbe
-// comunque a rischio della stessa interpretazione errata).
+// MAI passare un `lineHeight` numerico qui: su web, NativeWind/react-native-css emette
+// `line-height: <numero>` senza unità, che il browser interpreta come moltiplicatore del
+// font-size (non pixel) — testo che sconfina visivamente nei marker adiacenti.
 function MarkerLabel({
   isRectangle,
   isOccupied,
@@ -105,10 +75,6 @@ function MarkerLabel({
   scale: number;
 }>) {
   if (isRectangle && isOccupied && clienteNome) {
-    // Rettangolo occupato: numero + nome cliente scritti DENTRO al rettangolo (non in un
-    // cartellino esterno sotto, a differenza del cerchio) — quando più gazebi sono "attaccati" in
-    // colonna (passo esatto, nessun margine) un cartellino esterno sotto l'icona finirebbe
-    // coperto dal gazebo immediatamente successivo nella striscia.
     return (
       <>
         <Text
@@ -141,10 +107,7 @@ function MarkerLabel({
   );
 }
 
-// Badge check-in: overlay in alto a destra sul marker, non annidato al suo interno — sibling
-// assoluto, pointer-events-none (il tap resta gestito solo dal marker). Anello bianco per
-// "ritagliarlo" dal bordo sottostante, stesso effetto già usato per i badge conteggio di
-// CalendarPicker (sezione 5).
+// Badge check-in: overlay sibling del marker, non annidato — pointer-events-none.
 function ArrivatoBadge({
   left,
   top,
@@ -170,12 +133,8 @@ function ArrivatoBadge({
   );
 }
 
-// Cartellino col nome del cliente assegnato, sotto l'icona — solo per i marker circolari
-// (ombrellone): il nome dei gazebo occupati sta invece dentro al rettangolo stesso (MarkerLabel
-// sopra), per non rischiare di finire coperto dal marker successivo in una striscia attaccata.
-// Sibling assoluto (non annidato nel cerchio, troppo piccolo per contenere un nome leggibile), non
-// interattivo (pointer-events-none) e segue lo stesso drag temporaneo del marker così non si
-// stacca mentre lo si trascina (il chiamante passa left/top già comprensivi del drag in corso).
+// Cartellino nome cliente sotto l'icona, solo per i marker circolari (ombrellone) — il gazebo
+// scrive il nome dentro al rettangolo stesso (MarkerLabel). Sibling assoluto, non interattivo.
 function NameTag({
   left,
   top,
@@ -214,12 +173,7 @@ function NameTag({
   );
 }
 
-// Divisore sottile tra questo gazebo e il successivo della catena (sezione 5 CLAUDE.md,
-// 2026-08-13) — un tratto leggero e neutro (non colorato in base allo stato, a differenza del
-// bordo esterno del gruppo, sempre lo stesso indipendentemente da occupato/selezionabile/ecc.) che
-// marca solo il confine tra due segmenti, mantenendo l'aspetto complessivo di un unico rettangolo
-// allungato invece di N riquadri separati. pointer-events-none: il tap resta gestito solo dai
-// marker sottostanti.
+// Divisore neutro tra due gazebo della stessa catena, per non rompere l'effetto "rettangolo unico".
 function SegmentDivider({
   left,
   top,
@@ -246,45 +200,25 @@ type PostazioneMarkerProps = {
   postazione: Postazione;
   isOccupied: boolean;
   isSelectable: boolean;
-  // Selezionata dal cliente nel flusso self-service (Area Cliente): evidenziazione distinta da
-  // isSelectable (che marca solo "disponibile a essere scelta", non "già scelta ora"). Mai usata
-  // lato staff, che non ha un concetto di selezione persistente sul marker — default false, nessun
-  // impatto sul suo aspetto/comportamento esistente.
+  // Selezionata dal cliente nel flusso self-service — distinta da isSelectable. Mai usata lato staff.
   isSelected?: boolean;
-  // Nome del cliente assegnato, mostrato in un cartellino sotto l'icona quando la postazione è
-  // occupata — undefined quando libera.
   clienteNome?: string;
-  // Check-in manuale del cliente assegnato (OccupazionePostazione.arrivato) — mostra un badge
-  // verde sul marker, per vedere a colpo d'occhio chi è già arrivato senza aprire ogni foglio.
   arrivato?: boolean;
-  // Solo per i gazebo (sezione 5 CLAUDE.md, 2026-08-13): posizione di questo segmento dentro una
-  // catena di gazebo attaccati (calcolata da groupGazeboAttaccati, puramente geometrica) — null
-  // per un ombrellone o un gazebo isolato, che si comportano come un riquadro singolo normale.
+  // Solo per i gazebo: posizione di questo segmento dentro una catena attaccata; null se isolato.
   groupInfo?: GazeboGroupInfo | null;
   scale: number;
-  // Giorno passato: il tap resta attivo (per consultare l'occupante), ma il trascinamento è
-  // sempre disattivato — la posizione è un dato strutturale condiviso da tutte le date, non ha
-  // senso spostarla mentre si sta consultando lo storico (a prescindere da `editMode`).
+  // Giorno passato: il tap resta attivo, il trascinamento è sempre disattivato.
   readOnly: boolean;
-  // Modalità modifica posizioni (mappa staff, sezione 5 CLAUDE.md): quando true il marker è
-  // trascinabile ma il tap non assegna/consulta più nulla (nessuna onPress) — l'assegnazione
-  // cliente e la modifica posizione sono due interazioni mutuamente esclusive sullo stesso gesto
-  // di tap, quindi non possono restare entrambe attive sullo stesso marker.
+  // In modalità modifica il marker è trascinabile ma il tap non assegna/consulta più nulla.
   editMode: boolean;
   onPress: () => void;
   onDragEnd: (dxLogical: number, dyLogical: number) => void;
 };
 
-// react-native-web (versione in uso) non implementa più il sistema di responder legacy
-// su cui si basa PanResponder: su web gli handler onStartShouldSetResponder/onMoveShouldSetResponder/ecc.
-// vengono ignorati (nessun tap, nessun drag). Il marker usa quindi due percorsi distinti:
-// Pointer Events (window) su web, PanResponder nativo su iOS/Android.
-//
-// Sia la posizione del marker sia lo spostamento durante il drag sono calcolati in pixel
-// REALI (già scalati, la stessa unità di `MappaCanvas`, che dimensiona il canvas come
-// `CANVAS_WIDTH * scale`) — il drag quindi segue il dito/puntatore 1:1 a qualunque zoom. La
-// conversione in unità logiche (percentuali 0-100 di `pos_x`/`pos_y`) avviene una sola volta,
-// al rilascio, tramite `onDragEnd`.
+// react-native-web non implementa il responder system legacy su cui si basa PanResponder: due
+// percorsi distinti, Pointer Events su web, PanResponder nativo su iOS/Android. Posizione e
+// drag sono in pixel reali (già scalati); la conversione in pos_x/pos_y (0-100) avviene solo
+// al rilascio, in onDragEnd.
 export function PostazioneMarker({
   postazione,
   isOccupied,
@@ -302,9 +236,6 @@ export function PostazioneMarker({
   const [drag, setDrag] = useState({ dx: 0, dy: 0 });
   const dragStateRef = useRef({ startX: 0, startY: 0, moved: false });
 
-  // Trascinabile solo in modalità modifica e mai su un giorno passato. Quando NON è trascinabile
-  // (mappa in modalità assegnazione normale, oppure consultazione di sola lettura) il tap apre
-  // sempre onPress: non essendoci alcun drag possibile, non serve distinguere tap da spostamento.
   const draggable = editMode && !readOnly;
 
   const panResponder = useRef(
@@ -326,8 +257,6 @@ export function PostazioneMarker({
         const moved =
           Math.abs(gesture.dx) > TAP_MOVE_THRESHOLD_PX || Math.abs(gesture.dy) > TAP_MOVE_THRESHOLD_PX;
         setDrag({ dx: 0, dy: 0 });
-        // In modalità modifica un tap senza spostamento non fa nulla (niente assegnazione): il
-        // marker non è "in consultazione", è "in editing", e qui non c'è nulla da consultare.
         if (moved) {
           onDragEnd(gesture.dx / scale, gesture.dy / scale);
         }
@@ -338,8 +267,7 @@ export function PostazioneMarker({
   const handlePointerDown = (event: any) => {
     if (Platform.OS !== 'web') return;
     event.preventDefault?.();
-    // Impedisce all'evento di risalire fino al canvas della mappa (ZoomPanCanvas, sezione 5): senza,
-    // il tap/drag su un marker verrebbe interpretato anche come l'inizio di un pan della mappa.
+    // Impedisce all'evento di risalire al canvas: senza, il tap sul marker farebbe partire anche il pan.
     event.stopPropagation?.();
     dragStateRef.current = { startX: event.clientX, startY: event.clientY, moved: false };
 
@@ -365,7 +293,6 @@ export function PostazioneMarker({
       if (dragStateRef.current.moved) {
         onDragEnd(dx / scale, dy / scale);
       }
-      // Nessun else: in modalità modifica un tap senza spostamento non deve assegnare nulla.
     };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
@@ -380,12 +307,7 @@ export function PostazioneMarker({
   const icon = postazione.tipo === 'GAZEBO' ? '⛺' : '⛱️';
 
   const borderClassName = stateColorClassName(isOccupied, isSelected, isSelectable, draggable);
-  // I tipi di RN per `cursor` ammettono solo 'auto' | 'pointer' (react-native-web supporta in
-  // realtà qualunque valore CSS, es. 'grab', ma non è tipizzato) — il bordo tratteggiato sopra
-  // resta l'indicatore principale di "questo marker è trascinabile ora".
   const webCursor: 'pointer' | undefined = Platform.OS === 'web' ? 'pointer' : undefined;
-  // groupInfo ha senso solo per un rettangolo (gazebo) — un cerchio (ombrellone) non partecipa mai
-  // a un gruppo, a prescindere da cosa arrivi nella prop (mai passata per quel tipo comunque).
   const effectiveGroupInfo = isRectangle ? groupInfo : null;
   const shapeClassName = edgeClassName(style.shape, effectiveGroupInfo);
   const showDivider = Boolean(isRectangle && effectiveGroupInfo && !effectiveGroupInfo.isLast);

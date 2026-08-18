@@ -6,10 +6,7 @@ import { goBackOr } from '../../utils/navigation';
 export function BackButton({
   label = 'Torna indietro',
   onPress,
-  // Obbligatorio (non un default indovinato): la destinazione corretta se non c'è nulla da cui
-  // tornare indietro (pagina raggiunta con un caricamento "a freddo", vedi utils/navigation.ts)
-  // dipende da dove vive il pulsante — sbagliarla silenziosamente sarebbe peggio di non gestire
-  // affatto il caso.
+  // Obbligatorio: la destinazione di fallback dipende da dove vive il pulsante.
   fallbackHref,
   className = '',
 }: Readonly<{ label?: string; onPress?: () => void; fallbackHref: Href; className?: string }>) {

@@ -34,30 +34,15 @@ SECRET_KEY = env.str('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=False)
 
-# Letto da env (lista separata da virgole, es. "le-gole-backend.onrender.com,.onrender.com"):
-# default '*' per non rompere lo sviluppo locale/Docker, dove non viene impostato. In produzione
-# (Render, sezione 12) va valorizzato con l'host reale.
+# Default '*' per lo sviluppo locale/Docker; in produzione (Render) valorizzato con l'host reale.
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['*'])
 
-# Hardening di sicurezza attivo solo quando DEBUG=False (produzione, Render — sezione 12): non
-# deve toccare lo sviluppo locale in http (.env ha DEBUG=True). SECURE_SSL_REDIRECT non è incluso
-# qui deliberatamente: Render reindirizza già http->https al proprio edge per ogni servizio, e
-# forzarlo di nuovo a livello Django rischierebbe di rompere l'health check interno di Render (che
-# in certi setup raggiunge il container direttamente, senza passare dall'edge TLS) con un
-# redirect loop — stesso genere di incidente già capitato con ALLOWED_HOSTS/DisallowedHost
-# (sezione 12), non da ripetere per un guadagno di sicurezza marginale dato che il traffico
-# pubblico passa comunque sempre da https.
+# SECURE_SSL_REDIRECT escluso apposta: Render reindirizza già http->https al proprio edge, e
+# forzarlo anche qui rischierebbe un redirect loop sull'health check interno.
 if not DEBUG:
-    # Cookie di sessione/CSRF (usati solo dall'admin Django, l'API stessa è JWT via header
-    # Authorization, sezione 1) mai inviati in chiaro.
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    # Solo un header di risposta, nessun impatto sulle richieste in ingresso (incluso l'health
-    # check, che ignora gli header extra) — quindi nessun rischio del genere descritto sopra per
-    # SECURE_SSL_REDIRECT. Valore prudente (1 giorno, non il classico 1 anno + preload) per
-    # poterlo alzare con calma una volta verificato che nessun client interno dipenda da una
-    # richiesta http esplicita; copre solo api.osterialegole.com (l'host che invia l'header), non
-    # il dominio principale servito da Netlify.
+    # Valore prudente (1 giorno, non 1 anno + preload): copre solo api.osterialegole.com.
     SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=86400)
     SECURE_HSTS_INCLUDE_SUBDOMAINS = False
     SECURE_HSTS_PRELOAD = False
@@ -114,12 +99,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
-# Letto da env (default: dev server Expo locale); il dominio di produzione va in render.yaml,
-# non hardcoded qui.
+# Dominio di produzione in render.yaml, non hardcoded qui.
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:8081'])
 
-# Regex opzionale per i deploy di preview EAS (hash imprevedibile nel dominio, non copribile da
-# CORS_ALLOWED_ORIGINS).
+# Regex opzionale per i deploy di preview (hash imprevedibile, non copribile da CORS_ALLOWED_ORIGINS).
 _cors_preview_regex = env.str('CORS_ALLOWED_ORIGIN_REGEX', default=None)
 CORS_ALLOWED_ORIGIN_REGEXES = [_cors_preview_regex] if _cors_preview_regex else []
 
@@ -127,9 +110,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [_cors_preview_regex] if _cors_preview_regex else 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# Non impostate in locale/Docker (nessun impatto). Il DB gestito di produzione (Supabase,
-# sezione 12) richiede TLS; CONN_MAX_AGE=60s evita di riaprire una connessione TLS ad ogni
-# richiesta (misurato ~1,5s di latenza costante senza, su un DB remoto).
+# Non impostato in locale/Docker. Il DB gestito di produzione (Supabase) richiede TLS.
 DB_SSLMODE = env('DB_SSLMODE', default=None)
 
 DATABASES = {
@@ -173,16 +154,9 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
     ),
-    # Rate-limit globale, non per singolo endpoint: diverse azioni sono AllowAny (creazione
-    # cliente/prenotazione/occupazione self-service, disponibilità, biglietto PDF — sezione 1/2/7)
-    # e senza alcun limite un client automatizzato potrebbe spammare prenotazioni/email di conferma
-    # senza alcun freno. AnonRateThrottle conta per IP, UserRateThrottle per utente autenticato
-    # (staff) — coprendo così sia il flusso self-service pubblico sia un eventuale script con un
-    # token rubato. Tassi deliberatamente generosi (non i default DRF, molto più stretti): più
-    # clienti sulla stessa rete Wi-Fi del locale condividono spesso lo stesso IP pubblico, e il
-    # flusso di prenotazione self-service da solo può generare una decina di richieste in sequenza
-    # (cliente + prenotazione + una POST occupazioni-postazione per ogni postazione scelta,
-    # sezione 7) — un tetto troppo basso bloccherebbe utenti legittimi, non solo un abuso.
+    # Rate-limit globale: diverse azioni sono AllowAny (self-service). Tassi generosi (non i
+    # default DRF): più clienti condividono spesso lo stesso IP Wi-Fi del locale, e una singola
+    # prenotazione self-service genera già una decina di richieste in sequenza.
     'DEFAULT_THROTTLE_CLASSES': (
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
@@ -198,9 +172,7 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=60),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': True, # Comodo per vedere nel pannello admin quando l'utente si è loggato l'ultima volta
-    
-    # Intestazione standard per React Native / Axios
+    'UPDATE_LAST_LOGIN': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
@@ -227,7 +199,6 @@ TIME_ZONE = 'Europe/Rome'
 
 USE_I18N = True
 
-# USE_TZ dice a Django di usare i fusi orari nel database (salva in UTC e converte in 'Europe/Rome' nell'interfaccia)
 USE_TZ = True
 
 

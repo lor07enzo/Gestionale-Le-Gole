@@ -18,20 +18,10 @@ type ZoomPanCanvasProps = {
 
 type PointerPoint = { x: number; y: number };
 
-// Sostituisce le due ScrollView annidate (orizzontale + verticale) usate in precedenza per il pan
-// della mappa piscina (staff e cliente): su schermi piccoli le scrollbar/i "rimbalzi" di scroll
-// rendevano la navigazione scomoda, soprattutto insieme allo zoom. Qui il pan è un vero
-// trascinamento libero (un dito/il mouse ovunque sull'area vuota del canvas) e lo zoom supporta
-// anche il pinch a due dita, oltre ai pulsanti +/- già esistenti (ZoomControls) — entrambi
-// aggiornano lo stesso `scale` passato dal chiamante, quindi restano sempre in sincronia.
-//
-// Stesso principio dual-path già usato in PostazioneMarker (sezione 5 CLAUDE.md): PanResponder
-// per nativo, Pointer Events per web (react-native-web non implementa più il responder system
-// legacy su cui si basa PanResponder). Il pan/pinch sono calcolati in modo incrementale
-// (delta rispetto all'ultimo frame, non rispetto all'inizio del gesto): evita di dover conoscere
-// la posizione assoluta del viewport sullo schermo, al costo di non ancorare perfettamente lo
-// zoom al punto esatto del pinch — stesso comportamento "non ancorato" già dei pulsanti +/-
-// esistenti, quindi nessuna regressione percepibile.
+// Pan libero (dito/mouse) + pinch a due dita, oltre ai pulsanti +/- esistenti (stesso `scale`
+// condiviso). Stesso dual-path di PostazioneMarker: PanResponder su nativo, Pointer Events su
+// web. Pan/pinch calcolati come delta incrementale rispetto all'ultimo frame, non ancorati al
+// punto esatto del gesto.
 export function ZoomPanCanvas({
   width,
   height,
@@ -49,9 +39,8 @@ export function ZoomPanCanvas({
     scaleRef.current = scale;
   }, [scale]);
 
-  // Tiene il contenuto sempre almeno parzialmente visibile: se è più piccolo del viewport su un
-  // asse lo centra (min === max, nessun margine di pan su quell'asse), altrimenti consente di
-  // scorrere fino al bordo del canvas ma mai oltre.
+  // Tiene il contenuto sempre almeno parzialmente visibile: centrato se più piccolo del viewport,
+  // altrimenti scorrevole fino al bordo ma mai oltre.
   function clampPan(next: PointerPoint, contentWidth: number, contentHeight: number): PointerPoint {
     const { width: vw, height: vh } = containerSizeRef.current;
     if (!vw || !vh) return next;
@@ -68,8 +57,7 @@ export function ZoomPanCanvas({
     );
   }
 
-  // Ri-vincola il pan quando lo zoom cambia (pulsanti o pinch): senza, uscendo in zoom-out da un
-  // pan vicino al bordo il canvas potrebbe restare parzialmente fuori dal viewport.
+  // Ri-vincola il pan quando lo zoom cambia, altrimenti il canvas potrebbe restare fuori viewport.
   useEffect(() => {
     setPan((prev) => clampPan(prev, width * scale, height * scale));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,8 +86,8 @@ export function ZoomPanCanvas({
       onPanResponderGrant: (evt) => baselineFromTouches(evt.nativeEvent.touches),
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches;
-        // Numero di dita cambiato a metà gesto (dito aggiunto/tolto): ri-azzera il riferimento
-        // invece di calcolare un delta rispetto a un frame con un numero di tocchi diverso.
+        // Numero di dita cambiato a metà gesto: ri-azzera il riferimento invece di calcolare
+        // un delta con un conteggio diverso.
         if (touches.length !== nativeGesture.current.touchCount) {
           baselineFromTouches(touches);
           return;
@@ -132,7 +120,7 @@ export function ZoomPanCanvas({
     })
   ).current;
 
-  // ---- Web: Pointer Events, uno o più pointer attivi tracciati per id ----
+  // Web: Pointer Events, uno o più pointer attivi tracciati per id.
   const pointersRef = useRef(new Map<number, PointerPoint>());
   const webGestureRef = useRef<{ dist?: number; midX?: number; midY?: number; x?: number; y?: number }>({});
   const listenersAttachedRef = useRef(false);
@@ -161,8 +149,8 @@ export function ZoomPanCanvas({
     }
   }
 
-  // Handler creati una sola volta (lazy ref, non ad ogni render): addEventListener/removeEventListener
-  // devono spaiarsi sulla STESSA identità di funzione, altrimenti il listener non viene mai rimosso.
+  // Handler creati una sola volta: addEventListener/removeEventListener devono spaiarsi sulla
+  // stessa identità di funzione.
   const handlersRef = useRef<{ move: (e: PointerEvent) => void; up: (e: PointerEvent) => void } | null>(null);
   if (!handlersRef.current) {
     handlersRef.current = {
@@ -202,10 +190,7 @@ export function ZoomPanCanvas({
     setPan((prev) => clampPan(prev, width * scaleRef.current, height * scaleRef.current));
   }
 
-  // Il Box di gluestack-ui su web è un <div> semplice (component/ui/box/index.web.tsx), non il
-  // View di react-native-web: `onLayout` viene ignorato lì (solo un warning React in console),
-  // quindi su web la dimensione del viewport va misurata a parte con un ResizeObserver sul ref
-  // del nodo DOM reale — `onLayout` resta il percorso corretto ed effettivo solo su nativo.
+  // Il Box di gluestack-ui su web è un <div>: `onLayout` viene ignorato, serve un ResizeObserver.
   const containerRef = useRef<any>(null);
   useEffect(() => {
     if (Platform.OS !== 'web') return;

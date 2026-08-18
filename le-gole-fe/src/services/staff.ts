@@ -13,9 +13,7 @@ export type CreateStaffPayload = {
   email: string;
 };
 
-// Niente password qui: la creazione lascia l'account senza password utilizzabile
-// (UtenteCreateSerializer.create -> set_unusable_password) finché lo staff non la imposta
-// da solo tramite il link di attivazione ricevuto via email (vedi activateAccount).
+// Niente password: l'account resta inutilizzabile finché lo staff non la imposta via activateAccount.
 export type UpdateStaffPayload = Partial<CreateStaffPayload>;
 
 export type SetPasswordPayload = { uid: string; token: string; password: string };

@@ -28,13 +28,8 @@ class PiscinaInventarioViewSet(viewsets.ModelViewSet):
         inventario = self.get_object()
         oggi = timezone.localdate()
 
-        # Prenotazioni odierne/future NON cancellate bloccano l'eliminazione (chi ha prenotato
-        # conta su quella disponibilità) — le CANCELLED sono escluse: da quando l'annullamento
-        # (stato='CANCELLED') ha sostituito l'eliminazione definitiva come azione normale dello
-        # staff (sezione 5), una prenotazione futura annullata non impegna più alcuna risorsa e
-        # non deve poter bloccare per sempre l'eliminazione del listino. Le prenotazioni passate
-        # sono solo storico e vengono comunque ripulite (qualsiasi stato) per liberare il PROTECT
-        # su PrenotazionePiscina.inventario.
+        # Prenotazioni odierne/future non cancellate bloccano l'eliminazione; le CANCELLED sono
+        # escluse (non impegnano più alcuna risorsa) e vengono ripulite sotto.
         ha_prenotazioni_correnti_o_future = (
             PrenotazionePiscina.objects.filter(inventario=inventario, data__gte=oggi)
             .exclude(stato='CANCELLED')
@@ -54,16 +49,12 @@ class PiscinaInventarioViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
-                # A questo punto ogni prenotazione rimasta collegata è o passata (qualsiasi stato)
-                # o futura ma CANCELLED (l'unico caso non bloccato sopra) — in entrambi i casi va
-                # ripulita qui, altrimenti una futura CANCELLED farebbe comunque fallire
-                # perform_destroy() sotto con un ProtectedError (PrenotazionePiscina.inventario è
-                # PROTECT). Non basta più filtrare solo su data__lt=oggi come prima.
+                # Ogni prenotazione rimasta collegata è passata o futura CANCELLED: va ripulita
+                # qui, altrimenti farebbe fallire perform_destroy() con un ProtectedError.
                 PrenotazionePiscina.objects.filter(inventario=inventario).delete()
                 self.perform_destroy(inventario)
         except ProtectedError:
-            # Rete di sicurezza per eventuali riferimenti PROTECT residui non previsti sopra:
-            # meglio un 400 leggibile che un 500 grezzo.
+            # Rete di sicurezza per riferimenti PROTECT residui non previsti sopra.
             return Response(
                 {
                     "detail": (
@@ -119,14 +110,9 @@ class PostazioneViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         """
-        Se è presente ?data=YYYY-MM-DD ED è una data passata, ricostruisce la mappa "come era"
-        quel giorno invece di quella attuale:
-        - include anche le postazioni nel frattempo eliminate (soft-delete), se lo sono state
-          DOPO quella data — esistevano ancora allora;
-        - esclude le postazioni create DOPO quella data — non esistevano ancora;
-        - sovrascrive pos_x/pos_y con la posizione storica effettiva in quel giorno (vedi
-          prenotazioni.utils.posizioni_effettive).
-        Per oggi/il futuro (o senza 'data') il comportamento è quello live invariato.
+        Se ?data=YYYY-MM-DD è una data passata, ricostruisce la mappa "come era" quel giorno:
+        include le postazioni eliminate dopo quella data, esclude quelle create dopo, e
+        sovrascrive pos_x/pos_y con la posizione storica effettiva. Per oggi/il futuro invariato.
         """
         data_str = request.query_params.get('data')
         if not data_str:

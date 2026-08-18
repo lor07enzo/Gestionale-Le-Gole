@@ -32,9 +32,8 @@ import { usePiscinaSelection } from './PiscinaSelectionContext';
 
 export type OrdineNumeri = 'crescente' | 'decrescente';
 
-// Esportato perché i form annidati in PostazioneSheet (figli di <Actionsheet>, montato da
-// gluestack-ui fuori dall'albero di PiscinaSheetsProvider) non possono chiamare usePiscinaSheets()
-// da sé: PostazioneSheet passa questo valore come prop.
+// Esportato perché i form annidati in PostazioneSheet (fuori dall'albero del provider) ricevono
+// questo valore come prop invece di chiamare usePiscinaSheets() da sé.
 export type PiscinaSheetsValue = {
   // Giorno passato: assegnazione/modifica/liberazione postazione disattivate.
   isPastDate: boolean;
@@ -46,36 +45,23 @@ export type PiscinaSheetsValue = {
   sheetError: string | null;
   isSubmittingSheet: boolean;
   updateSheetForm: (patch: Partial<SimpleFormState>) => void;
-  // Massimo lettini/sdraie assegnabili a questa postazione — null se nessun limite (occupazione
-  // manuale senza prenotazione collegata). Tiene conto di quanto già assegnato altrove.
+  // null se nessun limite (occupazione manuale senza prenotazione collegata).
   maxLettini: number | null;
   maxSdraie: number | null;
   newTipo: TipoPostazione;
   setNewTipo: (tipo: TipoPostazione) => void;
-  // Numero della prima postazione che verrà creata — per compatibilità con un solo elemento
-  // (ombrelloni, o un singolo gazebo). Per una creazione in blocco vedi newNumeriPreview sotto.
   newNumero: string;
-  // Creazione in blocco (solo gazebi, sezione 5 CLAUDE.md, 2026-08-12): quanti posizionarne e se
-  // metterli in colonna (verticale) o in riga (orizzontale) — ignorati per gli ombrelloni, che
-  // restano sempre singoli.
+  // Creazione in blocco: solo per i gazebi, gli ombrelloni restano sempre singoli.
   newQuantita: string;
   setNewQuantita: (value: string) => void;
   newOrientamento: OrientamentoGriglia;
   setNewOrientamento: (value: OrientamentoGriglia) => void;
-  // Direzione di numerazione del blocco (sezione 5 CLAUDE.md, 2026-08-13): 'crescente' assegna il
-  // numero più basso riservato alla prima postazione della striscia (in alto/a sinistra),
-  // 'decrescente' lo assegna all'ultima — l'insieme dei numeri riservati (i più bassi liberi) non
-  // cambia, cambia solo quale estremo della striscia li riceve in che ordine.
+  // Quale estremo della striscia riceve il numero più basso riservato.
   newOrdineNumeri: OrdineNumeri;
   setNewOrdineNumeri: (value: OrdineNumeri) => void;
-  // Tutti i numeri che verranno assegnati in questa creazione, nell'ordine in cui verranno
-  // abbinati alle posizioni della striscia (1 elemento per una postazione singola, N per un
-  // blocco di gazebi) — calcolati in anticipo con nextAvailableNumeri, così non collidono tra
-  // loro anche prima di essere salvati; già riordinati secondo newOrdineNumeri.
+  // Numeri riservati in anticipo (non collidono tra loro), già riordinati secondo newOrdineNumeri.
   newNumeriPreview: number[];
-  // Postazioni fisiche attive per tipo rispetto al totale previsto dal listino (inventario.totale_
-  // ombrelloni/totale_gazebi) — usato da AddPostazioneForm per mostrare "X/Y posizionati" e
-  // disabilitare "Aggiungi" quando il tipo selezionato ha raggiunto il limite (sezione 5 CLAUDE.md).
+  // Usato da AddPostazioneForm per "X/Y posizionati" e per disabilitare "Aggiungi" al limite.
   capacitaOmbrelloni: { usati: number; totale: number };
   capacitaGazebi: { usati: number; totale: number };
   clientiSelezionabiliPerTarget: PrenotazionePiscina[];
@@ -89,8 +75,7 @@ export type PiscinaSheetsValue = {
   liberaPostazione: () => Promise<void>;
   handleDeletePostazione: (postazione: Postazione) => void;
 
-  // Check-in manuale del cliente assegnato a questa postazione (foglio "occupant") — per
-  // singola postazione, non per prenotazione: un cliente con 3 gazebi va segnato su ciascuno.
+  // Per singola postazione, non per prenotazione: un cliente con 3 gazebi va segnato su ciascuno.
   arrivato: boolean;
   isTogglingArrivato: boolean;
   toggleArrivato: () => Promise<void>;
@@ -123,13 +108,9 @@ export type PiscinaSheetsValue = {
   openEditPrenotazione: (p: PrenotazionePiscina) => void;
   closeEditPrenotazione: () => void;
   confirmEditPrenotazione: () => Promise<void>;
-  // Annulla (stato -> CANCELLED, non un'eliminazione reale): il backend libera da sé le postazioni
-  // già assegnate. L'eliminazione definitiva non è più un'azione disponibile lato staff (2026-08-07,
-  // sostituita interamente dall'annullamento — vedi sezione 5 CLAUDE.md).
+  // Annulla (stato -> CANCELLED, non un'eliminazione reale): il backend libera da sé le postazioni già assegnate.
   handleCancelPrenotazione: (p: PrenotazionePiscina) => void;
 
-  // Conferma una prenotazione self-service 'PENDING' (nessun altro punto del flusso staff la
-  // conferma automaticamente — vedi commento su confirmPrenotazione).
   confirmingPrenotazioneId: string | null;
   confirmPrenotazione: (p: PrenotazionePiscina) => Promise<void>;
 };
@@ -189,16 +170,15 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
   const updateEditForm = (patch: Partial<EditPrenotazioneFormState>) =>
     setEditForm((f) => ({ ...f, ...patch }));
 
-  // Solo i clienti con almeno un'unità residua del tipo della postazione target (es. hanno
-  // ancora un gazebo da piazzare se si è aperta una postazione gazebo).
+  // Solo i clienti con almeno un'unità residua del tipo della postazione target.
   const clientiSelezionabiliPerTarget = targetPostazione
     ? daAssegnare.filter(
         (p) => remainingForTipo(remainingByPrenotazione.get(p.id), targetPostazione.tipo) > 0
       )
     : [];
 
-  // Prenotazione di riferimento per il limite lettini/sdraie: quella selezionata in "assign",
-  // quella collegata all'occupazione in "occupant" (nessun limite se assegnata manualmente).
+  // Prenotazione di riferimento per il limite lettini/sdraie: selezionata in "assign", collegata
+  // all'occupazione in "occupant" (nessun limite se assegnata manualmente).
   const occupazioneCorrente = targetPostazione ? occupazioneByPostazione.get(targetPostazione.id) : undefined;
   const prenotazioneRiferimentoId =
     sheetMode === 'assign'
@@ -217,8 +197,6 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     : null;
   const arrivato = occupazioneCorrente?.arrivato ?? false;
 
-  // Postazioni attive per tipo rispetto al totale del listino — 'postazioni' arriva già filtrata
-  // alle sole attive (soft-delete escluso lato backend, sezione 5 CLAUDE.md).
   const capacitaOmbrelloni = {
     usati: postazioni.filter((p) => p.tipo === 'OMBRELLONE').length,
     totale: inventario?.totale_ombrelloni ?? 0,
@@ -228,18 +206,9 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     totale: inventario?.totale_gazebi ?? 0,
   };
 
-  // La creazione in blocco (quantità > 1) è pensata solo per i gazebi (sezione 5 CLAUDE.md,
-  // 2026-08-12): gli ombrelloni di questo listino sono al massimo 15 e si posizionano bene uno
-  // alla volta come da sempre — per un ombrellone la quantità resta sempre 1 anche se il campo
-  // del form (nascosto per questo tipo) conservasse un valore diverso residuo da un cambio tipo.
+  // La creazione in blocco è solo per i gazebi: la quantità resta sempre 1 per l'ombrellone.
   const quantitaRichiesta =
     newTipo === 'GAZEBO' ? Math.max(Number.parseInt(newQuantita, 10) || 1, 1) : 1;
-  // Riserva l'intero blocco di numeri in anticipo (non uno alla volta durante il salvataggio):
-  // nextAvailableNumeri garantisce che non collidano tra loro anche prima di essere creati.
-  // L'insieme riservato è sempre "i numeri liberi più bassi" a prescindere dall'ordine scelto —
-  // newOrdineNumeri decide solo quale estremo della striscia riceve il numero più basso: in
-  // ordine 'decrescente' l'array viene semplicemente invertito prima di essere abbinato alle
-  // posizioni (calcolate sempre dall'inizio della striscia in poi, invariate).
   const newNumeriPreview = useMemo(() => {
     const base = nextAvailableNumeri(postazioni, quantitaRichiesta);
     return newOrdineNumeri === 'decrescente' ? [...base].reverse() : base;
@@ -258,27 +227,20 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     setNewQuantita('1');
     setNewOrientamento('verticale');
     setNewOrdineNumeri('crescente');
-    // Il numero non è più scelto a mano: viene assegnato automaticamente al primo libero
-    // (sezione 5 CLAUDE.md), derivato reattivamente da newNumeriPreview sopra — riflette sempre
-    // le postazioni attive più recenti senza bisogno di ricalcolarlo qui.
     setSheetError(null);
     setSheetMode('add-postazione');
   };
 
   const handlePickCliente = (pren: PrenotazionePiscina) => {
     selectPrenotazioneCandidate(pren.id);
-    // Precompila con i RESIDUI (non i totali prenotati): se il cliente ha già una postazione
-    // assegnata con alcuni lettini/sdraie, il resto va proposto qui, altrimenti si potrebbe
-    // assegnare più del prenotato sommando i due fogli.
+    // Precompila con i residui, non i totali prenotati: evita di assegnare più del prenotato
+    // sommando più postazioni.
     const residuo = remainingByPrenotazione.get(pren.id);
     updateSheetForm({
       clienteNome: pren.cliente_nome,
       clienteTelefono: pren.cliente_telefono,
       lettini: String(residuo?.lettino ?? pren.lettino),
       sdraie: String(residuo?.sdraia ?? pren.sdraia),
-      // Il campo orario in AssignPostazioneForm è di sola visualizzazione: rispecchia sempre
-      // Prenotazione.ora esatta, senza ricadere su "adesso" se già passata — altrimenti la
-      // postazione mostrerebbe un orario diverso da quello della prenotazione stessa.
       orarioArrivo: formatTime(pren.ora),
     });
     setIsClientPickerOpen(false);
@@ -342,9 +304,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         cliente_id: cliente.id,
         data: toISODate(selectedDate),
         ora: minutesToHHMM(orarioCheck.minutes),
-        // Creata direttamente dallo staff (non self-service): nasce già confermata a prescindere
-        // dall'orario di arrivo scelto, che può essere "adesso" per un walk-in fisicamente
-        // presente oppure un orario successivo dello stesso giorno.
+        // Creata direttamente dallo staff: nasce già confermata.
         stato: 'CONFIRMED',
         inventario: inventarioId,
         note: newClienteForm.note.trim(),
@@ -357,9 +317,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         lettino: Number.parseInt(newClienteForm.lettino, 10) || 0,
         sdraia: Number.parseInt(newClienteForm.sdraia, 10) || 0,
       });
-      // Selezionata subito come candidata solo se ha unità ombrellone/gazebo da piazzare sulla
-      // mappa: una prenotazione "solo ingresso" non ha nulla da assegnare (finirebbe comunque
-      // esclusa da ogni postazione, vedi remainingForTipo).
+      // Selezionata come candidata solo se ha unità ombrellone/gazebo da piazzare.
       if (created.ombrellone > 0 || created.gazebo > 0) {
         selectPrenotazioneCandidate(created.id);
       }
@@ -393,9 +351,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       return;
     }
 
-    // Il cliente pre-selezionato dal pannello "Da assegnare" vale solo se ha ancora unità
-    // residue del tipo corrispondente a QUESTA postazione (es. selezionato per errore su un
-    // gazebo mentre ha solo ombrelloni residui non viene precompilato).
+    // Vale solo se ha ancora unità residue del tipo corrispondente a questa postazione.
     const pren = selectedPrenotazioneId
       ? daAssegnare.find(
           (p) =>
@@ -405,9 +361,6 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       : undefined;
 
     if (pren) {
-      // Stesso motivo di handlePickCliente: precompila con i residui, non i totali prenotati.
-      // Orario: stesso motivo di handlePickCliente, rispecchia sempre Prenotazione.ora esattamente
-      // (il campo è di sola visualizzazione in AssignPostazioneForm, non serve clampare/ricalcolare).
       const residuo = remainingByPrenotazione.get(pren.id);
       setSheetForm({
         clienteNome: pren.cliente_nome,
@@ -433,9 +386,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError('Seleziona un cliente tra quelli in attesa, oppure crea un nuovo cliente con "+ Nuovo cliente".');
       return;
     }
-    // Il campo è di sola visualizzazione qui: rispecchia Prenotazione.ora e non va rifiutato se
-    // già "nel passato" (normale assegnare qualche minuto dopo l'orario dichiarato). Basta
-    // verificare il formato HH:MM (a differenza di "occupant", dove l'orario è scelto ora).
+    // Sola visualizzazione qui, rispecchia Prenotazione.ora: basta verificare il formato HH:MM.
     const arrivoMinuti = parseHHMMToMinutes(sheetForm.orarioArrivo);
     if (arrivoMinuti === null) {
       setSheetError('Orario di arrivo non valido.');
@@ -466,9 +417,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         arrivato: false,
       });
 
-      // Se questo cliente aveva prenotato più unità dello stesso tipo (es. 2 ombrelloni), resta
-      // selezionato dopo l'assegnazione così lo staff può subito toccare la prossima postazione
-      // libera per lui, senza doverlo riselezionare dal pannello "Da assegnare".
+      // Se resta unità dello stesso tipo, il cliente rimane selezionato per l'assegnazione successiva.
       const residuiPrimaDiQuestaAssegnazione = remainingForTipo(
         remainingByPrenotazione.get(selectedPrenotazioneId),
         targetPostazione.tipo
@@ -524,9 +473,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     }
   };
 
-  // Check-in per singola postazione: separato da confirmOccupantEdit (che richiede "Salva
-  // modifiche") perché è un'azione rapida da poter fare senza toccare gli altri campi del form —
-  // stesso principio del pulsante ✅ "Conferma prenotazione" altrove nella mappa.
+  // Azione rapida separata da confirmOccupantEdit: non richiede "Salva modifiche".
   const toggleArrivato = async () => {
     if (!targetPostazione) return;
     const occ = occupazioneByPostazione.get(targetPostazione.id);
@@ -597,15 +544,11 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError('Non è possibile aggiungere postazioni per un giorno passato.');
       return;
     }
-    // Backstop difensivo: `newNumeriPreview` è sempre valorizzato reattivamente da
-    // nextAvailableNumeri() (sopra), non dovrebbe mai risultare più corto della quantità richiesta.
     if (newNumeriPreview.length < quantitaRichiesta) {
       setSheetError('Impossibile calcolare i prossimi numeri disponibili. Chiudi e riprova.');
       return;
     }
-    // Backstop lato frontend: lo stesso limite è comunque applicato lato backend (fonte di
-    // verità, PostazioneSerializer.validate()) — qui evitiamo solo la chiamata quando il limite
-    // è già visibile in UI (AddPostazioneForm mostra "X/Y" e disabilita "Aggiungi" di conseguenza).
+    // Backstop: lo stesso limite è comunque applicato lato backend (fonte di verità).
     const capacita = newTipo === 'OMBRELLONE' ? capacitaOmbrelloni : capacitaGazebi;
     const postiResidui = capacita.totale - capacita.usati;
     const etichettaTipo = newTipo === 'OMBRELLONE' ? 'ombrelloni' : 'gazebi';
@@ -623,15 +566,9 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     setSheetError(null);
     try {
       const posizioni = computeBulkPositions(newTipo, quantitaRichiesta, newOrientamento);
-      // Un blocco di più gazebo condivide un unico `gruppo` (UUID generato qui, sezione 5
-      // CLAUDE.md, 2026-08-13) — da questo momento si sposta sempre tutto insieme
-      // (PiscinaMappaDataContext.dragPostazione) e non può più dividersi/unirsi trascinando. Null
-      // per l'ombrellone (sempre singolo) e per un gazebo creato da solo (quantità 1): un
-      // "gruppo" di un solo elemento non avrebbe alcun effetto pratico.
+      // Un blocco di più gazebo condivide un unico `gruppo`: da qui si sposta sempre insieme.
       const gruppo = newTipo === 'GAZEBO' && quantitaRichiesta > 1 ? generateGruppoId() : null;
-      // In sequenza, non in Promise.all: i numeri sono già riservati tutti insieme in anticipo
-      // da newNumeriPreview (nessun rischio di collisione tra loro), il ciclo serve solo a non
-      // sommergere il backend con richieste simultanee su un blocco potenzialmente grande.
+      // In sequenza (non Promise.all) solo per non sommergere il backend di richieste simultanee.
       for (let i = 0; i < quantitaRichiesta; i++) {
         await addPostazione({
           tipo: newTipo,
@@ -737,8 +674,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     }
   };
 
-  // Le prenotazioni self-service nascono 'PENDING' (sezione 7 CLAUDE.md): nessun altro punto del
-  // flusso staff le conferma automaticamente, serve quest'azione esplicita.
+  // Le prenotazioni self-service nascono 'PENDING': nessun altro punto le conferma automaticamente.
   const confirmPrenotazione = async (p: PrenotazionePiscina) => {
     if (isPastDate || p.stato !== 'PENDING') return;
     setConfirmingPrenotazioneId(p.id);

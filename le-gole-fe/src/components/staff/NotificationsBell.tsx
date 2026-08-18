@@ -20,11 +20,8 @@ import { useStaffNotifications } from '../../context/StaffNotificationsContext';
 import { formatDateDDMMYYYY, formatIngressiSummary, formatRelativeTime, formatTime } from '../../utils/piscinaMappa';
 import type { PrenotazionePiscina } from '../../services/prenotazioni';
 
-// Piscina è l'unica categoria con dati reali per ora — Asporto/Ristorante/Padel non hanno ancora
-// un modello/API backend (sezione 1 CLAUDE.md, stesso stato "Da sviluppare" del selettore tipo
-// inventario in PiscinaInventarioSection.tsx e delle card servizio in ServiziClienteSection.tsx,
-// da cui riprende anche l'emoji 🎾 per coerenza). I filtri esistono comunque già in UI, pronti per
-// quando quei servizi arriveranno.
+// Piscina è l'unica categoria con dati reali: Asporto/Ristorante/Padel non hanno ancora un
+// modello/API backend, ma i filtri esistono già in UI.
 type Categoria = 'TUTTI' | 'PISCINA' | 'ASPORTO' | 'RISTORANTE' | 'PADEL';
 
 const CATEGORIE: Array<{ key: Categoria; label: string; icon: string; disponibile: boolean }> = [
@@ -43,20 +40,8 @@ function getIniziali(nome: string): string {
   return (parole[0][0] + parole[1][0]).toUpperCase();
 }
 
-// Segmented control (tab attivo = pillola bianca sollevata su sfondo sky-50), non la pillola
-// piena sky-600 già usata dal toggle Mese/Settimana di CalendarPicker (sezione 5) — qui i tab
-// sono 5, non 2, e un'unica pillola piena su 5 colonne strette risultava meno leggibile della
-// variante "sollevata". Le tre categorie non ancora disponibili restano testo attenuato,
-// distinguibili a colpo d'occhio senza dover leggere il messaggio sotto per capire lo stato.
-//
-// Layout impilato (icona sopra, etichetta sotto), non più affiancato — corretto il 2026-08-14:
-// con 5 colonne su schermi stretti (telefoni reali, non i viewport desktop usati per gli
-// screenshot di verifica) icona+etichetta+badge affiancati su una riga non ci stavano, e il badge
-// del conteggio finiva per sconfinare visivamente nella colonna accanto. Impilare icona/etichetta
-// dimezza l'ingombro orizzontale per colonna; il badge non è più un elemento in linea nel flusso
-// flex (che ne allargherebbe comunque la colonna) ma un cerchietto in overlay assoluto sull'angolo
-// del tab stesso (stesso pattern già usato dal badge sulla campanella, sotto in questo file) —
-// non potendo più "spingere" i tab vicini, non può più sovrapporsi al tab accanto.
+// Icona sopra, etichetta sotto (non affiancate): su 5 colonne strette il badge conteggio in linea
+// finiva per sconfinare nel tab accanto — ora è un overlay assoluto sull'angolo.
 function CategoriaTabs({
   categoria,
   onChange,
@@ -78,9 +63,6 @@ function CategoriaTabs({
             }`}
           >
             <Text size="xs">{c.icon}</Text>
-            {/* Niente numberOfLines: su web il Text di gluestack-ui è un semplice <span> che non lo
-                riconosce (warning React, sezione 5/7 CLAUDE.md) — le etichette sono comunque parole
-                singole brevi, non serve troncarle. */}
             <Text
               size="2xs"
               className={`font-bold ${
@@ -120,8 +102,7 @@ function InfoChip({
   );
 }
 
-// Risorse fisiche prenotate (oltre ai soli ingressi, già riassunti da formatIngressiSummary) —
-// solo quelle effettivamente > 0, per non riempire la card di chip a zero prive di informazione.
+// Solo le risorse > 0, per non riempire la card di chip a zero.
 function risorseFisichePrenotate(p: PrenotazionePiscina): Array<{ icon: string; count: number }> {
   return [
     { icon: '⛱️', count: p.ombrellone },
@@ -131,18 +112,7 @@ function risorseFisichePrenotate(p: PrenotazionePiscina): Array<{ icon: string; 
   ].filter((r) => r.count > 0);
 }
 
-// Una volta segnata come letta la notifica esce dalla lista (NotificationsBell la filtra) — ogni
-// card qui è quindi sempre "non letta" per definizione, niente più variante di stile per lo stato
-// letto (semplificazione rispetto alla versione precedente, che teneva le lette visibili).
-//
-// Ridisegnata (2026-08-14) — segnalato dall'utente come poco leggibile: il rigo risorse era
-// un'unica stringa concatenata a mano con spazi finali condizionali (niente struttura visiva per
-// distinguere ingressi da ombrelloni/gazebi/lettini/sdraie), il telefono era testo grigio nudo
-// senza icona, e un pallino accanto al nome non comunicava nulla (ogni card qui è già "non letta"
-// per costruzione — vedi commento sopra — quindi un indicatore extra di "nuovo" era ridondante).
-// Il rigo risorse ora riusa `InfoChip` (lo stesso già usato per data/ora e piscina, sezione 11)
-// per ogni risorsa presente, sotto un'etichetta "Prenotato" — stesso linguaggio visivo di
-// "Prenotato:" già usato in `ClientiDelGiornoSheet.tsx` (sezione 5), non una convenzione nuova.
+// Una volta segnata come letta la notifica esce dalla lista: ogni card qui è sempre "non letta".
 function NotificaCard({
   prenotazione,
   onDismiss,
@@ -154,19 +124,12 @@ function NotificaCard({
 }>) {
   return (
     <Box className="overflow-hidden rounded-2xl border border-sky-200 bg-sky-50/50 shadow-sm">
-      {/* Barra di accento a sinistra: un Box colorato "sorella" del contenuto, non un
-          border-l-* — nessun precedente nel progetto per utility di bordo per-lato, preferito
-          restare su bg-* (pattern già ampiamente collaudato altrove) piuttosto che rischiare
-          un'incompatibilità silenziosa di NativeWind v5/react-native-css (ancora alpha, sezione 4). */}
       <HStack className="items-stretch">
         <Box className="w-1 bg-sky-500" />
 
         <HStack space="xs" className="flex-1 items-start justify-between p-2.5">
-          {/* Pressable "sorella", non annidata in quella del pulsante segna-come-letta: nidificare
-              due Pressable rischierebbe un doppio trigger su web (react-native-web fa risalire il
-              click al genitore, stesso principio già documentato per DateNavigator, sezione 5).
-              active:bg-* dà un feedback di pressione visibile (oltre al chevron sotto) — lo stesso
-              linguaggio "riga cliccabile" di una qualunque lista di navigazione. */}
+          {/* Pressable sorella, non annidata in quella del pulsante segna-come-letta: evita un
+              doppio trigger su web. */}
           <Pressable
             onPress={onOpen}
             accessibilityRole="button"
@@ -226,9 +189,6 @@ function NotificaCard({
               </VStack>
             </VStack>
 
-            {/* Indicatore di navigazione (disclosure chevron, come una riga di lista standard):
-                segnale visivo esplicito, in aggiunta al feedback active:bg-* sopra, che l'intera
-                riga porta altrove al tocco. */}
             <Icon as={ChevronRightIcon} size="xs" className="mt-1 shrink-0 text-sky-300" />
           </Pressable>
 
@@ -247,8 +207,7 @@ function NotificaCard({
   );
 }
 
-// Banner "a comparsa" per una nuova prenotazione rilevata durante il polling — montato subito
-// sotto l'header staff (app/staff/_layout.tsx), sopra il contenuto della pagina corrente.
+// Banner "a comparsa" per una nuova prenotazione rilevata durante il polling.
 export function NotificationsBanner() {
   const { banner, dismissBanner } = useStaffNotifications();
   if (!banner) return null;
@@ -269,11 +228,7 @@ export function NotificationsBell() {
   const [categoria, setCategoria] = useState<Categoria>('TUTTI');
   const { notifiche, unreadCount, isLoading, error, isRead, markAsRead } = useStaffNotifications();
 
-  // Solo Piscina ha dati reali oggi: Asporto/Ristorante mostrano sempre una lista vuota con un
-  // messaggio dedicato, non un errore — coerente col resto dell'app per i servizi "Da sviluppare".
-  // Le notifiche già lette sono filtrate qui, non solo attenuate: una volta gestita (o segnata
-  // esplicitamente) una notifica non ha più motivo di restare nell'elenco — l'elenco è quindi
-  // sempre "cosa manca da vedere", non un archivio di tutto l'arrivato di recente.
+  // Le notifiche già lette sono filtrate qui, non solo attenuate: l'elenco è "cosa manca da vedere".
   const categoriaAttiva = CATEGORIE.find((c) => c.key === categoria)!;
   const visibili = useMemo(
     () => (categoriaAttiva.disponibile ? notifiche.filter((p) => !isRead(p.id)) : []),

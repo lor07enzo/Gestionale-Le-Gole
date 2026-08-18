@@ -7,9 +7,7 @@ class PrenotazionePiscinaSerializer(serializers.ModelSerializer):
     # Comodo per il frontend (es. mappa postazioni): evita una join lato client con /users/clienti/
     cliente_nome = serializers.CharField(source='cliente_id.nome', read_only=True)
     cliente_telefono = serializers.CharField(source='cliente_id.telefono', read_only=True)
-    # Usato dal pannello notifiche staff (azione 'recenti'), che elenca prenotazioni di piscine
-    # diverse nella stessa lista: senza questo servirebbe una join lato frontend per mostrare a
-    # quale piscina si riferisce ogni notifica.
+    # Usato dal pannello notifiche staff, che elenca prenotazioni di piscine diverse.
     inventario_nome = serializers.CharField(source='inventario.nome', read_only=True)
 
     class Meta:
@@ -17,17 +15,14 @@ class PrenotazionePiscinaSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def validate(self, data):
-        # Un PATCH parziale (es. dal form di modifica prenotazione) invia solo i campi cambiati:
-        # per i campi omessi ricadiamo sui valori già presenti sull'istanza, altrimenti
-        # 'inventario'/'data' risulterebbero None e il controllo di disponibilità sotto fallirebbe.
+        # Un PATCH parziale invia solo i campi cambiati: per quelli omessi ricadiamo sui valori
+        # già presenti sull'istanza.
         instance = self.instance
         data_richiesta = data.get('data', instance.data if instance else None)
         ora_richiesta = data.get('ora', instance.ora if instance else None)
         inventario = data.get('inventario', instance.inventario if instance else None)
 
-        # "Giorno pieno" (sezione staff, GiornoPienoPiscinaViewSet) blocca solo le NUOVE
-        # prenotazioni self-service pubbliche (create, utente anonimo) — non lo staff, che ha
-        # visibilità diretta sulla mappa e può comunque registrare un walk-in nonostante il flag.
+        # "Giorno pieno" blocca solo le nuove prenotazioni self-service pubbliche, non lo staff.
         request = self.context.get('request')
         is_richiesta_pubblica = not (request and request.user and request.user.is_authenticated)
         if is_richiesta_pubblica and GiornoPienoPiscina.objects.filter(
@@ -44,8 +39,6 @@ class PrenotazionePiscinaSerializer(serializers.ModelSerializer):
                     "ora": f"La piscina è aperta dalle {inventario.orario_apertura.strftime('%H:%M')} alle {inventario.orario_chiusura.strftime('%H:%M')}."
                 })
 
-            # A differenza dell'età bambini (solo testo guida, non validata), l'orario ridotto
-            # pomeridiano lega due campi della stessa prenotazione ed è verificabile davvero.
             ingressi_ridotti_richiesti = data.get(
                 'ingressi_ridotti', instance.ingressi_ridotti if instance else 0
             )
@@ -54,9 +47,7 @@ class PrenotazionePiscinaSerializer(serializers.ModelSerializer):
                     "ingressi_ridotti": f"L'ingresso ridotto pomeridiano è disponibile dalle {inventario.orario_inizio_ridotto.strftime('%H:%M')}."
                 })
 
-            # Complementare al controllo sopra: dalla soglia in poi un ingresso intero andrebbe
-            # venduto come ridotto. Si applica solo se la tariffa ridotta è configurata (prezzo >
-            # 0), altrimenti la soglia è solo un default non realmente disponibile.
+            # Complementare al controllo sopra, applicato solo se la tariffa ridotta è configurata.
             ingressi_interi_richiesti = data.get('ingressi', instance.ingressi if instance else 0)
             if (
                 ingressi_interi_richiesti

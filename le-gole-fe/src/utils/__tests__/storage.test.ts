@@ -1,6 +1,4 @@
-// Suite eseguita sotto il preset jest-expo/web (jsdom + react-native -> react-native-web,
-// sezione 9 di CLAUDE.md): Platform.OS risolve già a 'web', quindi storage.ts usa il ramo
-// localStorage senza bisogno di mockare esplicitamente react-native/expo-secure-store.
+// Platform.OS risolve a 'web' sotto jest-expo/web: storage.ts usa il ramo localStorage.
 import {
   clearTokens,
   getAccessToken,

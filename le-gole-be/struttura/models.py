@@ -9,8 +9,7 @@ class PiscinaInventario(models.Model):
 
     # Prezzi (DecimalField per precisione valutaria)
     prezzo_ingresso = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
-    # Tariffe alternative alla intera, opzionali (default 0.00 = non configurata, nascosta nei
-    # form); soglie sotto sono solo testo guida, non validate lato server.
+    # 0.00 = non configurata, nascosta nei form.
     prezzo_ingresso_ridotto = models.DecimalField(
         max_digits=6, decimal_places=2, default=0.00,
         verbose_name="Prezzo Ingresso Ridotto Pomeridiano",
@@ -33,16 +32,13 @@ class PiscinaInventario(models.Model):
     orario_apertura = models.TimeField(default=datetime.time(10, 0), verbose_name="Orario di Apertura")
     orario_chiusura = models.TimeField(default=datetime.time(19, 0), verbose_name="Orario di Chiusura")
 
-    # Soglie indicative per le tariffe ingresso alternative sopra — non validate lato server,
-    # solo mostrate come testo guida nei form (vedi commento su prezzo_ingresso_ridotto).
+    # Soglia indicativa, non validata lato server.
     orario_inizio_ridotto = models.TimeField(
         default=datetime.time(14, 0),
         verbose_name="Orario Inizio Ridotto Pomeridiano",
         help_text="Da questo orario in poi l'ingresso ridotto pomeridiano è normalmente proposto.",
     )
-    # Fascia d'età per la tariffa bambini: [eta_minima_bambino, eta_massima_bambino] paga
-    # prezzo_ingresso_bambino, sotto eta_minima_bambino l'ingresso è indicativamente gratuito
-    # (vedi PrenotazionePiscina.ingressi_gratuiti) — entrambe solo testo guida, non validate.
+    # Fascia [eta_minima_bambino, eta_massima_bambino], solo testo guida non validato.
     eta_minima_bambino = models.PositiveSmallIntegerField(
         default=3,
         verbose_name="Età Minima Bambino",
@@ -88,20 +84,12 @@ class Postazione(models.Model):
     pos_x = models.FloatField(default=50.0, help_text="Posizione orizzontale in percentuale (0-100) sul canvas")
     pos_y = models.FloatField(default=50.0, help_text="Posizione verticale in percentuale (0-100) sul canvas")
 
-    # Gruppo di gazebo "attaccati" creati in un'unica operazione dal foglio "+ Aggiungi
-    # postazione" (sezione 5 CLAUDE.md, 2026-08-13): un blocco così creato non si può più
-    # dividere/unire trascinando (a differenza della prima versione, puramente geometrica) — tutte
-    # le postazioni con lo stesso `gruppo` si spostano sempre insieme come un unico corpo rigido
-    # (PiscinaMappaDataContext.dragPostazione, frontend). Nullo per l'ombrellone (sempre singolo) e
-    # per un gazebo creato singolarmente (quantità 1, nessun bisogno di un gruppo di uno). Generato
-    # lato frontend (un UUID per l'intero blocco, non riutilizzato da altre postazioni) al momento
-    # della creazione — non ha una tabella/modello dedicato, è solo una chiave di raggruppamento.
+    # Gazebo "attaccati" creati in blocco: stesso `gruppo` si spostano sempre insieme come corpo
+    # rigido. Nullo per l'ombrellone e per un gazebo creato singolarmente. Generato lato frontend.
     gruppo = models.UUIDField(null=True, blank=True, db_index=True)
 
-    # Soft delete: eliminare per davvero cancellerebbe lo storico (CASCADE su
-    # OccupazionePostazione/PostazionePosizioneStorico) e altererebbe retroattivamente cosa
-    # risultava "esistito" nei giorni passati. PostazioneViewSet filtra di conseguenza in base
-    # alla data consultata (vedi views.py).
+    # Soft delete: eliminare per davvero cancellerebbe lo storico (CASCADE) e altererebbe
+    # retroattivamente cosa risultava "esistito" nei giorni passati.
     deleted_at = models.DateTimeField(null=True, blank=True, default=None)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -112,9 +100,7 @@ class Postazione(models.Model):
         verbose_name_plural = "Postazioni"
         ordering = ['numero']
         constraints = [
-            # Non un semplice unique_together: un numero deve poter essere riutilizzato da una
-            # nuova postazione dopo che la precedente con lo stesso numero è stata eliminata
-            # (soft-delete) — l'unicità vale solo tra le postazioni ancora attive.
+            # Unicità solo tra le postazioni attive: un numero è riutilizzabile dopo soft-delete.
             models.UniqueConstraint(
                 fields=['inventario', 'numero'],
                 condition=models.Q(deleted_at__isnull=True),

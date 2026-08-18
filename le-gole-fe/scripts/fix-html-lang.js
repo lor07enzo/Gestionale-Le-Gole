@@ -1,7 +1,5 @@
-// expo export -p web genera sempre <html lang="en">, anche se l'app è in italiano — passare a
-// web.output "static" per usare app/+html.tsx farebbe sparire il <title> della scheda (regresso),
-// quindi si corregge l'HTML esportato dopo il fatto. Un lang errato basta a far tradurre/storpiare
-// il sito da Google Traduttore: corretto con lang="it" + meta notranslate, come doppia protezione.
+// expo export -p web genera sempre <html lang="en">: corretto dopo il fatto, altrimenti Google
+// Traduttore rileva la pagina come inglese e storpia il testo italiano.
 const fs = require('fs');
 const path = require('path');
 

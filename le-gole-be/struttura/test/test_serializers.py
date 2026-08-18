@@ -130,9 +130,7 @@ class TestCapacitaPerTipo:
         assert serializer.is_valid(), serializer.errors
 
     def test_il_limite_non_si_applica_in_modifica(self):
-        # Se il totale viene abbassato dopo che le postazioni sono state create, quelle
-        # eccedenti restano comunque modificabili (es. per riposizionarle), il limite blocca
-        # solo l'aggiunta di nuove postazioni.
+        # Le postazioni eccedenti restano modificabili: il limite blocca solo le nuove.
         inventario = PiscinaInventarioFactory(totale_ombrelloni=1)
         PostazioneFactory(inventario=inventario, tipo="OMBRELLONE", numero=1)
         eccedente = PostazioneFactory(inventario=inventario, tipo="OMBRELLONE", numero=2)
@@ -142,9 +140,7 @@ class TestCapacitaPerTipo:
         assert serializer.is_valid(), serializer.errors
 
     def test_nessun_controllo_capacita_senza_inventario_risolvibile(self):
-        # Guardia difensiva: un partial=True senza istanza (mai prodotto dal ModelViewSet reale,
-        # che passa sempre self.get_object() come instance su un PATCH) non deve far esplodere
-        # i validator invece di limitarsi a saltare i controlli che richiedono un inventario.
+        # Guardia difensiva: un partial=True senza istanza non deve far esplodere i validator.
         serializer = PostazioneSerializer(data={"tipo": "OMBRELLONE"}, partial=True)
 
         assert serializer.is_valid(), serializer.errors

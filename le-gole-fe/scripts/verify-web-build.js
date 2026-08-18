@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-// Smoke test eseguito dopo `expo export -p web`, prima di pubblicare (deploy-frontend.yml e
-// `npm run deploy:web`): serve `dist/` e apre le pagine chiave con un browser reale, verificando
-// che nessuna sollevi un errore JS non gestito — il sintomo del bug di non-determinismo di Metro
-// sull'ordine dei moduli tra ambienti (sezione 14 CLAUDE.md), che a volte rende `undefined` il
-// getter lazy di FlatList. Non elimina il bug, ma impedisce a una build rotta di arrivare online.
-//
+// Smoke test eseguito dopo `expo export -p web`, prima di pubblicare: serve `dist/` e apre le
+// pagine chiave con un browser reale, verificando che nessuna sollevi un errore JS non gestito.
 // Contano solo i `pageerror`: le chiamate API falliscono per CORS servendo da localhost (rumore
 // atteso, non il crash da rilevare).
 const { spawn } = require('node:child_process');
@@ -16,9 +12,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 const PORT = process.env.VERIFY_WEB_BUILD_PORT || 5057;
 const BASE_URL = `http://localhost:${PORT}`;
-// Un campione delle pagine più significative dell'app, non l'intero sitemap: la home (nessuna
-// chiamata API, il caso più "nudo"), l'Area Cliente e l'elenco piscine (self-service pubblico,
-// sezione 7), il login staff (prima pagina dietro cui vive tutta la mappa piscina).
+// Campione delle pagine più significative, non l'intero sitemap.
 const PAGES_TO_CHECK = ['/', '/cliente', '/cliente/piscina', '/login'];
 const NAVIGATION_TIMEOUT_MS = 20000;
 const SETTLE_DELAY_MS = 1000;
@@ -60,8 +54,8 @@ async function main() {
     process.exit(1);
   }
 
-  // `serve` come processo figlio, invocato risolvendo il campo "bin" del pacchetto invece che
-  // node_modules/.bin/serve.cmd: su Windows un .cmd richiederebbe `shell: true`, più fragile.
+  // Risolve il campo "bin" del pacchetto invece di node_modules/.bin/serve.cmd (su Windows
+  // richiederebbe `shell: true`, più fragile).
   const servePkgJsonPath = require.resolve('serve/package.json');
   const serveEntry = path.join(path.dirname(servePkgJsonPath), require(servePkgJsonPath).bin.serve);
   const server = spawn(process.execPath, [serveEntry, '-s', 'dist', '-l', String(PORT)], {
@@ -80,17 +74,9 @@ async function main() {
         const errors = [];
         page.on('pageerror', (err) => errors.push(String(err)));
         try {
-          // 'load' (non 'networkidle'): la chiamata API di ogni pagina verso il backend di
-          // produzione viene rifiutata per CORS servendo da localhost (rumore atteso, vedi sopra)
-          // — con 'networkidle' quel fallimento di rete a volte impiega diversi secondi a
-          // risolversi (variabilità del round-trip CORS, più marcata su runner CI condivisi),
-          // facendo scadere il timeout di navigazione e fallire il gate per un motivo estraneo al
-          // crash che deve rilevare. 'load' si conclude appena la pagina/i bundle sono scaricati,
-          // indipendentemente da richieste di rete ancora pendenti in background; il crash che
-          // interessa (getter lazy di FlatList non definito, sezione 14) avviene durante la
-          // valutazione del JS, ben prima del `load`, e viene comunque catturato dal listener
-          // `pageerror` — la finestra `SETTLE_DELAY_MS` successiva lascia il tempo perché si
-          // manifesti.
+          // 'load' (non 'networkidle'): il fallimento CORS delle chiamate API può impiegare
+          // secondi a risolversi e far scadere il timeout per un motivo estraneo al crash che
+          // interessa, che avviene comunque prima del `load` e resta catturato da `pageerror`.
           await page.goto(BASE_URL + pagePath, {
             waitUntil: 'load',
             timeout: NAVIGATION_TIMEOUT_MS,

@@ -4,10 +4,7 @@ import type { PiscinaInventario, Postazione } from '../../services/struttura';
 import type { OccupazionePostazione, PrenotazionePiscina } from '../../services/prenotazioni';
 import type { ResiduiPrenotazione } from '../../utils/piscinaMappa';
 
-// PiscinaSheetsContext dipende da usePiscinaMappaData()/usePiscinaSelection() — mockati
-// direttamente (non montando i provider reali) per isolare la sola logica di questo context
-// (guardie sui giorni passati, validazioni orario, calcolo dei limiti lettini/sdraie): stesso
-// principio "un mock per modulo esterno" già usato per services/* in PiscinaMappaDataContext.test.tsx.
+// Mockati direttamente (non i provider reali) per isolare solo la logica di questo context.
 jest.mock('../PiscinaMappaDataContext', () => ({
   usePiscinaMappaData: jest.fn(),
 }));
@@ -27,10 +24,8 @@ const mockUseSelection = usePiscinaSelection as jest.MockedFunction<typeof usePi
 const mockCreateCliente = createCliente as jest.MockedFunction<typeof createCliente>;
 
 const INVENTARIO_ID = 'inv-1';
-// Data fissa deliberatamente lontana nel futuro (non "oggi" vero): isPastDate è comunque
-// impostato esplicitamente nei fixture sotto, non derivato da questa data — usarne una lontana da
-// qualunque data reale di esecuzione dei test evita che isSameDay(selectedDate, new Date()) in
-// validateOrarioArrivo() scatti per coincidenza, senza dover mockare l'orologio di sistema.
+// Data fissa lontana nel futuro: evita che isSameDay(selectedDate, new Date()) scatti per
+// coincidenza, senza dover mockare l'orologio di sistema.
 const SELECTED_DATE = new Date(2030, 0, 15);
 
 function buildInventario(overrides: Partial<PiscinaInventario> = {}): PiscinaInventario {
@@ -122,9 +117,7 @@ function buildOccupazione(overrides: Partial<OccupazionePostazione> = {}): Occup
 
 type MappaDataOverrides = Partial<ReturnType<typeof usePiscinaMappaData>>;
 
-// Fixture di base della mappa dati: nessuna postazione occupata, una prenotazione con 2 ombrelloni
-// residui (nessuna occupazione collegata), sufficiente per la maggior parte dei test sui guardrail
-// di PiscinaSheetsContext senza dover ricostruire ogni volta l'intero oggetto.
+// Fixture di base: nessuna postazione occupata, una prenotazione con 2 ombrelloni residui.
 function buildMappaData(overrides: MappaDataOverrides = {}): ReturnType<typeof usePiscinaMappaData> {
   const residui: ResiduiPrenotazione = { ombrellone: 2, gazebo: 0, lettino: 2, sdraia: 0 };
   return {
@@ -261,8 +254,7 @@ describe('PiscinaSheetsContext — creazione in blocco di più gazebo attaccati'
     await act(async () => {
       result.current.setNewQuantita('3');
     });
-    // Il numero 1 è già usato dall'ombrellone esistente (unico per inventario a prescindere dal
-    // tipo): i tre gazebo prendono i primi 3 numeri liberi successivi.
+    // Il numero 1 è già usato dall'ombrellone: i tre gazebo prendono i successivi liberi.
     expect(result.current.newNumeriPreview).toEqual([2, 3, 4]);
     expect(result.current.newOrientamento).toBe('verticale'); // default all'apertura del foglio
 
@@ -291,8 +283,7 @@ describe('PiscinaSheetsContext — creazione in blocco di più gazebo attaccati'
     expect(posizioni[1].pos_x).toBe(posizioni[2].pos_x);
     expect(posizioni[0].pos_y).toBeLessThan(posizioni[1].pos_y);
     expect(posizioni[1].pos_y).toBeLessThan(posizioni[2].pos_y);
-    // I tre gazebo condividono lo stesso `gruppo` (non nullo): da questo momento si spostano
-    // sempre insieme e non si possono più dividere/unire trascinando (sezione 5 CLAUDE.md).
+    // I tre gazebo condividono lo stesso `gruppo` (non nullo): si spostano sempre insieme.
     const gruppi = (mappaData.addPostazione as jest.Mock).mock.calls.map(([payload]: [{ gruppo: string | null }]) => payload.gruppo);
     expect(gruppi[0]).toEqual(expect.any(String));
     expect(gruppi[1]).toBe(gruppi[0]);

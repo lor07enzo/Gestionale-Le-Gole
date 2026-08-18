@@ -17,9 +17,7 @@ export function formatMonthLabel(date: Date): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-// Griglia di settimane complete (lunedì come primo giorno) che copre l'intero mese, includendo
-// i giorni di riempimento del mese precedente/successivo necessari a completare la prima e
-// l'ultima settimana (marcati `inCurrentMonth: false`, non selezionabili).
+// Griglia di settimane complete (lunedì primo giorno), con riempimento mese prec./succ. marcato `inCurrentMonth: false`.
 export function buildMonthGrid(monthStart: Date): CalendarDay[] {
   const year = monthStart.getFullYear();
   const month = monthStart.getMonth();
@@ -48,9 +46,7 @@ export function addWeeks(date: Date, delta: number): Date {
   return addDays(date, delta * 7);
 }
 
-// Riga di 7 giorni (lunedì-domenica) a partire da weekStart. `inCurrentMonth: true` su tutte le
-// celle: a differenza della griglia mensile qui non esistono giorni di riempimento da disabilitare,
-// la settimana è sempre "piena" di giorni selezionabili.
+// Riga di 7 giorni da weekStart. `inCurrentMonth: true` su tutte le celle: nessun riempimento da disabilitare.
 export function buildWeekGrid(weekStart: Date): CalendarDay[] {
   return Array.from({ length: 7 }, (_, i) => ({
     date: addDays(weekStart, i),

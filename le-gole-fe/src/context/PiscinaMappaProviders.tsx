@@ -3,9 +3,7 @@ import { PiscinaMappaDataProvider } from './PiscinaMappaDataContext';
 import { PiscinaSelectionProvider } from './PiscinaSelectionContext';
 import { PiscinaSheetsProvider } from './PiscinaSheetsContext';
 
-// Composizione dei tre context della mappa piscina, nell'ordine di dipendenza richiesto:
-// PiscinaSheetsProvider legge sia PiscinaMappaDataContext (dati/CRUD) sia
-// PiscinaSelectionContext (candidato selezionato), quindi deve stare annidato dentro entrambi.
+// PiscinaSheetsProvider legge sia MappaData sia Selection, quindi va annidato dentro entrambi.
 export function PiscinaMappaProviders({
   inventarioId,
   initialDate,

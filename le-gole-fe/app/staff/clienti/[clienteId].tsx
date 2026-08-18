@@ -59,10 +59,7 @@ function ClienteDetailHeader({ nome }: Readonly<{ nome: string | undefined }>) {
   );
 }
 
-// "Nei giorni seguenti alla data scelta" una prenotazione non è più modificabile/annullabile —
-// stesso principio isPastDate già usato sulla mappa staff (sezione 5 CLAUDE.md), qui calcolato
-// per singola prenotazione (non per una data selezionata sulla mappa) dato che questa pagina
-// elenca lo storico su date diverse, non un solo giorno.
+// Calcolato per singola prenotazione, non per una data selezionata: qui lo storico copre date diverse.
 function isPrenotazionePassata(p: PrenotazionePiscina): boolean {
   return p.data < toISODate(new Date());
 }
@@ -167,11 +164,8 @@ function PrenotazioneRow({
   );
 }
 
-// Foglio di modifica standalone: a differenza di EditPrenotazioneSheet.tsx (mappa staff), questa
-// pagina non vive dentro PiscinaMappaDataProvider/PiscinaSheetsProvider (che richiedono un
-// inventarioId+data singoli) — lo storico di un cliente può includere prenotazioni su date/piscine
-// diverse, quindi l'inventario (per i vincoli di orario/tariffa ridotta) viene caricato al volo
-// per la prenotazione aperta, non ereditato da un context.
+// Foglio standalone: lo storico copre date/piscine diverse, quindi l'inventario viene caricato
+// al volo per la prenotazione aperta, non ereditato da un context.
 function EditStoricoSheet({
   prenotazione,
   onClose,
@@ -478,9 +472,7 @@ export default function ClienteDetailScreen() {
   }, [clienteId]);
 
   const openEdit = (p: PrenotazionePiscina) => {
-    // Backstop difensivo, non solo il `disabled` dei pulsanti in PrenotazioneRow (stesso principio
-    // già seguito altrove nel progetto per le restrizioni di sola-UI): una prenotazione passata o
-    // già cancellata non deve aprire il foglio di modifica in nessun caso.
+    // Backstop, non solo il `disabled` dei pulsanti in PrenotazioneRow.
     if (isPrenotazionePassata(p) || p.stato === 'CANCELLED') return;
     setEditingPrenotazione(p);
   };
@@ -497,11 +489,7 @@ export default function ClienteDetailScreen() {
     const doCancel = async () => {
       setCancellingId(p.id);
       try {
-        // PATCH stato='CANCELLED', non un'eliminazione: il backend libera da sé le postazioni
-        // collegate (PrenotazionePiscinaViewSet.perform_update) — qui manteniamo la riga nello
-        // storico (aggiornata, non filtrata via) a differenza dell'equivalente sulla mappa staff
-        // (PiscinaMappaDataContext.cancelPrenotazione), che invece la toglie dalla vista del
-        // giorno perché lì non c'è più nulla da fare su una prenotazione cancellata.
+        // Il backend libera da sé le postazioni collegate; qui manteniamo la riga nello storico.
         const updated = await updatePrenotazionePiscina(p.id, { stato: 'CANCELLED' });
         setPrenotazioni((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       } catch {

@@ -34,18 +34,13 @@ class PrenotazionePiscina(Prenotazione):
     ingressi = models.PositiveSmallIntegerField(default=1)
     ingressi_ridotti = models.PositiveSmallIntegerField(default=0, verbose_name="Ingressi Ridotti Pomeridiani")
     ingressi_bambini = models.PositiveSmallIntegerField(default=0, verbose_name="Ingressi Bambini")
-    # Bambini sotto PiscinaInventario.eta_minima_bambino: ingresso gratuito, ma comunque
-    # conteggiati (utile per lo staff sapere quanti bambini gratuiti sono inclusi, non solo il
-    # totale a pagamento).
+    # Sotto l'età minima: ingresso gratuito ma comunque conteggiato.
     ingressi_gratuiti = models.PositiveSmallIntegerField(default=0, verbose_name="Ingressi Gratuiti")
     ombrellone = models.PositiveSmallIntegerField(default=0)
     gazebo = models.PositiveSmallIntegerField(default=0)
     lettino = models.PositiveSmallIntegerField(default=0)
     sdraia = models.PositiveSmallIntegerField(default=0)
-    # Forzato da PrenotazionePiscinaViewSet.perform_create() in base all'autenticazione della
-    # richiesta (mai dal payload): distingue una prenotazione self-service (Area Cliente) da un
-    # walk-in/"+ Nuovo cliente" registrato dallo staff dalla mappa. Usato solo da 'recenti' per
-    # non generare una notifica quando è lo staff stesso a registrare il cliente.
+    # Forzato da perform_create() in base all'autenticazione, mai dal payload.
     creata_da_staff = models.BooleanField(default=False, verbose_name="Creata dallo staff")
 
     class Meta:
@@ -102,13 +97,9 @@ class OccupazionePostazione(models.Model):
     cliente_nome = models.CharField(max_length=255, blank=True, default="")
     numero_lettini = models.PositiveSmallIntegerField(default=0)
     numero_sdraie = models.PositiveSmallIntegerField(default=0)
-    # Distinto da Prenotazione.ora: quello è l'orario della prenotazione originale (se esiste),
-    # questo è l'orario di arrivo previsto per QUESTA postazione/giorno, compilabile anche per i
-    # clienti walk-in che non hanno una prenotazione reale a monte. Obbligatorio.
+    # Distinto da Prenotazione.ora: orario di arrivo previsto per QUESTA postazione/giorno.
     orario_arrivo_previsto = models.TimeField()
-    # Check-in manuale per QUESTA specifica postazione: se un cliente ha prenotato più unità
-    # dello stesso tipo (es. 3 gazebi -> 3 OccupazionePostazione), va segnato separatamente su
-    # ciascuna, non è un flag a livello di Prenotazione/cliente.
+    # Check-in per singola postazione, non per prenotazione/cliente.
     arrivato = models.BooleanField(default=False, verbose_name="Cliente arrivato")
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -132,9 +123,7 @@ class PostazionePosizioneStorico(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     postazione = models.ForeignKey(Postazione, on_delete=models.CASCADE, related_name='storico_posizioni')
-    # Giorno da cui questa posizione è diventata effettiva (data di creazione o dell'ultimo
-    # spostamento in quel giorno — al più una riga per postazione per giorno, vedi
-    # PostazioneViewSet: più drag nello stesso giorno aggiornano la stessa riga).
+    # Al più una riga per postazione per giorno: più drag nello stesso giorno aggiornano la stessa riga.
     data = models.DateField()
     pos_x = models.FloatField()
     pos_y = models.FloatField()

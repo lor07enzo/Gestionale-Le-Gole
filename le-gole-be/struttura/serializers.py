@@ -38,10 +38,8 @@ class PostazioneSerializer(serializers.ModelSerializer):
             )
 
     def _validate_capacita_tipo(self, data, inventario):
-        # Non si possono posizionare più postazioni fisiche di quante il listino ne preveda
-        # (totale_ombrelloni/totale_gazebi) — solo in creazione: se il totale viene abbassato in
-        # un secondo momento, le postazioni già esistenti in eccesso restano comunque modificabili
-        # (es. per riposizionarle o eliminarle), il limite blocca solo l'aggiunta di nuove.
+        # Limite solo in creazione: se il totale viene abbassato dopo, le postazioni in eccesso
+        # restano comunque modificabili.
         if self.instance is not None:
             return
         tipo = data.get('tipo')

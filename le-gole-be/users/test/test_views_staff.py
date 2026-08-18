@@ -13,9 +13,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture(autouse=True)
 def use_locmem_email_backend(settings):
-    # Evita di colpire davvero l'API Resend durante i test: le azioni che inviano
-    # email (create, reset_password_request) devono restare verificabili via
-    # django.core.mail.outbox senza dipendere da rete/credenziali esterne.
+    # Evita di colpire davvero l'API Resend durante i test: verificabile via django.core.mail.outbox.
     settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 

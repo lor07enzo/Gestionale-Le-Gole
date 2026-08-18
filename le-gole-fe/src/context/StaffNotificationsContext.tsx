@@ -12,28 +12,19 @@ import { listPrenotazioniRecenti } from '../services/prenotazioni';
 import type { PrenotazionePiscina } from '../services/prenotazioni';
 import { getNotificheLetteIds, saveNotificheLetteIds } from '../utils/storage';
 
-// Polling, non websocket/push: il backend qui è WSGI (runserver), senza infrastruttura realtime
-// (sezione 10 di CLAUDE.md) — un intervallo di 20s è un compromesso ragionevole tra "quasi in
-// tempo reale" e non sovraccaricare il server con richieste troppo frequenti.
+// Polling, non websocket/push: il backend è WSGI, senza infrastruttura realtime.
 const POLL_INTERVAL_MS = 20000;
-// Il banner di una nuova prenotazione resta visibile un po' più a lungo di un semplice toast,
-// dato che non c'è un pulsante di chiusura oltre al tap sul banner stesso.
 const BANNER_DURATION_MS = 6000;
-// Quante prenotazioni recenti tenere in memoria per il pannello — oltre questo numero una
-// prenotazione più vecchia non può comunque più "ricomparire" (l'ordine è per data di
-// creazione, solo le nuove entrano in cima), quindi un id letto che ne esce non serve più.
 const RECENTI_LIMIT = 50;
 
 type StaffNotificationsContextValue = {
-  // Le prenotazioni piscina più recenti (qualsiasi data/stato tranne CANCELLED), più recenti
-  // prima. Unica categoria con dati reali per ora — Asporto/Ristorante non hanno ancora un
-  // modello backend (sezione 1 CLAUDE.md), il filtro categoria vive nella UI (NotificationsBell).
+  // Prenotazioni piscina più recenti (tranne CANCELLED), più recenti prima. Unica categoria con
+  // dati reali per ora: il filtro categoria vive nella UI (NotificationsBell).
   notifiche: PrenotazionePiscina[];
   unreadCount: number;
   isLoading: boolean;
   error: string | null;
-  // Messaggio del banner "a comparsa" per una nuova prenotazione rilevata durante il polling
-  // (null = nessun banner attivo). Si azzera da solo dopo BANNER_DURATION_MS.
+  // null = nessun banner attivo. Si azzera da solo dopo BANNER_DURATION_MS.
   banner: string | null;
   dismissBanner: () => void;
   isRead: (id: string) => boolean;
@@ -49,9 +40,7 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [banner, setBanner] = useState<string | null>(null);
 
-  // null finché non arriva il primo poll riuscito: serve a non far comparire un banner per
-  // l'intero "arretrato" già esistente al primo caricamento della pagina, solo per le
-  // prenotazioni che compaiono tra un poll e il successivo durante la sessione.
+  // null finché non arriva il primo poll: evita un banner per l'arretrato già esistente al mount.
   const knownIdsRef = useRef<Set<string> | null>(null);
   const bannerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -119,17 +108,9 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
       next.add(id);
       return next;
     });
-    // Persistenza separata dall'update dello stato React sopra: rilegge lo storage al momento
-    // della scrittura e ci unisce il nuovo id, invece di salvare lo Set in memoria di questa
-    // scheda/sessione (che potrebbe essere rimasto indietro). Con due schede aperte sulla stessa
-    // origine, la seconda a marcare una lettura sovrascriveva per intero staffNotificheLetteIds
-    // con la propria copia locale, cancellando quanto la prima aveva appena salvato — bug
-    // riprodotto con Playwright (due schede, letture diverse: la seconda scrittura faceva
-    // sparire la prima) e con un test automatico (`StaffNotificationsContext.test.tsx`, "due
-    // schede che marcano letture diverse in sequenza non si cancellano a vicenda"). Una race
-    // identica-ma-più-stretta resta possibile se due marcature avvengono nello stesso istante
-    // esatto in schede diverse, accettabile per un dato non critico come lo stato letto/non letto
-    // di una notifica.
+    // Rilegge lo storage al momento della scrittura invece di salvare la copia in memoria di
+    // questa scheda: con due schede aperte, la seconda sovrascriveva per intero la lettura
+    // dell'altra. Resta una race più stretta se due marcature avvengono nello stesso istante.
     (async () => {
       const current = await getNotificheLetteIds();
       if (current.includes(id)) return;

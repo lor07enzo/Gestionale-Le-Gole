@@ -84,9 +84,7 @@ class TestActivateAccountSerializer:
 
 
 class TestPasswordResetConfirmSerializer:
-    # Stessa validazione password di ActivateAccountSerializer sopra, ma è una classe
-    # separata (nessuna ereditarietà condivisa) — la copertura duplicata previene una
-    # divergenza silenziosa se in futuro solo una delle due venisse aggiornata.
+    # Stessa validazione password di ActivateAccountSerializer, ma classe separata: copertura duplicata apposta.
     def test_rifiuta_password_troppo_corta(self):
         serializer = PasswordResetConfirmSerializer(
             data={"uid": "abc", "token": "xyz", "password": "abc123"}

@@ -7,13 +7,8 @@ import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/b
 import { AddIcon, RemoveIcon } from '@/components/ui/icon';
 import type { PiscinaSheetsValue } from '../../../../context/PiscinaSheetsContext';
 
-// Numeri contigui (il caso comune, dato che nextAvailableNumeri riempie prima i buchi liberi più
-// bassi) mostrati come intervallo compatto; altrimenti elencati singolarmente — raro, capita solo
-// se ci sono numeri liberi "sparsi" tra postazioni esistenti non consecutive. `numeri` è già
-// nell'ordine di assegnazione lungo la striscia (crescente o decrescente, sezione 5 CLAUDE.md,
-// 2026-08-13): il controllo di contiguità guarda la differenza assoluta tra elementi consecutivi
-// (non solo +1), così riconosce come "intervallo compatto" anche una sequenza decrescente — "da
-// #N a #M" riporta gli estremi nell'ordine reale (M può essere minore di N).
+// Numeri contigui mostrati come intervallo compatto, altrimenti elencati singolarmente. La
+// differenza assoluta (non solo +1) riconosce come contiguo anche l'ordine decrescente.
 function formatNumeriPreview(numeri: number[]): string {
   if (numeri.length === 0) return '—';
   if (numeri.length === 1) return `#${numeri[0]}`;
@@ -46,10 +41,7 @@ export function AddPostazioneForm({ sheets }: Readonly<{ sheets: PiscinaSheetsVa
 
   const capacita = newTipo === 'OMBRELLONE' ? capacitaOmbrelloni : capacitaGazebi;
   const postiResidui = Math.max(capacita.totale - capacita.usati, 0);
-  // La creazione in blocco è pensata solo per i gazebi (sezione 5 CLAUDE.md, 2026-08-12): gli
-  // ombrelloni di questo listino sono al massimo 15 e si posizionano bene uno alla volta, come
-  // da sempre — per un ombrellone la quantità è sempre 1, il campo sotto non compare per questo
-  // tipo. `newNumero` (invariato) resta il numero della prima/unica postazione.
+  // Creazione in blocco solo per i gazebi: per un ombrellone la quantità è sempre 1.
   const isGazebo = newTipo === 'GAZEBO';
   const quantita = isGazebo ? Number.parseInt(newQuantita, 10) || 1 : 1;
   const limiteRaggiunto = postiResidui <= 0 || quantita > postiResidui;

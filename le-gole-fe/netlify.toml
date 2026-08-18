@@ -1,15 +1,8 @@
-# Configurazione tracciata in git per il sito Netlify (sezione 14 di CLAUDE.md) — letta sia da
-# `netlify deploy` in locale sia dalla pipeline CI (.github/workflows/deploy-frontend.yml).
 [build]
   publish = "dist"
 
-# Fallback SPA: l'export di Expo Router in modalità SPA (web.output di default, un solo
-# index.html — sezione 14) affida tutto il routing a Expo Router lato client. Senza questa
-# regola, un caricamento "a freddo" diretto su una rotta diversa da "/" (es. il link
-# /activate?uid=...&token=... di un'email di attivazione staff, sezione 1/6) fa cercare a
-# Netlify un file reale a quel percorso — non lo trova e risponde 404, invece di servire
-# index.html e lasciare che sia il JS a decidere cosa mostrare. EAS Hosting (hosting precedente,
-# sezione 14) gestiva questo automaticamente; su un host statico generico va dichiarato esplicitamente.
+# Fallback SPA: senza questa regola, un caricamento diretto su una rotta diversa da "/"
+# (es. un deep link email) restituisce 404 invece di servire index.html.
 [[redirects]]
   from = "/*"
   to = "/index.html"

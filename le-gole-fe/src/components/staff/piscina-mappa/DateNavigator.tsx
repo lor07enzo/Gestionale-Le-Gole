@@ -24,9 +24,7 @@ export function DateNavigator() {
   const [conteggi, setConteggi] = useState<Record<string, number>>({});
 
   const handleVisibleMonthChange = (anno: number, mese: number) => {
-    // Uniti ai conteggi già in memoria (non sostituiti): la vista Settimana può richiedere due
-    // mesi diversi in rapida successione quando la settimana è a cavallo tra i due (vedi
-    // CalendarPicker), e sovrascrivere perderebbe i conteggi del mese richiesto per primo.
+    // Uniti ai conteggi già in memoria: la vista Settimana può richiedere due mesi in successione.
     getConteggiPrenotazioniPiscina({ inventario: inventarioId, anno, mese })
       .then((result) => setConteggi((prev) => ({ ...prev, ...result })))
       .catch(() => {});

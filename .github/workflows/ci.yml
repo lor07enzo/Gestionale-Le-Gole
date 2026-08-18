@@ -46,12 +46,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Storico completo (non uno shallow clone): richiesto dall'analisi SonarQube Cloud
-          # nel job successivo, che riusa questo stesso checkout.
+          # Storico completo: richiesto dall'analisi SonarQube Cloud nel job successivo.
           fetch-depth: 0
 
-      # WeasyPrint (generazione biglietto PDF, sezione 2 di CLAUDE.md) richiede queste librerie
-      # di sistema per Pango/fontconfig, stesse del Dockerfile di produzione (sezione 10).
+      # Librerie di sistema per WeasyPrint (Pango/fontconfig), stesse del Dockerfile di produzione.
       - name: Install WeasyPrint system dependencies
         run: |
           sudo apt-get update
@@ -71,32 +69,18 @@ jobs:
       - name: Run pytest with coverage
         run: pytest
 
-      # coverage.py, quando misura più app Django sorelle nella stessa passata (users, struttura,
-      # prenotazioni — ciascuna un package Python di primo livello, nessun __init__.py comune le
-      # unisce), scrive nell'XML combinato un "package" vuoto (".") IDENTICO per ognuna: il writer
-      # Cobertura tiene le classi in un dict chiavato solo sul nome file, quindi file omonimi tra
-      # un'app e l'altra (models.py/views.py/serializers.py/urls.py/__init__.py esistono in tutte
-      # e tre) si sovrascrivono a vicenda — nell'XML finale sopravvive un solo "models.py" su tre,
-      # gli altri due scompaiono silenziosamente (bug di coverage.py stesso, non di SonarQube: il
-      # report testuale term-missing è corretto, solo lo scrittore XML perde dati). Root-caused
-      # osservando che l'unico file con nome davvero unico nell'intero backend (users/permissions.py)
-      # era l'unico a comparire con un dato di coverage sensato su SonarQube Cloud.
-      # Fix: un file XML separato per app, rigenerato dagli stessi dati già raccolti da pytest
-      # sopra (nessun secondo run dei test) filtrando con --include — ogni file misura una sola
-      # app alla volta, quindi non c'è alcuna collisione di nomi e i path restano pienamente
-      # qualificati (verificato: 255+158+226=639 statement, 255+156+226=637 coperti, combaciano
-      # esattamente con l'unico XML combinato... quando quello non perdeva dati).
+      # coverage.py, misurando più app Django sorelle nella stessa passata, scrive un XML
+      # combinato dove file omonimi tra app (models.py, views.py...) si sovrascrivono a vicenda —
+      # bug di coverage.py, non di SonarQube. Fix: un XML separato per app, dagli stessi dati già
+      # raccolti da pytest sopra, così non c'è collisione di nomi.
       - name: Generate one coverage XML per app (avoids coverage.py's same-filename collision)
         run: |
           coverage xml --data-file=.coverage --include="prenotazioni/*" -o coverage-prenotazioni.xml
           coverage xml --data-file=.coverage --include="struttura/*" -o coverage-struttura.xml
           coverage xml --data-file=.coverage --include="users/*" -o coverage-users.xml
 
-      # Ognuno dei tre XML ha filename già qualificati rispetto alla cwd di pytest (le-gole-be,
-      # es. "prenotazioni/models.py") ma un <source></source> vuoto — SonarQube risolve i path
-      # relativi alla project base dir (la root del repo, sonar.sources=le-gole-be,..., sezione 13
-      # di CLAUDE.md), quindi senza questo step cercherebbe "prenotazioni/models.py" invece di
-      # "le-gole-be/prenotazioni/models.py". Corretto valorizzando <source> su "le-gole-be".
+      # <source> vuoto nei tre XML: SonarQube risolve i path relativi alla root del repo, quindi
+      # senza questo step cercherebbe "prenotazioni/models.py" invece di "le-gole-be/prenotazioni/models.py".
       - name: Fix coverage XML source paths for SonarQube (backend in una sottocartella del repo)
         run: sed -i 's#<source></source>#<source>le-gole-be</source>#' coverage-*.xml
 
@@ -130,16 +114,10 @@ jobs:
           cache: npm
           cache-dependency-path: le-gole-fe/package-lock.json
 
-      # legacy-peer-deps=true è già in le-gole-fe/.npmrc (letto automaticamente da npm ci, stesso
-      # motivo per cui deploy-frontend.yml non passa alcun flag extra qui) — necessario per le
-      # dipendenze alpha/preview del progetto (gluestack-ui, NativeWind v5, sezione 4 di CLAUDE.md).
+      # legacy-peer-deps=true è già in le-gole-fe/.npmrc, necessario per le dipendenze alpha/preview.
       - name: Install dependencies
         run: npm ci
 
-      # jest-expo/web (sezione 9 di CLAUDE.md): solo i moduli realmente richiesti dai test attuali
-      # vengono strumentati (nessun collectCoverageFrom esplicito) — evita di forzare Babel a
-      # trasformare l'intero albero app/ (gluestack-ui + react-native-css, già causa nota di
-      # comportamenti non deterministici in produzione, sezione 14) solo per riportarlo a 0%.
       - name: Run jest with coverage
         run: npx jest --coverage
 
@@ -153,8 +131,7 @@ jobs:
     name: SonarQube Cloud analysis
     needs: [backend-tests, frontend-tests]
     runs-on: ubuntu-latest
-    # I fork non hanno accesso ai secret del repo (SONAR_TOKEN) — una PR da fork farebbe
-    # comunque fallire lo step di scan con un errore di autenticazione poco chiaro.
+    # I fork non hanno accesso ai secret del repo: una PR da fork farebbe fallire lo scan comunque.
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
 
     steps:

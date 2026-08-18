@@ -18,9 +18,8 @@ function renderPaperIcon(props: IconProps) {
   return <MaterialCommunityIcons {...props} />;
 }
 
-// react-native-paper/-dates caricate dinamicamente (non in cima al file): un bug noto di Metro
-// può rendere `undefined` il riferimento a FlatList (sezione 14 CLAUDE.md) — con un import
-// statico l'intera app crasherebbe su ogni pagina; così al più si rompe solo /cliente/*.
+// Caricate dinamicamente: un bug noto di Metro può rendere `undefined` FlatList con un import
+// statico, facendo crashare l'intera app invece che solo /cliente/*.
 export default function ClienteLayout() {
   const [Paper, setPaper] = useState<PaperModule | null>(null);
 

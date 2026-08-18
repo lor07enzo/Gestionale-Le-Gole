@@ -268,9 +268,7 @@ function StaffManagementSectionInner() {
   );
 }
 
-// Visibile solo ai superuser (creati via `python manage.py createsuperuser`, non tramite API):
-// gestire l'elenco/gli account altrui è riservato a IsSuperUser anche lato backend
-// (users/permissions.py), questo gate è solo la controparte UI dello stesso vincolo.
+// Visibile solo ai superuser: controparte UI del gate IsSuperUser già imposto dal backend.
 export function StaffManagementSection() {
   const { user } = useAuth();
   if (!user?.is_superuser) {

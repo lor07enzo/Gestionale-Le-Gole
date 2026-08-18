@@ -29,17 +29,11 @@ export function MappaCanvas() {
   } = usePiscinaMappaData();
   const { selectedPrenotazioneId } = usePiscinaSelection();
   const { handleMarkerPress } = usePiscinaSheets();
-  // Gazebo attaccati (bordo a contatto) disegnati come un unico rettangolo allungato invece di N
-  // riquadri separati — sezione 5 CLAUDE.md, 2026-08-13. Ricalcolato ad ogni cambio di postazioni
-  // (es. dopo un drag che stacca/riattacca un segmento dal gruppo).
   const gazeboGroupById = useMemo(() => groupGazeboAttaccati(postazioni), [postazioni]);
 
   return (
     <Box className="relative h-105 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50">
-      {/* Overlay assoluti, non righe separate sopra il canvas: il Box esterno è `relative` e questi
-          controlli sono figli successivi al canvas pannabile, quindi restano sempre sopra il
-          contenuto trascinabile senza bisogno di uno z-index esplicito. Zoom in alto a sinistra,
-          modalità modifica in alto a destra — angoli opposti per non sovrapporsi. */}
+      {/* Overlay assoluti: zoom in alto a sinistra, modalità modifica in alto a destra. */}
       <Box className="absolute left-2 top-2 z-10">
         <ZoomControls />
       </Box>

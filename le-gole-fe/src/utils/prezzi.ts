@@ -10,9 +10,7 @@ export function formatPrezzo(value: string): string {
 export const PREZZO_ITEMS: Array<{
   prezzoKey: keyof PiscinaInventario;
   totaleKey?: keyof PiscinaInventario;
-  // Per le tariffe ingresso alternative (opzionali, default 0.00): nascoste finché lo staff non
-  // imposta un prezzo > 0, stesso principio di totaleKey per ombrellone/gazebo/lettino/sdraia ma
-  // basato sul prezzo invece che su una quantità (l'ingresso non ha un "totale" da configurare).
+  // Tariffe opzionali: nascoste finché lo staff non imposta un prezzo > 0.
   hideIfZero?: boolean;
   icon: string;
   label: string;

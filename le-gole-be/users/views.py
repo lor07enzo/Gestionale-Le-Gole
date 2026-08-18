@@ -48,12 +48,8 @@ class UtenteViewSet(viewsets.ModelViewSet):
         return Response(UtenteSerializer(user).data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
-        # Un superuser può sempre essere disattivato (set_active, sotto) ma mai eliminato
-        # definitivamente — a differenza di uno staff normale, è l'unico tipo di account che
-        # gestisce gli altri account: perderlo per errore (o per un abuso da parte di un altro
-        # superuser) non avrebbe altro rimedio se non manage.py createsuperuser da terminale.
-        # Vale sempre, non solo per l'account che sta facendo la richiesta (quel guardrail più
-        # stretto è già coperto separatamente da set_active).
+        # Un superuser è disattivabile (set_active) ma mai eliminabile: perderlo per errore non
+        # avrebbe rimedio se non da manage.py createsuperuser. Vale sempre, non solo su se stesso.
         user = self.get_object()
         if user.is_superuser:
             return Response(

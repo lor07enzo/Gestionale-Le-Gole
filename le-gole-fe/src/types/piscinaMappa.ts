@@ -19,9 +19,7 @@ export const EMPTY_FORM: SimpleFormState = {
   orarioArrivo: '',
 };
 
-// "+ Nuovo cliente" crea sempre, insieme all'anagrafica, una vera Prenotazione_Piscina (stato
-// CONFIRMED, cliente fisicamente presente): questi campi rispecchiano quindi le stesse risorse
-// di EditPrenotazioneFormState, non solo nome/telefono/note.
+// "+ Nuovo cliente" crea anche una vera Prenotazione_Piscina: stesse risorse di EditPrenotazioneFormState.
 export type NewClienteFormState = {
   nome: string;
   telefono: string;
@@ -84,11 +82,7 @@ export type ClienteDelGiornoEntry = {
   prenotazione: PrenotazionePiscina;
   residui: ResiduiPrenotazione | undefined;
   completo: boolean;
-  // Le OccupazionePostazione collegate a questa prenotazione (una per ogni ombrellone/gazebo già
-  // assegnato) — usate per il badge orario effettivo e il conteggio arrivi (sotto).
   occupazioni: OccupazionePostazione[];
-  // Orario da mostrare in lista: se almeno una postazione è già assegnata, il più presto tra gli
-  // 'orario_arrivo_previsto' delle sue OccupazionePostazione (modificabile per singola postazione
-  // dalla mappa, sezione 5) — altrimenti l'orario originale della prenotazione (Prenotazione.ora).
+  // Il più presto tra gli orari di arrivo delle postazioni assegnate, altrimenti Prenotazione.ora.
   orarioEffettivo: string;
 };

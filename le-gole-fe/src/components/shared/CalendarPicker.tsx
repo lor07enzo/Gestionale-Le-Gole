@@ -21,11 +21,8 @@ import {
 
 type ViewMode = 'month' | 'week';
 
-// Badge "soft" (bg-*-100 + text-*-700), stesso linguaggio visivo dei badge di stato usati
-// altrove nell'app (es. "Superuser"/"Disattivo" in StaffManagementSection.tsx) — preferito a uno
-// sfondo pieno con testo bianco: più coerente con il resto della UI e più leggibile (uno sfondo
-// bg-amber-500 pieno con testo bianco ha un contrasto insufficiente, sotto la soglia WCAG AA per
-// testo piccolo).
+// Badge "soft" (bg-*-100 + text-*-700): uno sfondo pieno con testo bianco ha contrasto
+// insufficiente per testo piccolo (sotto la soglia WCAG AA).
 function badgeClassesForCount(count: number): { bg: string; text: string } {
   if (count >= 6) return { bg: 'bg-rose-100', text: 'text-rose-700' };
   if (count >= 3) return { bg: 'bg-amber-100', text: 'text-amber-700' };
@@ -53,9 +50,7 @@ function CalendarDayCell({
   isFull,
   onSelect,
 }: Readonly<CalendarDayCellProps>) {
-  // Un giorno "completo" (GiornoPienoPiscina, lato staff/GiornoPienoToggle) non è selezionabile
-  // qui: al cliente non serve poterlo scegliere solo per vedersi poi mostrare il banner "Giorno
-  // al completo" dopo l'invio — stesso trattamento dei giorni prima di `minDate`.
+  // Un giorno "completo" non è selezionabile, stesso trattamento dei giorni prima di `minDate`.
   const disabled = !inCurrentMonth || (minDay !== null && date < minDay) || isFull;
   const isSelected = inCurrentMonth && isSameDay(date, selectedDate);
   const isToday = inCurrentMonth && isSameDay(date, today);
@@ -90,19 +85,8 @@ function CalendarDayCell({
         <Text size="sm" className={dayTextClass}>
           {date.getDate()}
         </Text>
-        {/* Badge a goccia in alto a destra del numero (stile "notifica"), staccato dal cerchio
-            del giorno tramite un anello dello stesso colore dello sfondo del foglio
-            (border-background, sempre cream qui dato che CalendarPicker vive solo dentro un
-            Actionsheet — bg-background) per un effetto "ritagliato" invece che sovrapposto.
-            Visibile sia in vista Mese sia in vista Settimana: a differenza della vecchia pillola
-            sotto il cerchio, non occupa spazio extra nella riga, quindi non appesantisce la
-            griglia mensile più fitta. In vista Mese il cerchio del giorno è più piccolo (h-9 w-9
-            contro h-11 w-11) e le righe sono più ravvicinate: il badge usa quindi un'altezza
-            fissa più contenuta (h-3.5 contro h-5), bordo più sottile (border invece di border-2)
-            e un offset più marcato (-right-2 -top-2 contro -right-1.5 -top-1.5) per restare
-            interamente sopra il cerchio senza sconfinare sulla cifra del giorno sottostante —
-            un'altezza fissa (non solo min-w) rende l'ingombro verticale prevedibile anche per i
-            conteggi a due cifre, che allargano solo la larghezza. */}
+        {/* Badge a goccia, staccato dal cerchio con un anello border-background per un effetto
+            "ritagliato". Dimensioni ridotte in vista Mese, dove il cerchio del giorno è più piccolo. */}
         {countBadge ? (
           <Box
             className={`absolute items-center justify-center rounded-full border-background ${countBadge.bg} ${
@@ -124,17 +108,11 @@ function CalendarDayCell({
 export type CalendarPickerProps = {
   selectedDate: Date;
   onSelect: (date: Date) => void;
-  // Giorni prima di questa data sono disabilitati (es. il cliente non può prenotare nel passato).
-  // Omesso lato staff, che può consultare liberamente anche le date passate.
+  // Giorni prima di questa data sono disabilitati. Omesso lato staff.
   minDate?: Date;
-  // Mappa ISODate -> numero di prenotazioni. Presente solo lato staff: la sua presenza abilita
-  // anche il toggle Mese/Settimana, per scegliere la granularità di navigazione. I conteggi (come
-  // badge sul numero del giorno, vedi CalendarDayCell) sono visibili in entrambe le viste.
+  // Mappa ISODate -> numero di prenotazioni. Presente solo lato staff: abilita anche il toggle Mese/Settimana.
   countsByDate?: Record<string, number>;
-  // Insieme di ISODate marcati "tutto prenotato" (GiornoPienoPiscina): usato solo lato Area
-  // Cliente per evidenziare (rosa, barrato) e disabilitare la selezione di quei giorni prima
-  // ancora che il cliente li scelga. Indipendente da countsByDate: non abilita il toggle
-  // Mese/Settimana.
+  // ISODate marcati "tutto prenotato", solo lato Area Cliente. Indipendente da countsByDate.
   fullDates?: Record<string, boolean>;
   onVisibleMonthChange?: (year: number, month: number) => void;
 };
@@ -158,8 +136,7 @@ export function CalendarPicker({
       onVisibleMonthChange(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1);
       return;
     }
-    // Una settimana a cavallo di due mesi richiede i conteggi di entrambi (es. ultima settimana
-    // di luglio che sconfina nei primi giorni di agosto).
+    // Una settimana a cavallo di due mesi richiede i conteggi di entrambi.
     const weekEnd = addDays(visibleWeekStart, 6);
     const mesiVisibili = new Set([
       `${visibleWeekStart.getFullYear()}-${visibleWeekStart.getMonth()}`,
@@ -169,9 +146,7 @@ export function CalendarPicker({
       const [anno, mese] = chiave.split('-').map(Number);
       onVisibleMonthChange(anno, mese + 1);
     });
-    // Va richiamato solo quando cambia la vista/il periodo visibile, non ad ogni render del
-    // parent (altrimenti un parent che ricrea la callback ad ogni render rifarebbe la richiesta
-    // in loop).
+    // Solo al cambio di vista/periodo, non ad ogni render del parent.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, visibleMonth, visibleWeekStart]);
 

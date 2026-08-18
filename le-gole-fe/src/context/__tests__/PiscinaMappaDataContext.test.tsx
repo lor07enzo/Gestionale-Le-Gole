@@ -4,9 +4,7 @@ import { PiscinaMappaDataProvider, usePiscinaMappaData } from '../PiscinaMappaDa
 import type { PiscinaInventario, Postazione } from '../../services/struttura';
 import type { GiornoPienoPiscina, OccupazionePostazione, PrenotazionePiscina } from '../../services/prenotazioni';
 
-// Mock completo di entrambi i servizi consumati dal context: evita di eseguire services/api.ts
-// (istanza axios reale) per test che riguardano solo la logica di derivazione dei dati, stesso
-// principio già usato in StaffNotificationsContext.test.tsx.
+// Mock completo dei servizi consumati: evita di eseguire services/api.ts (axios reale).
 jest.mock('../../services/struttura', () => ({
   getPiscinaInventario: jest.fn(),
   listPostazioni: jest.fn(),
@@ -165,10 +163,7 @@ function buildGiornoPieno(overrides: Partial<GiornoPienoPiscina> = {}): GiornoPi
   };
 }
 
-// Niente jest.useFakeTimers() qui: la combinazione fake timers + waitFor() di
-// @testing-library/react-native causa act() sovrapposti e il test resta appeso (il polling
-// interno di waitFor si basa su timer reali). Per un giorno "passato" deterministico basta una
-// data fissa nel passato remoto; per "oggi" si calcola la data odierna reale a runtime.
+// Niente jest.useFakeTimers(): fake timers + waitFor() causano act() sovrapposti e test appesi.
 const IERI_LONTANO = '2020-01-01';
 const oggiISO = () => {
   const d = new Date();
@@ -348,13 +343,8 @@ describe('PiscinaMappaDataProvider — caricamento e derivazione dati', () => {
     expect(gazebo).toMatchObject({ totale: 3, residui: 2 });
   });
 
-  // renderHook() di @testing-library/react-native passa initialProps/rerender(props) solo alla
-  // callback dell'hook, MAI al componente `wrapper` (che riceve sempre e solo `children`) — un
-  // secondo argomento di rerender() non arriverebbe mai a PiscinaMappaDataProvider. Per simulare
-  // "il query param ?data= cambia mentre la pagina resta montata" (due notifiche diverse aperte in
-  // sequenza dal pannello, sezione 11 CLAUDE.md) il wrapper legge quindi initialDate da una
-  // variabile esterna mutabile: forzare un rerender rilegge quella variabile alla chiamata
-  // successiva, esattamente come farebbe un vero cambio di query param via Expo Router.
+  // rerender() non passa props al wrapper (solo alla callback dell'hook): il wrapper legge
+  // initialDate da una variabile esterna mutabile per simulare un cambio di query param.
   it('risincronizza selectedDate quando initialDate cambia a provider già montato (due notifiche in sequenza)', async () => {
     mockRispostaVuota();
     let initialDateCorrente = IERI_LONTANO;
@@ -489,10 +479,8 @@ describe('PiscinaMappaDataProvider — mutazioni', () => {
     expect(mockUpdatePostazione).toHaveBeenCalledWith('p1', { pos_x: 60, pos_y: 50 });
   });
 
-  // Non verifichiamo lo stato ottimistico intermedio (pos_x=60 subito dopo la chiamata, prima del
-  // rollback): con updatePostazione mockato per rifiutare immediatamente, il flush di act()
-  // può già includere anche il .catch() di rollback, rendendo quello stato intermedio non
-  // osservabile in modo affidabile — verifichiamo solo l'esito finale atteso.
+  // Non verifichiamo lo stato ottimistico intermedio: il flush di act() può già includere anche
+  // il rollback, rendendolo non osservabile in modo affidabile.
   it('dragPostazione ripristina la posizione originale se il salvataggio fallisce', async () => {
     const originale = buildPostazione({ id: 'p1', pos_x: 50, pos_y: 50 });
     mockGetInventario.mockResolvedValue(buildInventario());

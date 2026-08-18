@@ -91,9 +91,7 @@ class TestEliminazioneInventario:
         assert PrenotazionePiscina.objects.filter(inventario=inventario).count() == 2
 
     def test_non_bloccata_se_la_prenotazione_futura_e_stata_annullata(self, auth_client, inventario):
-        # L'annullamento (stato='CANCELLED') ha sostituito l'eliminazione definitiva come azione
-        # normale dello staff (sezione 5 CLAUDE.md): una prenotazione futura ma cancellata non
-        # impegna più alcuna risorsa e non deve poter bloccare per sempre l'eliminazione.
+        # Una prenotazione futura ma cancellata non impegna più alcuna risorsa.
         cancellata = _prenotazione(inventario, date.today() + timedelta(days=3), stato="CANCELLED")
 
         response = auth_client.delete(reverse("inventariopiscina-detail", args=[inventario.pk]))

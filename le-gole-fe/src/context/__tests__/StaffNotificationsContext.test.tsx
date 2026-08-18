@@ -3,9 +3,7 @@ import { StaffNotificationsProvider, useStaffNotifications } from '../StaffNotif
 import { getNotificheLetteIds, saveNotificheLetteIds } from '../../utils/storage';
 import type { PrenotazionePiscina } from '../../services/prenotazioni';
 
-// Mock completo del servizio: evita di eseguire anche services/api.ts (istanza axios reale,
-// lettura di EXPO_PUBLIC_API_BASE_URL) per un test che riguarda solo la logica di
-// StaffNotificationsContext, non le chiamate di rete vere.
+// Mock completo del servizio: evita di eseguire services/api.ts (axios reale).
 jest.mock('../../services/prenotazioni', () => ({
   listPrenotazioniRecenti: jest.fn(),
 }));
@@ -108,12 +106,8 @@ describe('StaffNotificationsProvider', () => {
     expect(result.current.unreadCount).toBe(1);
   });
 
-  // Bug corretto il 2026-08-10 (vedi CLAUDE.md, sezione 11): markAsRead scriveva su localStorage
-  // serializzando lo Set in memoria della propria scheda/sessione, invece di rileggere lo storage
-  // al momento della scrittura. Con due schede aperte sulla stessa origine, la seconda scrittura
-  // sovrascriveva per intero staffNotificheLetteIds con la propria copia locale, cancellando la
-  // lettura appena salvata dalla prima scheda. Qui due provider indipendenti condividono lo
-  // stesso localStorage di jsdom, simulando esattamente due schede del browser.
+  // Regressione: markAsRead scriveva la copia in memoria della propria scheda, cancellando la
+  // lettura salvata dall'altra. Due provider indipendenti condividono lo stesso localStorage.
   it('due schede che marcano letture diverse in sequenza non si cancellano a vicenda', async () => {
     mockListRecenti.mockResolvedValue([buildPrenotazione({ id: 'a' }), buildPrenotazione({ id: 'b' })]);
 

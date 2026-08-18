@@ -12,26 +12,17 @@ export type PrenotazionePiscina = {
   ora: string;
   stato: StatoPrenotazione;
   inventario: string;
-  // Comoda per il pannello notifiche staff, che elenca prenotazioni di piscine diverse nella
-  // stessa lista (azione 'recenti', sotto) — evita una join lato client.
   inventario_nome: string;
-  // Ingressi interi (tariffa piena); ingressi_ridotti/bambini sono contatori indipendenti per le
-  // tariffe alternative (PiscinaInventario.prezzo_ingresso_ridotto/bambino) — nessun vincolo tra
-  // loro, nessuna verifica automatica di orario/età.
   ingressi: number;
   ingressi_ridotti: number;
   ingressi_bambini: number;
-  // Bambini sotto l'età minima (PiscinaInventario.eta_minima_bambino): ingresso gratuito, ma
-  // comunque conteggiati separatamente per il totale teste.
   ingressi_gratuiti: number;
   ombrellone: number;
   gazebo: number;
   lettino: number;
   sdraia: number;
-  // Forzato lato backend in base all'autenticazione della richiesta di creazione: true per un
-  // walk-in/"+ Nuovo cliente" registrato dallo staff, false per una prenotazione self-service
-  // (Area Cliente). Usato server-side dall'azione 'recenti' per non notificare allo staff le
-  // prenotazioni che lo staff stesso ha appena creato — non consumato altrove nel frontend.
+  // Forzato lato backend in base all'autenticazione: true per un walk-in staff, false per il
+  // self-service — usato server-side per non notificare allo staff le prenotazioni che ha appena creato.
   creata_da_staff: boolean;
   created_at: string;
   updated_at: string;
@@ -46,8 +37,7 @@ export type OccupazionePostazione = {
   numero_lettini: number;
   numero_sdraie: number;
   orario_arrivo_previsto: string;
-  // Check-in manuale per QUESTA specifica postazione — un cliente con più unità dello stesso
-  // tipo (es. 3 gazebi) va segnato separatamente su ciascuna, non è un flag per-prenotazione.
+  // Per singola postazione, non per prenotazione.
   arrivato: boolean;
   created_at: string;
   updated_at: string;
@@ -100,8 +90,7 @@ export type DisponibilitaPiscina = {
   gazebo: number;
   lettino: number;
   sdraia: number;
-  // Flag manuale staff (GiornoPienoPiscina), indipendente dai conteggi sopra — vedi
-  // GiornoPienoPiscinaViewSet e PrenotazionePiscinaSerializer.validate() lato backend.
+  // Flag manuale staff (GiornoPienoPiscina), indipendente dai conteggi sopra.
   pieno: boolean;
 };
 
@@ -127,17 +116,14 @@ export function listPrenotazioniPiscina(params: { data: string }): Promise<Preno
     .then((response) => response.data);
 }
 
-// GET /v1/prenotazioni/piscina/?cliente_id={id} — storico completo di un cliente (tutte le
-// date, incluse passate/cancellate), usato dalla pagina di dettaglio cliente lato staff.
+// GET /v1/prenotazioni/piscina/?cliente_id={id} — storico completo del cliente.
 export function listPrenotazioniPiscinaByCliente(clienteId: string): Promise<PrenotazionePiscina[]> {
   return api
     .get<PrenotazionePiscina[]>(PRENOTAZIONI_PISCINA_PATH, { params: { cliente_id: clienteId } })
     .then((response) => response.data);
 }
 
-// GET /v1/prenotazioni/piscina/recenti/?limit={limit} — le prenotazioni più recenti per data di
-// creazione, su qualsiasi piscina/data (a differenza di listPrenotazioniPiscina, non filtrata per
-// giorno) — usato dal pannello notifiche staff (StaffNotificationsContext) per il polling.
+// GET /v1/prenotazioni/piscina/recenti/?limit={limit} — usato dal pannello notifiche staff.
 export function listPrenotazioniRecenti(limit = 50): Promise<PrenotazionePiscina[]> {
   return api
     .get<PrenotazionePiscina[]>(`${PRENOTAZIONI_PISCINA_PATH}recenti/`, { params: { limit } })
@@ -184,9 +170,7 @@ export function updatePrenotazionePiscina(
     .then((response) => response.data);
 }
 
-// GET /v1/prenotazioni/piscina/{id}/scarica_biglietto/ — pubblico (AllowAny), nessuna auth
-// richiesta: basta conoscere l'UUID della prenotazione (non enumerabile). Bloccato solo per le
-// prenotazioni CANCELLED.
+// GET /v1/prenotazioni/piscina/{id}/scarica_biglietto/ — pubblico, bloccato solo per CANCELLED.
 export function getBigliettoUrl(prenotazioneId: string): string {
   return `${API_BASE_URL}${PRENOTAZIONI_PISCINA_PATH}${prenotazioneId}/scarica_biglietto/`;
 }
@@ -201,10 +185,7 @@ export function listOccupazioni(params: {
     .then((response) => response.data);
 }
 
-// GET /v1/prenotazioni/occupazioni-postazione/occupate/?inventario={id}&data={data} — pubblico,
-// nessuna auth richiesta. Solo gli id delle Postazione occupate, nessun dato personale del
-// cliente occupante — usato dalla mappa piscina self-service (Area Cliente) per marcare le
-// postazioni non selezionabili senza esporre nome/telefono/note altrui.
+// GET .../occupate/?inventario={id}&data={data} — pubblico, solo id, nessun dato personale.
 export function getPostazioniOccupate(params: { inventario: string; data: string }): Promise<string[]> {
   return api
     .get<string[]>(`${OCCUPAZIONI_POSTAZIONE_PATH}occupate/`, { params })
@@ -235,8 +216,7 @@ export function deleteOccupazione(id: string): Promise<void> {
   return api.delete(`${OCCUPAZIONI_POSTAZIONE_PATH}${id}/`).then(() => undefined);
 }
 
-// GET /v1/prenotazioni/giorni-pieni/?inventario={id}&data={data} — staff. Al più un risultato,
-// dato che (inventario, data) è unique_together lato backend.
+// GET /v1/prenotazioni/giorni-pieni/?inventario={id}&data={data} — staff, al più un risultato.
 export function listGiorniPieni(params: { inventario: string; data: string }): Promise<GiornoPienoPiscina[]> {
   return api
     .get<GiornoPienoPiscina[]>(GIORNI_PIENI_PATH, { params })
@@ -253,9 +233,7 @@ export function rimuoviGiornoPieno(id: string): Promise<void> {
   return api.delete(`${GIORNI_PIENI_PATH}${id}/`).then(() => undefined);
 }
 
-// GET /v1/prenotazioni/giorni-pieni/calendario/?inventario={id}&anno={anno}&mese={mese} —
-// pubblico, nessuna auth richiesta. Elenco delle sole date (nessun altro dato) marcate "tutto
-// prenotato" nel mese, usato dal calendario di selezione data lato Area Cliente.
+// GET .../calendario/?inventario={id}&anno={anno}&mese={mese} — pubblico, solo le date "piene".
 export function getGiorniPieniMese(params: {
   inventario: string;
   anno: number;
