@@ -1,0 +1,11 @@
+version: 2
+
+# Falso positivo segnalato da GitGuardian: il "Cloudflare API Token" rilevato in
+# le-gole-fe/scripts/inject-cloudflare-analytics.js è in realtà un beacon token di Cloudflare Web
+# Analytics — non un token API con accesso all'account/DNS. È pensato da Cloudflare stesso per
+# essere incollato in una pagina pubblica (finisce nell'HTML servito a ogni visitatore del sito,
+# quindi è già visibile a chiunque tramite "Visualizza sorgente" indipendentemente dal repository)
+# — stesso principio di un ID di Google Analytics o di una chiave "publishable" Stripe.
+secret:
+  ignored-paths:
+    - le-gole-fe/scripts/inject-cloudflare-analytics.js
