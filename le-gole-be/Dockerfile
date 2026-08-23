@@ -31,6 +31,7 @@ COPY backend/ backend/
 COPY users/ users/
 COPY struttura/ struttura/
 COPY prenotazioni/ prenotazioni/
+COPY menu/ menu/
 
 USER appuser
 
