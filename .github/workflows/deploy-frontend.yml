@@ -43,6 +43,11 @@ jobs:
       - name: Fix HTML lang + notranslate meta
         run: node scripts/fix-html-lang.js
 
+      # Token pubblico (visibile comunque nel sorgente della pagina), hardcoded nello script —
+      # nessun segreto da passare qui.
+      - name: Inject Cloudflare Web Analytics
+        run: node scripts/inject-cloudflare-analytics.js
+
       # Niente --with-deps: su windows-latest il browser scaricato da Playwright è già autosufficiente.
       - name: Install Playwright Chromium
         run: npx playwright install chromium

@@ -17,7 +17,7 @@ const TITOLARE = {
   emailPrivacy: 'osterialegole@icloud.com',
 };
 
-const ULTIMO_AGGIORNAMENTO = '5 agosto 2026';
+const ULTIMO_AGGIORNAMENTO = '23 agosto 2026';
 
 function SectionHeading({ children }: Readonly<{ children: string }>) {
   return (
@@ -237,8 +237,16 @@ export default function PrivacyScreen() {
         <VStack space="xs">
           <SectionHeading>9. Cookie Policy</SectionHeading>
           <Paragraph>
-            Questo sito non utilizza cookie di profilazione, pubblicitari o di terze parti, e non
-            effettua alcun tipo di tracciamento a fini statistici o di marketing.
+            Questo sito non utilizza cookie di profilazione, pubblicitari o di terze parti a fini
+            di marketing, e non effettua alcun tipo di tracciamento del singolo visitatore.
+          </Paragraph>
+          <Paragraph>
+            Per raccogliere statistiche aggregate di utilizzo del sito (numero di visite, pagine
+            più consultate) utilizziamo Cloudflare Web Analytics, un servizio che non installa
+            alcun cookie né identificatore persistente sul tuo dispositivo e non raccoglie dati
+            personali: le informazioni restano sempre aggregate e anonime, senza possibilità di
+            risalire al singolo visitatore o di seguirlo tra siti diversi. Non essendo uno
+            strumento di profilazione, non richiede un consenso preventivo.
           </Paragraph>
           <Paragraph>
             Per far funzionare l'accesso dello staff al gestionale, il sito salva alcune
@@ -257,8 +265,8 @@ export default function PrivacyScreen() {
             Si tratta di informazioni tecniche strettamente necessarie al funzionamento del
             servizio: per queste, la normativa non richiede un consenso preventivo, ma le
             dichiariamo comunque per trasparenza. Se in futuro il sito dovesse introdurre strumenti
-            di analisi statistica o marketing, questa pagina sarà aggiornata e verrà richiesto il
-            consenso dove necessario.
+            di marketing o che raccolgono dati personali/cookie di profilazione, questa pagina sarà
+            aggiornata e verrà richiesto il consenso dove necessario.
           </Paragraph>
         </VStack>
 
