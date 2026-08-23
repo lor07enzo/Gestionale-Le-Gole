@@ -17,17 +17,19 @@ import {
   ActionsheetScrollView,
 } from '@/components/ui/actionsheet';
 import { useStaffNotifications } from '../../context/StaffNotificationsContext';
-import { formatDateDDMMYYYY, formatIngressiSummary, formatRelativeTime, formatTime } from '../../utils/piscinaMappa';
+import type { Notifica, NotificaAsporto, NotificaPiscina } from '../../context/StaffNotificationsContext';
+import { formatDateDDMMYYYY, formatRelativeTime, formatTime } from '../../utils/piscinaMappa';
+import { formatPrezzo } from '../../utils/prezzi';
 import type { PrenotazionePiscina } from '../../services/prenotazioni';
 
-// Piscina è l'unica categoria con dati reali: Asporto/Ristorante/Padel non hanno ancora un
-// modello/API backend, ma i filtri esistono già in UI.
+// Piscina e Asporto hanno entrambe dati reali ora; Sala/Padel non hanno ancora un modello/API
+// backend, ma i filtri esistono già in UI (badge "in arrivo" nel messaggio sotto).
 type Categoria = 'TUTTI' | 'PISCINA' | 'ASPORTO' | 'RISTORANTE' | 'PADEL';
 
 const CATEGORIE: Array<{ key: Categoria; label: string; icon: string; disponibile: boolean }> = [
   { key: 'TUTTI', label: 'Tutti', icon: '📋', disponibile: true },
   { key: 'PISCINA', label: 'Piscina', icon: '🏊', disponibile: true },
-  { key: 'ASPORTO', label: 'Asporto', icon: '🥡', disponibile: false },
+  { key: 'ASPORTO', label: 'Asporto', icon: '🥡', disponibile: true },
   { key: 'RISTORANTE', label: 'Sala', icon: '🍽️', disponibile: false },
   { key: 'PADEL', label: 'Padel', icon: '🎾', disponibile: false },
 ];
@@ -42,16 +44,25 @@ function getIniziali(nome: string): string {
 
 // Icona sopra, etichetta sotto (non affiancate): su 5 colonne strette il badge conteggio in linea
 // finiva per sconfinare nel tab accanto — ora è un overlay assoluto sull'angolo.
+//
+// `unreadByCategoria` (non più un unico `unreadCount` condiviso): con due categorie reali ora,
+// ogni tab deve mostrare il proprio conteggio non letto, non lo stesso numero ripetuto ovunque —
+// bug della prima versione (un'unica categoria disponibile lo nascondeva).
 function CategoriaTabs({
   categoria,
   onChange,
-  unreadCount,
-}: Readonly<{ categoria: Categoria; onChange: (c: Categoria) => void; unreadCount: number }>) {
+  unreadByCategoria,
+}: Readonly<{
+  categoria: Categoria;
+  onChange: (c: Categoria) => void;
+  unreadByCategoria: Record<Categoria, number>;
+}>) {
   return (
     <HStack space="xs" className="w-full rounded-2xl bg-sky-50 p-1">
       {CATEGORIE.map((c) => {
         const isActive = categoria === c.key;
-        const showBadge = c.disponibile && unreadCount > 0;
+        const count = unreadByCategoria[c.key];
+        const showBadge = c.disponibile && count > 0;
         return (
           <Pressable
             key={c.key}
@@ -74,7 +85,7 @@ function CategoriaTabs({
             {showBadge ? (
               <Box className="absolute -right-0.5 -top-0.5 min-w-3.5 items-center justify-center rounded-full border-2 border-sky-50 bg-sky-600 px-0.5">
                 <Text size="2xs" className="text-center font-bold leading-none text-white">
-                  {unreadCount > 9 ? '9+' : unreadCount}
+                  {count > 9 ? '9+' : count}
                 </Text>
               </Box>
             ) : null}
@@ -112,85 +123,125 @@ function risorseFisichePrenotate(p: PrenotazionePiscina): Array<{ icon: string; 
   ].filter((r) => r.count > 0);
 }
 
+// Solo se c'è almeno un ingresso intero, ridotto, bambino o gratuito da mostrare — a differenza
+// di `formatIngressiSummary` (utils/piscinaMappa.ts, riusata altrove per lo storico/riepiloghi
+// staff, dove il "🎟️ 0" è voluto per coerenza tabellare), qui nella card notifica un "🎟️ 0" senza
+// ingressi interi è solo rumore: se l'ingresso è un ridotto/bambino puro, il chip lo mostra senza
+// lo zero davanti. `null` se non c'è alcun ingresso di alcun tipo (nessun chip da renderizzare).
+function formatIngressiChip(p: PrenotazionePiscina): string | null {
+  const parti: string[] = [];
+  if (p.ingressi > 0) parti.push(`🎟️ ${p.ingressi}`);
+  if (p.ingressi_ridotti > 0) parti.push(`🌇 ${p.ingressi_ridotti}`);
+  if (p.ingressi_bambini > 0) parti.push(`🧒 ${p.ingressi_bambini}`);
+  if (p.ingressi_gratuiti > 0) parti.push(`🆓 ${p.ingressi_gratuiti}`);
+  return parti.length > 0 ? parti.join(' ') : null;
+}
+
 // Una volta segnata come letta la notifica esce dalla lista: ogni card qui è sempre "non letta".
+// `onOpen` porta alla mappa piscina (con la data della prenotazione) per la piscina, alla pagina
+// di dettaglio ordine per l'asporto (sezione 15, `app/staff/asporto/ordini/[ordineId].tsx`) —
+// entrambe le categorie sono ormai cliccabili, nessuna delle due promette più un'azione che il
+// sistema non può mantenere.
 function NotificaCard({
-  prenotazione,
+  notifica,
   onDismiss,
   onOpen,
 }: Readonly<{
-  prenotazione: PrenotazionePiscina;
+  notifica: Notifica;
   onDismiss: () => void;
-  onOpen: () => void;
+  onOpen?: () => void;
 }>) {
+  const { prenotazione } = notifica;
+  const isPiscina = notifica.categoria === 'PISCINA';
+
+  // Ridotta a due sole righe di corpo (più la nota, se presente) — prima erano sette blocchi
+  // impilati (nome/ora, chip data-categoria, riga telefono a parte, divisore, etichetta
+  // "Prenotato"/"Ordinato", chip risorse/totale, nota): divisore ed etichetta rimossi (il tono
+  // smeraldo del chip categoria comunica già il contesto), telefono e risorse/totale confluiti
+  // nella stessa nuvola di chip a capo automatico invece di righe proprie.
+  const corpo = (
+    <>
+      <Box className="h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-600">
+        <Text size="2xs" className="font-bold text-white">
+          {getIniziali(prenotazione.cliente_nome)}
+        </Text>
+      </Box>
+
+      <VStack space="xs" className="flex-1">
+        <HStack space="xs" className="items-center justify-between">
+          <Text size="xs" className="flex-1 font-semibold text-sky-900">
+            {prenotazione.cliente_nome}
+          </Text>
+          <Text size="2xs" className="shrink-0 text-muted-foreground">
+            {formatRelativeTime(prenotazione.created_at)}
+          </Text>
+        </HStack>
+
+        <HStack space="xs" className="flex-wrap items-center">
+          <InfoChip icon={<Icon as={ClockIcon} size="2xs" className="text-sky-700" />} tone="sky">
+            {formatDateDDMMYYYY(prenotazione.data)} · {formatTime(prenotazione.ora)}
+          </InfoChip>
+          {isPiscina ? (
+            <InfoChip tone="emerald">🏊 {notifica.prenotazione.inventario_nome}</InfoChip>
+          ) : (
+            <InfoChip tone="emerald">🥡 Asporto</InfoChip>
+          )}
+          <HStack space="xs" className="items-center">
+            <Icon as={PhoneIcon} size="2xs" className="text-sky-900/40" />
+            <Text size="2xs" className="text-muted-foreground">
+              {prenotazione.cliente_telefono}
+            </Text>
+          </HStack>
+          {isPiscina ? (
+            <>
+              {formatIngressiChip(notifica.prenotazione) ? (
+                <InfoChip tone="sky">{formatIngressiChip(notifica.prenotazione)}</InfoChip>
+              ) : null}
+              {risorseFisichePrenotate(notifica.prenotazione).map((r) => (
+                <InfoChip key={r.icon} tone="sky">
+                  {r.icon} {r.count}
+                </InfoChip>
+              ))}
+            </>
+          ) : (
+            <InfoChip tone="sky">🧾 €{formatPrezzo(notifica.prenotazione.totale)}</InfoChip>
+          )}
+        </HStack>
+
+        {prenotazione.note ? (
+          <Text size="2xs" className="italic text-sky-900/70">
+            📝 {prenotazione.note}
+          </Text>
+        ) : null}
+      </VStack>
+    </>
+  );
+
   return (
     <Box className="overflow-hidden rounded-2xl border border-sky-200 bg-sky-50/50 shadow-sm">
       <HStack className="items-stretch">
         <Box className="w-1 bg-sky-500" />
 
-        <HStack space="xs" className="flex-1 items-start justify-between p-2.5">
+        <HStack space="xs" className="flex-1 items-start justify-between p-2">
           {/* Pressable sorella, non annidata in quella del pulsante segna-come-letta: evita un
               doppio trigger su web. */}
-          <Pressable
-            onPress={onOpen}
-            accessibilityRole="button"
-            accessibilityLabel={`Vai alla mappa piscina per la prenotazione di ${prenotazione.cliente_nome}`}
-            className="-m-1 flex-1 flex-row items-start gap-2 rounded-xl p-1 active:bg-sky-100/70"
-          >
-            <Box className="h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-600">
-              <Text size="2xs" className="font-bold text-white">
-                {getIniziali(prenotazione.cliente_nome)}
-              </Text>
-            </Box>
-
-            <VStack space="xs" className="flex-1">
-              <HStack space="xs" className="items-center justify-between">
-                <Text size="xs" className="flex-1 font-semibold text-sky-900">
-                  {prenotazione.cliente_nome}
-                </Text>
-                <Text size="2xs" className="shrink-0 text-muted-foreground">
-                  {formatRelativeTime(prenotazione.created_at)}
-                </Text>
-              </HStack>
-
-              <HStack space="xs" className="flex-wrap items-center">
-                <InfoChip icon={<Icon as={ClockIcon} size="2xs" className="text-sky-700" />} tone="sky">
-                  {formatDateDDMMYYYY(prenotazione.data)} · {formatTime(prenotazione.ora)}
-                </InfoChip>
-                <InfoChip tone="emerald">🏊 {prenotazione.inventario_nome}</InfoChip>
-              </HStack>
-
-              <HStack space="xs" className="items-center">
-                <Icon as={PhoneIcon} size="2xs" className="text-sky-900/40" />
-                <Text size="2xs" className="text-muted-foreground">
-                  {prenotazione.cliente_telefono}
-                </Text>
-              </HStack>
-
-              {prenotazione.note ? (
-                <Text size="2xs" className="italic text-sky-900/70">
-                  📝 {prenotazione.note}
-                </Text>
-              ) : null}
-
-              <Box className="mt-0.5 h-px w-full bg-border" />
-
-              <VStack space="xs">
-                <Text size="2xs" className="font-bold uppercase tracking-wide text-sky-900/40">
-                  Prenotato
-                </Text>
-                <HStack space="xs" className="flex-wrap items-center">
-                  <InfoChip tone="sky">{formatIngressiSummary(prenotazione)}</InfoChip>
-                  {risorseFisichePrenotate(prenotazione).map((r) => (
-                    <InfoChip key={r.icon} tone="sky">
-                      {r.icon} {r.count}
-                    </InfoChip>
-                  ))}
-                </HStack>
-              </VStack>
-            </VStack>
-
-            <Icon as={ChevronRightIcon} size="xs" className="mt-1 shrink-0 text-sky-300" />
-          </Pressable>
+          {onOpen ? (
+            <Pressable
+              onPress={onOpen}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isPiscina
+                  ? `Vai alla mappa piscina per la prenotazione di ${prenotazione.cliente_nome}`
+                  : `Vai al dettaglio dell'ordine di ${prenotazione.cliente_nome}`
+              }
+              className="-m-1 flex-1 flex-row items-start gap-2 rounded-xl p-1 active:bg-sky-100/70"
+            >
+              {corpo}
+              <Icon as={ChevronRightIcon} size="xs" className="mt-1 shrink-0 text-sky-300" />
+            </Pressable>
+          ) : (
+            <Box className="-m-1 flex-1 flex-row items-start gap-2 p-1">{corpo}</Box>
+          )}
 
           <Pressable
             accessibilityRole="button"
@@ -230,15 +281,37 @@ export function NotificationsBell() {
 
   // Le notifiche già lette sono filtrate qui, non solo attenuate: l'elenco è "cosa manca da vedere".
   const categoriaAttiva = CATEGORIE.find((c) => c.key === categoria)!;
-  const visibili = useMemo(
-    () => (categoriaAttiva.disponibile ? notifiche.filter((p) => !isRead(p.id)) : []),
-    [categoriaAttiva.disponibile, notifiche, isRead]
-  );
+  const visibili = useMemo(() => {
+    if (!categoriaAttiva.disponibile) return [];
+    const perCategoria = categoria === 'TUTTI' ? notifiche : notifiche.filter((n) => n.categoria === categoria);
+    return perCategoria.filter((n) => !isRead(n.prenotazione.id));
+  }, [categoria, categoriaAttiva.disponibile, notifiche, isRead]);
 
-  const handleOpenPrenotazione = (p: PrenotazionePiscina) => {
-    markAsRead(p.id);
+  // Conteggio non letto per singolo tab (sopra "TUTTI" = somma di tutte le categorie reali):
+  // ogni categoria disponibile deve mostrare il proprio numero, non quello totale ripetuto.
+  const unreadByCategoria = useMemo(() => {
+    const counts = { TUTTI: 0, PISCINA: 0, ASPORTO: 0, RISTORANTE: 0, PADEL: 0 } as Record<Categoria, number>;
+    notifiche.forEach((n) => {
+      if (isRead(n.prenotazione.id)) return;
+      counts.TUTTI += 1;
+      counts[n.categoria] += 1;
+    });
+    return counts;
+  }, [notifiche, isRead]);
+
+  const handleOpenPrenotazione = (n: NotificaPiscina) => {
+    markAsRead(n.prenotazione.id);
     setIsOpen(false);
-    router.push(`/staff/piscina/${p.inventario}?data=${p.data}` as Href);
+    router.push(`/staff/piscina/${n.prenotazione.inventario}?data=${n.prenotazione.data}` as Href);
+  };
+
+  // Ora che esiste una pagina di dettaglio ordine dedicata (sezione 15), anche le notifiche
+  // asporto sono cliccabili — stesso identico principio della piscina: leggere la notifica e
+  // portare direttamente al punto dove gestirla.
+  const handleOpenOrdine = (n: NotificaAsporto) => {
+    markAsRead(n.prenotazione.id);
+    setIsOpen(false);
+    router.push(`/staff/asporto/ordini/${n.prenotazione.id}` as Href);
   };
 
   return (
@@ -281,7 +354,7 @@ export function NotificationsBell() {
                 ) : null}
               </HStack>
 
-              <CategoriaTabs categoria={categoria} onChange={setCategoria} unreadCount={unreadCount} />
+              <CategoriaTabs categoria={categoria} onChange={setCategoria} unreadByCategoria={unreadByCategoria} />
 
               {!categoriaAttiva.disponibile ? (
                 <VStack space="xs" className="items-center rounded-2xl border border-dashed border-border px-4 py-6">
@@ -314,12 +387,14 @@ export function NotificationsBell() {
                     </VStack>
                   ) : null}
 
-                  {visibili.map((p) => (
+                  {visibili.map((n) => (
                     <NotificaCard
-                      key={p.id}
-                      prenotazione={p}
-                      onDismiss={() => markAsRead(p.id)}
-                      onOpen={() => handleOpenPrenotazione(p)}
+                      key={n.prenotazione.id}
+                      notifica={n}
+                      onDismiss={() => markAsRead(n.prenotazione.id)}
+                      onOpen={
+                        n.categoria === 'PISCINA' ? () => handleOpenPrenotazione(n) : () => handleOpenOrdine(n)
+                      }
                     />
                   ))}
                 </>

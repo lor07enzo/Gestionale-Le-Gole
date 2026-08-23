@@ -2,7 +2,9 @@ import { Platform } from 'react-native';
 
 // Su web basta aprire l'URL (il browser gestisce il download via Content-Disposition). Su
 // nativo scarichiamo il file e apriamo il foglio di condivisione di sistema (expo-sharing).
-export async function apriBigliettoPdf(url: string, prenotazioneId: string): Promise<void> {
+// `filePrefix` distingue solo il nome del file salvato in cache su nativo (default 'biglietto',
+// invariato per la piscina) — riusata identica anche per la ricevuta PDF asporto ('ricevuta').
+export async function apriBigliettoPdf(url: string, prenotazioneId: string, filePrefix = 'biglietto'): Promise<void> {
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined') {
       window.open(url, '_blank');
@@ -15,7 +17,7 @@ export async function apriBigliettoPdf(url: string, prenotazioneId: string): Pro
     import('expo-sharing'),
   ]);
 
-  const destinazione = new File(Paths.cache, `biglietto_${prenotazioneId}.pdf`);
+  const destinazione = new File(Paths.cache, `${filePrefix}_${prenotazioneId}.pdf`);
   const file = await File.downloadFileAsync(url, destinazione, { idempotent: true });
 
   if (await Sharing.isAvailableAsync()) {

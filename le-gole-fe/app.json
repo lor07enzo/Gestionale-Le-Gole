@@ -24,7 +24,14 @@
     "plugins": [
       "expo-secure-store",
       "expo-router",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Le Gole ha bisogno di accedere alle tue foto per allegare l'immagine di un prodotto.",
+          "cameraPermission": "Le Gole ha bisogno della fotocamera per scattare la foto di un prodotto."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

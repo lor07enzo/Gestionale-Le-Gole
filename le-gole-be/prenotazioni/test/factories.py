@@ -1,7 +1,7 @@
 import factory
 from django.utils import timezone
 
-from prenotazioni.models import GiornoPienoPiscina, OccupazionePostazione, PrenotazionePiscina
+from prenotazioni.models import GiornoPienoPiscina, OccupazionePostazione, PrenotazioneAsporto, PrenotazionePiscina
 from struttura.test.factories import PiscinaInventarioFactory, PostazioneFactory
 from users.test.factories import ClienteFactory
 
@@ -16,6 +16,16 @@ class PrenotazionePiscinaFactory(factory.django.DjangoModelFactory):
     ora = "12:00"
     stato = "CONFIRMED"
     ingressi = 1
+
+
+class PrenotazioneAsportoFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = PrenotazioneAsporto
+
+    cliente_id = factory.SubFactory(ClienteFactory)
+    data = factory.LazyFunction(timezone.localdate)
+    ora = "12:00"
+    stato = "CONFIRMED"
 
 
 class OccupazionePostazioneFactory(factory.django.DjangoModelFactory):

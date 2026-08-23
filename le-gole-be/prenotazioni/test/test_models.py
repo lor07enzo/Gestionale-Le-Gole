@@ -3,7 +3,12 @@ import pytest
 from struttura.test.factories import PostazioneFactory
 from users.test.factories import ClienteFactory
 
-from .factories import GiornoPienoPiscinaFactory, OccupazionePostazioneFactory, PrenotazionePiscinaFactory
+from .factories import (
+    GiornoPienoPiscinaFactory,
+    OccupazionePostazioneFactory,
+    PrenotazioneAsportoFactory,
+    PrenotazionePiscinaFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -12,6 +17,12 @@ def test_str_prenotazione_piscina_include_cliente_e_data():
     cliente = ClienteFactory(nome="Mario Rossi")
     prenotazione = PrenotazionePiscinaFactory(cliente_id=cliente, data="2026-08-01")
     assert str(prenotazione) == "Piscina - Mario Rossi del 2026-08-01"
+
+
+def test_str_prenotazione_asporto_include_cliente_e_data():
+    cliente = ClienteFactory(nome="Mario Rossi")
+    prenotazione = PrenotazioneAsportoFactory(cliente_id=cliente, data="2026-08-01")
+    assert str(prenotazione) == "Asporto - Mario Rossi del 2026-08-01"
 
 
 def test_str_giorno_pieno_piscina():

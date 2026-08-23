@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import PrenotazionePiscina, OccupazionePostazione, GiornoPienoPiscina
+from .models import PrenotazionePiscina, PrenotazioneAsporto, OccupazionePostazione, GiornoPienoPiscina
 from struttura.models import PiscinaInventario
 from .utils import calcola_disponibilita
 
@@ -79,6 +79,58 @@ class PrenotazionePiscinaSerializer(serializers.ModelSerializer):
         richiesta_sdraie = data.get('sdraia', instance.sdraia if instance else 0)
         if richiesta_sdraie > residui['sdraia']:
             raise serializers.ValidationError({"sdraia": f"Disponibilità sdraie esaurita. Residui: {residui['sdraia']}"})
+
+        return data
+
+
+class PrenotazioneAsportoSerializer(serializers.ModelSerializer):
+    # Comodo per il frontend (staff): evita una join lato client con /users/clienti/, stesso
+    # pattern di PrenotazionePiscinaSerializer.
+    cliente_nome = serializers.CharField(source='cliente_id.nome', read_only=True)
+    cliente_telefono = serializers.CharField(source='cliente_id.telefono', read_only=True)
+    # Property del modello: somma a runtime le menu.VoceOrdine collegate, mai persistito.
+    totale = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = PrenotazioneAsporto
+        fields = '__all__'
+
+    def validate(self, data):
+        # Un PATCH parziale invia solo i campi cambiati: per quelli omessi ricadiamo sui valori
+        # già presenti sull'istanza — stesso pattern di PrenotazionePiscinaSerializer.validate().
+        instance = self.instance
+        data_richiesta = data.get('data', instance.data if instance else None)
+        ora_richiesta = data.get('ora', instance.ora if instance else None)
+
+        # Import locale, non in cima al modulo: `menu.models` importa già `PrenotazioneAsporto`
+        # da `prenotazioni.models` (sezione 1 di CLAUDE.md, dipendenza dichiarata "a senso unico"
+        # menu -> prenotazioni). Questa validazione ha bisogno dei dati di configurazione
+        # dell'asporto, che vivono in `menu` — la dipendenza diventa quindi bidirezionale solo per
+        # questo punto, deliberatamente, e l'import resta locale alla funzione per non introdurre
+        # anche a livello di modulo un riferimento incrociato tra le due app.
+        from menu.models import ConfigurazioneAsporto, GiornoChiusoAsporto
+
+        # "Giorno chiuso" blocca solo i nuovi ordini self-service pubblici, non lo staff — stesso
+        # principio di GiornoPienoPiscina sopra: lo staff ha visibilità diretta sulla cucina e può
+        # comunque registrare un ordine manuale nonostante il giorno segnato come chiuso online.
+        request = self.context.get('request')
+        is_richiesta_pubblica = not (request and request.user and request.user.is_authenticated)
+        if is_richiesta_pubblica and data_richiesta and GiornoChiusoAsporto.objects.filter(
+            data=data_richiesta
+        ).exists():
+            raise serializers.ValidationError({
+                "data": "Il servizio asporto è chiuso in questa data: non è possibile effettuare nuovi ordini online."
+            })
+
+        # L'orario di ritiro, invece, è vincolato per chiunque (staff incluso) — riflette quando
+        # la cucina prepara davvero gli ordini, non solo il canale online, stesso trattamento
+        # unconditional già riservato all'orario apertura/chiusura piscina sopra.
+        if ora_richiesta:
+            configurazione = ConfigurazioneAsporto.get_solo()
+            if ora_richiesta < configurazione.orario_apertura or ora_richiesta > configurazione.orario_chiusura:
+                raise serializers.ValidationError({
+                    "ora": f"Il servizio asporto è attivo dalle {configurazione.orario_apertura.strftime('%H:%M')} alle {configurazione.orario_chiusura.strftime('%H:%M')}."
+                })
 
         return data
 

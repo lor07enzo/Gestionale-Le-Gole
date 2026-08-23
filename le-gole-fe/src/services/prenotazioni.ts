@@ -1,4 +1,5 @@
 import api, { API_BASE_URL } from './api';
+import type { VoceOrdine } from './menu';
 
 export type StatoPrenotazione = 'PENDING' | 'CONFIRMED' | 'CANCELLED';
 
@@ -105,7 +106,34 @@ export type GiornoPienoPiscina = {
 export type CreateGiornoPienoPayload = Pick<GiornoPienoPiscina, 'inventario' | 'data'> &
   Partial<Pick<GiornoPienoPiscina, 'note'>>;
 
+export type PrenotazioneAsporto = {
+  id: string;
+  cliente_id: string;
+  cliente_nome: string;
+  cliente_telefono: string;
+  note: string;
+  data: string;
+  ora: string;
+  stato: StatoPrenotazione;
+  // Forzato lato backend in base all'autenticazione, stesso principio di PrenotazionePiscina sopra.
+  creata_da_staff: boolean;
+  // Somma a runtime delle VoceOrdine collegate (menu.VoceOrdine.subtotale), mai persistito.
+  totale: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreatePrenotazioneAsportoPayload = Pick<PrenotazioneAsporto, 'cliente_id' | 'data' | 'ora' | 'stato'> &
+  Partial<Pick<PrenotazioneAsporto, 'note'>>;
+
+// Usato dalla pagina staff "Storico Ordini" (app/staff/asporto/ordini.tsx) per modificare
+// orario/note/stato di un ordine già esistente — stesso sottoinsieme di campi modificabili di
+// UpdatePrenotazionePiscinaPayload, senza le quantità risorsa (che qui vivono su menu.VoceOrdine,
+// non su questo modello).
+export type UpdatePrenotazioneAsportoPayload = Partial<Pick<PrenotazioneAsporto, 'ora' | 'note' | 'stato'>>;
+
 const PRENOTAZIONI_PISCINA_PATH = '/v1/prenotazioni/piscina/';
+const PRENOTAZIONI_ASPORTO_PATH = '/v1/prenotazioni/asporto/';
 const OCCUPAZIONI_POSTAZIONE_PATH = '/v1/prenotazioni/occupazioni-postazione/';
 const GIORNI_PIENI_PATH = '/v1/prenotazioni/giorni-pieni/';
 
@@ -175,6 +203,24 @@ export function getBigliettoUrl(prenotazioneId: string): string {
   return `${API_BASE_URL}${PRENOTAZIONI_PISCINA_PATH}${prenotazioneId}/scarica_biglietto/`;
 }
 
+// GET /v1/prenotazioni/piscina/storico_telefono/?telefono=... — pubblico, match esatto sul
+// telefono (mai icontains/parziale, per non trasformarlo in una ricerca libera dell'anagrafica
+// clienti). Usato dalla consultazione self-service "Le mie prenotazioni" (Area Cliente).
+export function getStoricoPiscinaPerTelefono(telefono: string): Promise<PrenotazionePiscina[]> {
+  return api
+    .get<PrenotazionePiscina[]>(`${PRENOTAZIONI_PISCINA_PATH}storico_telefono/`, { params: { telefono } })
+    .then((response) => response.data);
+}
+
+// GET /v1/prenotazioni/piscina/{id}/dettaglio_pubblico/ — pubblico, l'UUID funge da segreto,
+// stesso principio di getBigliettoUrl. Usato dalla pagina di dettaglio raggiunta da una card
+// di getStoricoPiscinaPerTelefono.
+export function getDettaglioPubblicoPiscina(id: string): Promise<PrenotazionePiscina> {
+  return api
+    .get<PrenotazionePiscina>(`${PRENOTAZIONI_PISCINA_PATH}${id}/dettaglio_pubblico/`)
+    .then((response) => response.data);
+}
+
 // GET /v1/prenotazioni/occupazioni-postazione/?data={data}&postazione__inventario={inventarioId}
 export function listOccupazioni(params: {
   data: string;
@@ -241,5 +287,77 @@ export function getGiorniPieniMese(params: {
 }): Promise<string[]> {
   return api
     .get<string[]>(`${GIORNI_PIENI_PATH}calendario/`, { params })
+    .then((response) => response.data);
+}
+
+// GET /v1/prenotazioni/asporto/recenti/?limit={limit} — usato dal pannello notifiche staff,
+// stessa forma/scopo di listPrenotazioniRecenti (piscina).
+export function listPrenotazioniAsportoRecenti(limit = 50): Promise<PrenotazioneAsporto[]> {
+  return api
+    .get<PrenotazioneAsporto[]>(`${PRENOTAZIONI_ASPORTO_PATH}recenti/`, { params: { limit } })
+    .then((response) => response.data);
+}
+
+// POST /v1/prenotazioni/asporto/ — pubblico (self-service): stato/creata_da_staff forzati
+// lato backend per una richiesta anonima, a prescindere da cosa viene inviato qui.
+export function createPrenotazioneAsporto(
+  payload: CreatePrenotazioneAsportoPayload
+): Promise<PrenotazioneAsporto> {
+  return api.post<PrenotazioneAsporto>(PRENOTAZIONI_ASPORTO_PATH, payload).then((response) => response.data);
+}
+
+// GET /v1/prenotazioni/asporto/?data={data} — usato dalla pagina staff "Storico Ordini".
+export function listPrenotazioniAsporto(params: { data: string }): Promise<PrenotazioneAsporto[]> {
+  return api.get<PrenotazioneAsporto[]>(PRENOTAZIONI_ASPORTO_PATH, { params }).then((response) => response.data);
+}
+
+// GET /v1/prenotazioni/asporto/{id}/ — usato dalla pagina di dettaglio ordine
+// (app/staff/asporto/ordini/[ordineId].tsx), raggiunta da una riga compatta di "Storico Ordini"
+// che non porta più con sé l'oggetto ordine completo.
+export function getPrenotazioneAsporto(id: string): Promise<PrenotazioneAsporto> {
+  return api.get<PrenotazioneAsporto>(`${PRENOTAZIONI_ASPORTO_PATH}${id}/`).then((response) => response.data);
+}
+
+// GET /v1/prenotazioni/asporto/?cliente_id={id} — storico completo del cliente, stesso pattern
+// 1:1 di listPrenotazioniPiscinaByCliente (sopra), usato dalla scheda cliente staff.
+export function listPrenotazioniAsportoByCliente(clienteId: string): Promise<PrenotazioneAsporto[]> {
+  return api
+    .get<PrenotazioneAsporto[]>(PRENOTAZIONI_ASPORTO_PATH, { params: { cliente_id: clienteId } })
+    .then((response) => response.data);
+}
+
+// PATCH /v1/prenotazioni/asporto/{id}/
+export function updatePrenotazioneAsporto(
+  id: string,
+  payload: UpdatePrenotazioneAsportoPayload
+): Promise<PrenotazioneAsporto> {
+  return api
+    .patch<PrenotazioneAsporto>(`${PRENOTAZIONI_ASPORTO_PATH}${id}/`, payload)
+    .then((response) => response.data);
+}
+
+// GET /v1/prenotazioni/asporto/{id}/scarica_ricevuta/ — pubblico, bloccato solo per CANCELLED.
+// Stesso identico pattern di getBigliettoUrl (piscina).
+export function getRicevutaUrl(prenotazioneId: string): string {
+  return `${API_BASE_URL}${PRENOTAZIONI_ASPORTO_PATH}${prenotazioneId}/scarica_ricevuta/`;
+}
+
+// GET /v1/prenotazioni/asporto/storico_telefono/?telefono=... — pubblico, stesso identico
+// pattern/scopo di getStoricoPiscinaPerTelefono (sopra).
+export function getStoricoAsportoPerTelefono(telefono: string): Promise<PrenotazioneAsporto[]> {
+  return api
+    .get<PrenotazioneAsporto[]>(`${PRENOTAZIONI_ASPORTO_PATH}storico_telefono/`, { params: { telefono } })
+    .then((response) => response.data);
+}
+
+// PrenotazioneAsporto + le sue VoceOrdine annidate — solo l'azione 'dettaglio_pubblico' le
+// espone (unico punto public-safe: VoceOrdineViewSet.list() resta IsAuthenticated).
+export type PrenotazioneAsportoDettaglio = PrenotazioneAsporto & { voci: VoceOrdine[] };
+
+// GET /v1/prenotazioni/asporto/{id}/dettaglio_pubblico/ — pubblico, stesso identico principio di
+// getDettaglioPubblicoPiscina, con in più le righe prodotto dell'ordine.
+export function getDettaglioPubblicoAsporto(id: string): Promise<PrenotazioneAsportoDettaglio> {
+  return api
+    .get<PrenotazioneAsportoDettaglio>(`${PRENOTAZIONI_ASPORTO_PATH}${id}/dettaglio_pubblico/`)
     .then((response) => response.data);
 }

@@ -7,6 +7,7 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { listPiscinaInventari } from '../../services/struttura';
+import { listProdotti } from '../../services/menu';
 
 type ServizioCliente = {
   key: string;
@@ -19,7 +20,7 @@ type ServizioCliente = {
   route?: Href;
 };
 
-function buildServizi(isPiscinaDisponibile: boolean): ServizioCliente[] {
+function buildServizi(isPiscinaDisponibile: boolean, isAsportoDisponibile: boolean): ServizioCliente[] {
   return [
     {
       key: 'PISCINA',
@@ -46,9 +47,11 @@ function buildServizi(isPiscinaDisponibile: boolean): ServizioCliente[] {
       icon: '🥡',
       label: 'Asporto',
       descrizione: 'Ordina da asporto',
-      disponibile: false,
-      badgeLabel: 'In arrivo',
-      messaggioNonDisponibile: "Asporto sarà disponibile a breve in quest'area.",
+      disponibile: isAsportoDisponibile,
+      badgeLabel: 'Non disponibile',
+      messaggioNonDisponibile:
+        'Al momento non ci sono prodotti disponibili per l\'asporto. Riprova più tardi.',
+      route: '/cliente/asporto',
     },
     {
       key: 'PADEL',
@@ -146,14 +149,18 @@ function ServizioCard({ servizio }: Readonly<{ servizio: ServizioCliente }>) {
 
 export function ServiziClienteSection() {
   const [isPiscinaDisponibile, setIsPiscinaDisponibile] = useState(false);
+  const [isAsportoDisponibile, setIsAsportoDisponibile] = useState(false);
 
   useEffect(() => {
     listPiscinaInventari()
       .then((items) => setIsPiscinaDisponibile(items.some((item) => item.isActive)))
       .catch(() => setIsPiscinaDisponibile(false));
+    listProdotti()
+      .then((items) => setIsAsportoDisponibile(items.some((item) => item.disponibile)))
+      .catch(() => setIsAsportoDisponibile(false));
   }, []);
 
-  const servizi = buildServizi(isPiscinaDisponibile);
+  const servizi = buildServizi(isPiscinaDisponibile, isAsportoDisponibile);
 
   return (
     <VStack space="md" className="w-full md:flex-row md:flex-wrap">

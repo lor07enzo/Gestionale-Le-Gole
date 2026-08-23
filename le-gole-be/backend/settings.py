@@ -56,14 +56,19 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    # 'cloudinary_storage' va elencata prima di 'django.contrib.staticfiles' (raccomandazione
+    # della libreria, rilevante solo se in futuro si userà anche per i file statici — qui serve
+    # solo per i file media, ma l'ordine costa nulla da rispettare).
+    'cloudinary_storage',
     'django.contrib.staticfiles',
+    'cloudinary',
     'corsheaders',
     'django_filters',
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'anymail',
-    # 'menu',
+    'menu',
     'prenotazioni',
     'struttura',
     'users',
@@ -189,6 +194,23 @@ ANYMAIL = {
 }
 
 DEFAULT_FROM_EMAIL = "Le Gole <noreply@osterialegole.com>" # Deve corrispondere al dominio verificato su Resend
+
+# Cloudinary: storage per i file media (es. Prodotto.immagine, menu/models.py) — il filesystem di
+# Render è effimero (si svuota ad ogni deploy, sezione 12), quindi le immagini non possono vivere
+# lì. Credenziali sempre da env, mai hardcoded (stesso principio di RESEND_API_KEY sopra).
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': env.str('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY': env.str('CLOUDINARY_API_KEY'),
+    'API_SECRET': env.str('CLOUDINARY_API_SECRET'),
+}
+STORAGES = {
+    'default': {
+        'BACKEND': 'cloudinary_storage.storage.MediaCloudinaryStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+    },
+}
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/

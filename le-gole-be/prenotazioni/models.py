@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from django.db import models
 from users.models import Cliente
 from struttura.models import PiscinaInventario, Postazione
@@ -49,6 +50,28 @@ class PrenotazionePiscina(Prenotazione):
 
     def __str__(self):
         return f"Piscina - {self.cliente_id.nome} del {self.data}"
+
+
+class PrenotazioneAsporto(Prenotazione):
+    """
+    Ordine da ritirare in loco: `ora` (ereditato da Prenotazione) è l'orario di ritiro previsto,
+    stesso riuso già fatto per PrenotazionePiscina.ora come orario di arrivo. Le righe d'ordine
+    vivono in menu.VoceOrdine (FK verso questo modello, related_name='voci') — nessun totale
+    persistito qui: si ricava sempre sommando le VoceOrdine collegate (stesso principio per cui
+    il totale stimato lato piscina non viene mai salvato lato backend, sezione 7).
+    """
+    creata_da_staff = models.BooleanField(default=False, verbose_name="Creato dallo staff")
+
+    class Meta:
+        verbose_name = "Prenotazione Asporto"
+        verbose_name_plural = "Prenotazioni Asporto"
+
+    def __str__(self):
+        return f"Asporto - {self.cliente_id.nome} del {self.data}"
+
+    @property
+    def totale(self):
+        return sum((voce.subtotale for voce in self.voci.all()), Decimal('0.00'))
 
 
 class GiornoPienoPiscina(models.Model):

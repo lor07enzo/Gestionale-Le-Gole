@@ -4,6 +4,7 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { PiscinaInventarioSection } from '../../src/components/staff/PiscinaInventarioSection';
+import { MenuAsportoLinkCard } from '../../src/components/staff/MenuAsportoLinkCard';
 import { StaffManagementSection } from '../../src/components/staff/StaffManagementSection';
 
 function saluto(): string {
@@ -32,11 +33,12 @@ export default function StaffHomeScreen() {
             {saluto()}, {user.username}
           </Heading>
           <Text size="sm" className="text-muted-foreground">
-            Gestisci qui i listini piscina e le postazioni giornaliere.
+            Gestisci qui i listini piscina, le postazioni giornaliere e il menu asporto.
           </Text>
         </VStack>
 
         <PiscinaInventarioSection />
+        <MenuAsportoLinkCard />
         <StaffManagementSection />
       </VStack>
     </ScrollView>

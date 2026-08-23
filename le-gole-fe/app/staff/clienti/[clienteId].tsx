@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Platform, Pressable, ScrollView } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Box } from '@/components/ui/box';
@@ -17,14 +17,27 @@ import {
   ActionsheetDragIndicatorWrapper,
   ActionsheetScrollView,
 } from '@/components/ui/actionsheet';
-import { ArrowLeftIcon, EditIcon, Icon, PhoneIcon, SlashIcon } from '@/components/ui/icon';
+import {
+  ArrowLeftIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  EditIcon,
+  Icon,
+  PhoneIcon,
+  SlashIcon,
+} from '@/components/ui/icon';
 import { getCliente, type Cliente } from '../../../src/services/clienti';
 import {
+  listPrenotazioniAsportoByCliente,
   listPrenotazioniPiscinaByCliente,
+  updatePrenotazioneAsporto,
   updatePrenotazionePiscina,
+  type PrenotazioneAsporto,
   type PrenotazionePiscina,
 } from '../../../src/services/prenotazioni';
 import { getPiscinaInventario, type PiscinaInventario } from '../../../src/services/struttura';
+import { listVociOrdine, type VoceOrdine } from '../../../src/services/menu';
 import { goBackOr } from '../../../src/utils/navigation';
 import {
   formatDateDDMMYYYY,
@@ -38,6 +51,11 @@ import {
   validateOrarioIngressoRidotto,
 } from '../../../src/utils/piscinaMappa';
 import { EMPTY_EDIT_PRENOTAZIONE_FORM, type EditPrenotazioneFormState } from '../../../src/types/piscinaMappa';
+import {
+  EditOrdineSheet,
+  extractErrorMessage,
+  OrdineRow,
+} from '../../../src/components/staff/asporto/OrdineAsportoUI';
 
 function ClienteDetailHeader({ nome }: Readonly<{ nome: string | undefined }>) {
   return (
@@ -52,7 +70,7 @@ function ClienteDetailHeader({ nome }: Readonly<{ nome: string | undefined }>) {
       <VStack className="flex-1">
         <Heading size="xl">{nome ?? 'Scheda cliente'}</Heading>
         <Text size="sm" className="text-muted-foreground">
-          Anagrafica e storico prenotazioni
+          Anagrafica, storico piscina e asporto
         </Text>
       </VStack>
     </HStack>
@@ -64,13 +82,11 @@ function isPrenotazionePassata(p: PrenotazionePiscina): boolean {
   return p.data < toISODate(new Date());
 }
 
-function extractErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: unknown } })?.response?.data;
-  if (detail && typeof detail === 'object') {
-    const message = Object.values(detail as Record<string, unknown>).flat().join(' ');
-    if (message) return message;
-  }
-  return fallback;
+// Stesso principio, per un ordine asporto — la data dell'ordine, non una data selezionata: lo
+// storico qui copre giorni diversi, a differenza di "Storico Ordini" (app/staff/asporto/ordini.tsx)
+// che mostra un solo giorno alla volta.
+function isOrdineAsportoPassato(o: PrenotazioneAsporto): boolean {
+  return o.data < toISODate(new Date());
 }
 
 function PrenotazioneRow({
@@ -78,11 +94,15 @@ function PrenotazioneRow({
   onEdit,
   onCancel,
   isCancelling,
+  showActions = true,
 }: Readonly<{
   prenotazione: PrenotazionePiscina;
   onEdit: (p: PrenotazionePiscina) => void;
   onCancel: (p: PrenotazionePiscina) => void;
   isCancelling: boolean;
+  // Nasconde pulsanti/didascalia — usato dalle righe dello "Storico" raggruppato (mai azionabili
+  // per definizione), stesso principio di `OrdineRow.showActions` (OrdineAsportoUI.tsx).
+  showActions?: boolean;
 }>) {
   const passata = isPrenotazionePassata(p);
   const modificabile = p.stato !== 'CANCELLED' && !passata;
@@ -122,7 +142,7 @@ function PrenotazioneRow({
           </Text>
         </Box>
 
-        {p.stato !== 'CANCELLED' ? (
+        {showActions && p.stato !== 'CANCELLED' ? (
           <VStack space="xs">
             {passata ? (
               <Text size="2xs" className="text-muted-foreground">
@@ -161,6 +181,60 @@ function PrenotazioneRow({
         ) : null}
       </VStack>
     </Box>
+  );
+}
+
+// Riquadro tratteggiato "nessun dato affatto" — usato solo quando una categoria (piscina/asporto)
+// non ha alcuno storico, mai quando esiste storico ma è vuota solo una delle due sotto-sezioni
+// (in quel caso basta un testo attenuato, sotto: un intero riquadro sarebbe sproporzionato).
+function EmptyState({ icon, text }: Readonly<{ icon: string; text: string }>) {
+  return (
+    <VStack space="sm" className="items-center rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-5 py-8">
+      <Text size="lg">{icon}</Text>
+      <Text size="sm" className="text-center text-muted-foreground">
+        {text}
+      </Text>
+    </VStack>
+  );
+}
+
+// Pulsante a pillola statistica, usato sia per mostrare un conteggio a colpo d'occhio sia come
+// selettore di tab (piscina/asporto) — unisce le due funzioni invece di un riepilogo testuale
+// separato da un segmented control muto, per non far leggere due volte la stessa informazione.
+function TabStatCard({
+  icona,
+  etichetta,
+  totale,
+  sottotitolo,
+  isActive,
+  onPress,
+}: Readonly<{
+  icona: string;
+  etichetta: string;
+  totale: number;
+  sottotitolo: string;
+  isActive: boolean;
+  onPress: () => void;
+}>) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Mostra storico ${etichetta}`}
+      className={`flex-1 rounded-2xl border-2 p-3.5 ${
+        isActive ? 'border-sky-600 bg-sky-600' : 'border-sky-100 bg-white active:bg-sky-50'
+      }`}
+    >
+      <Text size="xs" className={`font-semibold ${isActive ? 'text-sky-100' : 'text-sky-700'}`}>
+        {icona} {etichetta}
+      </Text>
+      <Text size="2xl" className={`font-extrabold ${isActive ? 'text-white' : 'text-sky-900'}`}>
+        {totale}
+      </Text>
+      <Text size="2xs" className={isActive ? 'text-sky-100' : 'text-muted-foreground'}>
+        {sottotitolo}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -439,6 +513,26 @@ export default function ClienteDetailScreen() {
   const [editingPrenotazione, setEditingPrenotazione] = useState<PrenotazionePiscina | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
+  // Storico ordini asporto — stesso trattamento dello storico piscina sopra, con in più le righe
+  // prodotto (VoceOrdine) caricate eagerly per ogni ordine (stesso principio già in vigore in
+  // "Storico Ordini", app/staff/asporto/ordini.tsx: pochi ordini per cliente, vederne subito il
+  // contenuto vale più di un ulteriore tap per espanderli).
+  const [ordiniAsporto, setOrdiniAsporto] = useState<PrenotazioneAsporto[]>([]);
+  const [vociByOrdine, setVociByOrdine] = useState<Record<string, VoceOrdine[]>>({});
+  const [editingOrdine, setEditingOrdine] = useState<PrenotazioneAsporto | null>(null);
+  const [cancellingOrdineId, setCancellingOrdineId] = useState<string | null>(null);
+  const [confirmingOrdineId, setConfirmingOrdineId] = useState<string | null>(null);
+
+  // Un tab alla volta invece di due lunghe liste sempre entrambe in vista — la pagina era
+  // segnalata come "poco intuitiva" perché piscina e asporto scorrevano una dopo l'altra senza
+  // alcuna gerarchia: ora le due card statistiche sotto fungono anche da selettore. Ogni sezione
+  // è a sua volta divisa in "In programma" (oggi/futuro, non cancellata — ciò che allo staff serve
+  // davvero) e "Storico" (passato o cancellato, mai azionabile), quest'ultima ripiegata di default
+  // per non affollare la pagina con card intere fatte solo di pulsanti disabilitati.
+  const [activeTab, setActiveTab] = useState<'PISCINA' | 'ASPORTO'>('PISCINA');
+  const [piscinaStoricoOpen, setPiscinaStoricoOpen] = useState(false);
+  const [asportoStoricoOpen, setAsportoStoricoOpen] = useState(false);
+
   useEffect(() => {
     if (!clienteId) return;
 
@@ -446,8 +540,12 @@ export default function ClienteDetailScreen() {
     setIsLoading(true);
     setError(null);
 
-    Promise.all([getCliente(clienteId), listPrenotazioniPiscinaByCliente(clienteId)])
-      .then(([clienteData, prenotazioniData]) => {
+    Promise.all([
+      getCliente(clienteId),
+      listPrenotazioniPiscinaByCliente(clienteId),
+      listPrenotazioniAsportoByCliente(clienteId),
+    ])
+      .then(async ([clienteData, prenotazioniData, ordiniData]) => {
         if (cancelled) return;
         setCliente(clienteData);
         // Storico più recente per primo: confronto lessicografico su "YYYY-MM-DD"/"HH:MM:SS",
@@ -458,6 +556,16 @@ export default function ClienteDetailScreen() {
             return b.ora.localeCompare(a.ora);
           })
         );
+        const ordiniOrdinati = [...ordiniData].sort((a, b) => {
+          if (a.data !== b.data) return b.data.localeCompare(a.data);
+          return b.ora.localeCompare(a.ora);
+        });
+        setOrdiniAsporto(ordiniOrdinati);
+        const entries = await Promise.all(
+          ordiniOrdinati.map((o) => listVociOrdine({ prenotazione: o.id }).then((voci) => [o.id, voci] as const))
+        );
+        if (cancelled) return;
+        setVociByOrdine(Object.fromEntries(entries));
       })
       .catch(() => {
         if (!cancelled) setError('Impossibile caricare la scheda cliente. Riprova.');
@@ -516,6 +624,106 @@ export default function ClienteDetailScreen() {
     ]);
   };
 
+  // Editabilità calcolata per singolo ordine (data propria), non per una data selezionata unica —
+  // a differenza di "Storico Ordini" (un solo giorno alla volta), qui lo storico copre più giorni.
+  const openEditOrdine = (o: PrenotazioneAsporto) => {
+    if (isOrdineAsportoPassato(o) || o.stato === 'CANCELLED') return;
+    setEditingOrdine(o);
+  };
+
+  const handleOrdineSaved = (updated: PrenotazioneAsporto) => {
+    setOrdiniAsporto((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+    setEditingOrdine(null);
+  };
+
+  const handleVociChange = (prenotazioneId: string, next: VoceOrdine[]) => {
+    setVociByOrdine((prev) => ({ ...prev, [prenotazioneId]: next }));
+  };
+
+  const handleConfirmOrdine = async (o: PrenotazioneAsporto) => {
+    if (isOrdineAsportoPassato(o)) return;
+    setConfirmingOrdineId(o.id);
+    try {
+      const updated = await updatePrenotazioneAsporto(o.id, { stato: 'CONFIRMED' });
+      setOrdiniAsporto((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      const message = extractErrorMessage(err, "Impossibile confermare l'ordine. Riprova.");
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Errore', message);
+      }
+    } finally {
+      setConfirmingOrdineId(null);
+    }
+  };
+
+  const handleCancelOrdine = (o: PrenotazioneAsporto) => {
+    if (isOrdineAsportoPassato(o) || o.stato === 'CANCELLED') return;
+    const message = `L'ordine del ${formatDateDDMMYYYY(o.data)} verrà annullato. Resterà comunque visibile qui come cancellato.`;
+
+    const doCancel = async () => {
+      setCancellingOrdineId(o.id);
+      try {
+        const updated = await updatePrenotazioneAsporto(o.id, { stato: 'CANCELLED' });
+        setOrdiniAsporto((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      } catch (err) {
+        const message2 = extractErrorMessage(err, "Impossibile annullare l'ordine. Riprova.");
+        if (Platform.OS === 'web') {
+          window.alert(message2);
+        } else {
+          Alert.alert('Errore', message2);
+        }
+      } finally {
+        setCancellingOrdineId(null);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        doCancel();
+      }
+      return;
+    }
+    Alert.alert('Annullare ordine?', message, [
+      { text: 'No', style: 'cancel' },
+      { text: 'Annulla ordine', style: 'destructive', onPress: doCancel },
+    ]);
+  };
+
+  // "In programma" = oggi/futuro e non cancellata: l'unico sottoinsieme davvero azionabile.
+  // "Storico" = tutto il resto (passata, oppure cancellata a prescindere dalla data) — mai
+  // azionabile, coerente con `PrenotazioneRow`/`OrdineRow` che nascondono comunque i pulsanti per
+  // `CANCELLED` e li disabilitano per il passato: qui la distinzione guida solo il raggruppamento
+  // visivo, la logica di editabilità resta interamente in `openEdit`/`openEditOrdine` (invariata).
+  const oggiISO = toISODate(new Date());
+
+  const prenotazioniProssime = useMemo(
+    () =>
+      prenotazioni
+        .filter((p) => p.stato !== 'CANCELLED' && p.data >= oggiISO)
+        .sort((a, b) => (a.data !== b.data ? a.data.localeCompare(b.data) : a.ora.localeCompare(b.ora))),
+    [prenotazioni, oggiISO]
+  );
+  const prenotazioniStoriche = useMemo(
+    // `prenotazioni` è già ordinata per data/ora decrescente (fetch iniziale) — un filtro basta,
+    // nessun secondo sort necessario.
+    () => prenotazioni.filter((p) => p.stato === 'CANCELLED' || p.data < oggiISO),
+    [prenotazioni, oggiISO]
+  );
+
+  const ordiniProssimi = useMemo(
+    () =>
+      ordiniAsporto
+        .filter((o) => o.stato !== 'CANCELLED' && o.data >= oggiISO)
+        .sort((a, b) => (a.data !== b.data ? a.data.localeCompare(b.data) : a.ora.localeCompare(b.ora))),
+    [ordiniAsporto, oggiISO]
+  );
+  const ordiniStorici = useMemo(
+    () => ordiniAsporto.filter((o) => o.stato === 'CANCELLED' || o.data < oggiISO),
+    [ordiniAsporto, oggiISO]
+  );
+
   if (!clienteId || isLoading) {
     return (
       <Box className="flex-1 items-center justify-center bg-background">
@@ -536,55 +744,204 @@ export default function ClienteDetailScreen() {
         ) : null}
 
         {cliente ? (
-          <Box className="w-full rounded-xl border border-sky-100 bg-white p-4 shadow-sm">
-            <Pressable
-              onPress={() => Linking.openURL(`tel:${cliente.telefono}`).catch(() => {})}
-              accessibilityRole="link"
-              accessibilityLabel={`Chiama ${cliente.telefono}`}
-            >
-              <HStack space="xs" className="items-center">
-                <Icon as={PhoneIcon} size="sm" className="text-sky-600" />
-                <Text size="md" className="font-medium text-sky-700">
-                  {cliente.telefono}
-                </Text>
+          // Affordance di click esplicita (2026-08-21) — stesso identico linguaggio già collaudato
+          // per le card piscina cliccabili (sezione 7, "Prenota ora" + freccia su sfondo
+          // sky-500/20): prima l'unico indizio che l'intera riga aprisse il tastierino del
+          // telefono era il colore del testo, facilmente scambiato per un dettaglio decorativo.
+          // Ora l'intera card è il `Pressable` (bordo più marcato + ombra, `active:opacity-80` per
+          // un feedback immediato al tocco) e una pillola "Chiama" con freccia, sullo stesso sfondo
+          // azzurro delle altre CTA dell'app, rende esplicita l'azione invece di lasciarla implicita.
+          <Pressable
+            onPress={() => Linking.openURL(`tel:${cliente.telefono}`).catch(() => {})}
+            accessibilityRole="link"
+            accessibilityLabel={`Chiama ${cliente.telefono}`}
+            className="active:opacity-80"
+          >
+            <Box className="w-full rounded-xl border-2 border-sky-200 bg-white p-4 shadow-sm">
+              <HStack className="items-center justify-between">
+                <HStack space="xs" className="items-center">
+                  <Icon as={PhoneIcon} size="sm" className="text-sky-600" />
+                  <Text size="md" className="font-medium text-sky-900">
+                    {cliente.telefono}
+                  </Text>
+                </HStack>
+                <HStack space="xs" className="items-center rounded-full bg-sky-500/15 px-3 py-1.5">
+                  <Text size="xs" className="font-bold text-sky-700">
+                    Chiama
+                  </Text>
+                  <Icon as={ChevronRightIcon} size="xs" className="text-sky-700" />
+                </HStack>
               </HStack>
-            </Pressable>
-          </Box>
+            </Box>
+          </Pressable>
         ) : null}
 
-        <VStack space="sm" className="w-full">
-          <HStack className="items-center justify-between">
-            <Heading size="md">Storico prenotazioni</Heading>
-            <Text size="xs" className="text-muted-foreground">
-              {prenotazioni.length} {prenotazioni.length === 1 ? 'prenotazione' : 'prenotazioni'}
-            </Text>
-          </HStack>
+        <HStack space="sm" className="w-full">
+          <TabStatCard
+            icona="🏊"
+            etichetta="Piscina"
+            totale={prenotazioni.length}
+            sottotitolo={prenotazioniProssime.length > 0 ? `${prenotazioniProssime.length} in programma` : 'Nessuna in programma'}
+            isActive={activeTab === 'PISCINA'}
+            onPress={() => setActiveTab('PISCINA')}
+          />
+          <TabStatCard
+            icona="🥡"
+            etichetta="Asporto"
+            totale={ordiniAsporto.length}
+            sottotitolo={ordiniProssimi.length > 0 ? `${ordiniProssimi.length} in programma` : 'Nessuna in programma'}
+            isActive={activeTab === 'ASPORTO'}
+            onPress={() => setActiveTab('ASPORTO')}
+          />
+        </HStack>
 
-          {prenotazioni.length === 0 ? (
-            <VStack space="sm" className="items-center rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-5 py-8">
-              <Text size="lg">📭</Text>
-              <Text size="sm" className="text-center text-muted-foreground">
-                Nessuna prenotazione registrata per questo cliente.
-              </Text>
-            </VStack>
-          ) : (
-            prenotazioni.map((p) => (
-              <PrenotazioneRow
-                key={p.id}
-                prenotazione={p}
-                onEdit={openEdit}
-                onCancel={handleCancel}
-                isCancelling={cancellingId === p.id}
-              />
-            ))
-          )}
-        </VStack>
+        {activeTab === 'PISCINA' ? (
+          <VStack space="md" className="w-full">
+            {prenotazioni.length === 0 ? (
+              <EmptyState icon="📭" text="Nessuna prenotazione registrata per questo cliente." />
+            ) : (
+              <>
+                <VStack space="sm" className="w-full">
+                  <Heading size="sm">📅 In programma</Heading>
+                  {prenotazioniProssime.length === 0 ? (
+                    <Text size="sm" className="text-muted-foreground">
+                      Nessuna prenotazione in programma.
+                    </Text>
+                  ) : (
+                    prenotazioniProssime.map((p) => (
+                      <PrenotazioneRow
+                        key={p.id}
+                        prenotazione={p}
+                        onEdit={openEdit}
+                        onCancel={handleCancel}
+                        isCancelling={cancellingId === p.id}
+                      />
+                    ))
+                  )}
+                </VStack>
+
+                {prenotazioniStoriche.length > 0 ? (
+                  <VStack space="sm" className="w-full">
+                    <Pressable
+                      onPress={() => setPiscinaStoricoOpen((v) => !v)}
+                      accessibilityLabel={`${piscinaStoricoOpen ? 'Nascondi' : 'Mostra'} storico prenotazioni piscina`}
+                    >
+                      <HStack className="items-center justify-between rounded-xl border border-sky-100 bg-white px-4 py-3">
+                        <Text size="sm" className="font-semibold text-sky-900">
+                          🕘 Storico ({prenotazioniStoriche.length})
+                        </Text>
+                        <Icon
+                          as={piscinaStoricoOpen ? ChevronUpIcon : ChevronDownIcon}
+                          size="sm"
+                          className="text-sky-600"
+                        />
+                      </HStack>
+                    </Pressable>
+                    {piscinaStoricoOpen ? (
+                      <VStack space="sm">
+                        {prenotazioniStoriche.map((p) => (
+                          <PrenotazioneRow
+                            key={p.id}
+                            prenotazione={p}
+                            onEdit={openEdit}
+                            onCancel={handleCancel}
+                            isCancelling={cancellingId === p.id}
+                            showActions={false}
+                          />
+                        ))}
+                      </VStack>
+                    ) : null}
+                  </VStack>
+                ) : null}
+              </>
+            )}
+          </VStack>
+        ) : (
+          <VStack space="md" className="w-full">
+            {ordiniAsporto.length === 0 ? (
+              <EmptyState icon="🥡" text="Nessun ordine asporto registrato per questo cliente." />
+            ) : (
+              <>
+                <VStack space="sm" className="w-full">
+                  <Heading size="sm">📅 In programma</Heading>
+                  {ordiniProssimi.length === 0 ? (
+                    <Text size="sm" className="text-muted-foreground">
+                      Nessun ordine in programma.
+                    </Text>
+                  ) : (
+                    ordiniProssimi.map((o) => (
+                      <OrdineRow
+                        key={o.id}
+                        ordine={o}
+                        voci={vociByOrdine[o.id] ?? []}
+                        editable={!isOrdineAsportoPassato(o)}
+                        isCancelling={cancellingOrdineId === o.id}
+                        isConfirming={confirmingOrdineId === o.id}
+                        onEdit={openEditOrdine}
+                        onCancel={handleCancelOrdine}
+                        onConfirm={handleConfirmOrdine}
+                        showTelefono={false}
+                      />
+                    ))
+                  )}
+                </VStack>
+
+                {ordiniStorici.length > 0 ? (
+                  <VStack space="sm" className="w-full">
+                    <Pressable
+                      onPress={() => setAsportoStoricoOpen((v) => !v)}
+                      accessibilityLabel={`${asportoStoricoOpen ? 'Nascondi' : 'Mostra'} storico ordini asporto`}
+                    >
+                      <HStack className="items-center justify-between rounded-xl border border-sky-100 bg-white px-4 py-3">
+                        <Text size="sm" className="font-semibold text-sky-900">
+                          🕘 Storico ({ordiniStorici.length})
+                        </Text>
+                        <Icon
+                          as={asportoStoricoOpen ? ChevronUpIcon : ChevronDownIcon}
+                          size="sm"
+                          className="text-sky-600"
+                        />
+                      </HStack>
+                    </Pressable>
+                    {asportoStoricoOpen ? (
+                      <VStack space="sm">
+                        {ordiniStorici.map((o) => (
+                          <OrdineRow
+                            key={o.id}
+                            ordine={o}
+                            voci={vociByOrdine[o.id] ?? []}
+                            editable={!isOrdineAsportoPassato(o)}
+                            isCancelling={cancellingOrdineId === o.id}
+                            isConfirming={confirmingOrdineId === o.id}
+                            onEdit={openEditOrdine}
+                            onCancel={handleCancelOrdine}
+                            onConfirm={handleConfirmOrdine}
+                            showTelefono={false}
+                            showActions={false}
+                          />
+                        ))}
+                      </VStack>
+                    ) : null}
+                  </VStack>
+                ) : null}
+              </>
+            )}
+          </VStack>
+        )}
       </VStack>
 
       <EditStoricoSheet
         prenotazione={editingPrenotazione}
         onClose={() => setEditingPrenotazione(null)}
         onSaved={handleSaved}
+      />
+
+      <EditOrdineSheet
+        ordine={editingOrdine}
+        voci={editingOrdine ? vociByOrdine[editingOrdine.id] ?? [] : []}
+        onClose={() => setEditingOrdine(null)}
+        onSaved={handleOrdineSaved}
+        onVociChange={handleVociChange}
       />
     </ScrollView>
   );

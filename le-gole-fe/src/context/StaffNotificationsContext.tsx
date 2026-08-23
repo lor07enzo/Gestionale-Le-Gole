@@ -8,8 +8,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { listPrenotazioniRecenti } from '../services/prenotazioni';
-import type { PrenotazionePiscina } from '../services/prenotazioni';
+import { listPrenotazioniAsportoRecenti, listPrenotazioniRecenti } from '../services/prenotazioni';
+import type { PrenotazioneAsporto, PrenotazionePiscina } from '../services/prenotazioni';
 import { getNotificheLetteIds, saveNotificheLetteIds } from '../utils/storage';
 
 // Polling, non websocket/push: il backend è WSGI, senza infrastruttura realtime.
@@ -17,10 +17,19 @@ const POLL_INTERVAL_MS = 20000;
 const BANNER_DURATION_MS = 6000;
 const RECENTI_LIMIT = 50;
 
+// Union discriminata: piscina e asporto sono le sole due categorie con dati reali per ora
+// (Sala/Padel restano "in arrivo" solo in UI, NotificationsBell) — ogni notifica porta con sé
+// la propria prenotazione tipizzata, così il resto del codice può fare narrowing su `categoria`
+// senza cast.
+export type NotificaPiscina = { categoria: 'PISCINA'; prenotazione: PrenotazionePiscina };
+export type NotificaAsporto = { categoria: 'ASPORTO'; prenotazione: PrenotazioneAsporto };
+export type Notifica = NotificaPiscina | NotificaAsporto;
+
 type StaffNotificationsContextValue = {
-  // Prenotazioni piscina più recenti (tranne CANCELLED), più recenti prima. Unica categoria con
-  // dati reali per ora: il filtro categoria vive nella UI (NotificationsBell).
-  notifiche: PrenotazionePiscina[];
+  // Prenotazioni piscina + ordini asporto più recenti (tranne CANCELLED e creata_da_staff),
+  // unite e ordinate per data di creazione decrescente — il filtro per categoria vive nella UI
+  // (NotificationsBell), qui la lista è già "tutto insieme".
+  notifiche: Notifica[];
   unreadCount: number;
   isLoading: boolean;
   error: string | null;
@@ -34,7 +43,7 @@ type StaffNotificationsContextValue = {
 const StaffNotificationsContext = createContext<StaffNotificationsContextValue | undefined>(undefined);
 
 export function StaffNotificationsProvider({ children }: { children: ReactNode }) {
-  const [notifiche, setNotifiche] = useState<PrenotazionePiscina[]>([]);
+  const [notifiche, setNotifiche] = useState<Notifica[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
@@ -56,31 +65,53 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
   }, []);
 
   const poll = useCallback(async () => {
-    try {
-      const risultato = await listPrenotazioniRecenti(RECENTI_LIMIT);
-      const ordinati = [...risultato].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    // Promise.allSettled, non Promise.all: le due categorie sono indipendenti, un fallimento
+    // dell'una (es. l'azione asporto non ancora raggiungibile) non deve azzerare anche l'altra —
+    // stesso principio "best effort" già usato altrove nel progetto per richieste indipendenti.
+    const [piscinaResult, asportoResult] = await Promise.allSettled([
+      listPrenotazioniRecenti(RECENTI_LIMIT),
+      listPrenotazioniAsportoRecenti(RECENTI_LIMIT),
+    ]);
 
-      if (knownIdsRef.current) {
-        const nuove = ordinati.filter((p) => !knownIdsRef.current!.has(p.id));
-        if (nuove.length > 0) {
-          setBanner(
-            nuove.length === 1
-              ? `Nuova prenotazione da ${nuove[0].cliente_nome}`
-              : `${nuove.length} nuove prenotazioni ricevute`
-          );
-          if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
-          bannerTimeoutRef.current = setTimeout(() => setBanner(null), BANNER_DURATION_MS);
-        }
+    const piscina: Notifica[] =
+      piscinaResult.status === 'fulfilled'
+        ? piscinaResult.value.map((prenotazione) => ({ categoria: 'PISCINA' as const, prenotazione }))
+        : [];
+    const asporto: Notifica[] =
+      asportoResult.status === 'fulfilled'
+        ? asportoResult.value.map((prenotazione) => ({ categoria: 'ASPORTO' as const, prenotazione }))
+        : [];
+
+    const ordinate = [...piscina, ...asporto].sort((a, b) =>
+      a.prenotazione.created_at < b.prenotazione.created_at ? 1 : -1
+    );
+
+    if (knownIdsRef.current) {
+      const nuove = ordinate.filter((n) => !knownIdsRef.current!.has(n.prenotazione.id));
+      if (nuove.length > 0) {
+        const prima = nuove[0];
+        setBanner(
+          nuove.length === 1
+            ? prima.categoria === 'PISCINA'
+              ? `Nuova prenotazione da ${prima.prenotazione.cliente_nome}`
+              : `Nuovo ordine asporto da ${prima.prenotazione.cliente_nome}`
+            : `${nuove.length} nuove notifiche ricevute`
+        );
+        if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+        bannerTimeoutRef.current = setTimeout(() => setBanner(null), BANNER_DURATION_MS);
       }
-      knownIdsRef.current = new Set(ordinati.map((p) => p.id));
-
-      setNotifiche(ordinati);
-      setError(null);
-    } catch {
-      setError('Impossibile controllare le nuove prenotazioni.');
-    } finally {
-      setIsLoading(false);
     }
+    knownIdsRef.current = new Set(ordinate.map((n) => n.prenotazione.id));
+
+    setNotifiche(ordinate);
+    // Un errore visibile solo se ENTRAMBE le categorie falliscono: un solo fallimento resta
+    // silenzioso (l'altra categoria continua a funzionare, coerente col resto "best effort").
+    setError(
+      piscinaResult.status === 'rejected' && asportoResult.status === 'rejected'
+        ? 'Impossibile controllare le nuove notifiche.'
+        : null
+    );
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -121,7 +152,7 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
   const isRead = useCallback((id: string) => readIds.has(id), [readIds]);
 
   const unreadCount = useMemo(
-    () => notifiche.filter((p) => !readIds.has(p.id)).length,
+    () => notifiche.filter((n) => !readIds.has(n.prenotazione.id)).length,
     [notifiche, readIds]
   );
 

@@ -1,11 +1,13 @@
 asgiref==3.12.1
 brotli==1.2.0
+cloudinary==1.46.0
 colorama==0.4.6
 coverage==7.15.2
 django-anymail==15.0
 cffi==2.1.0
 cssselect2==0.9.0
 Django==6.0.4
+django-cloudinary-storage==0.3.0
 django-cors-headers==4.9.0
 django-environ==0.14.0
 django-filter==26.1
@@ -28,6 +30,7 @@ pytest==9.1.1
 pytest-cov==7.1.0
 pytest-django==4.12.0
 Pygments==2.20.0
+six==1.17.0
 sqlparse==0.5.5
 tinycss2==1.5.1
 tinyhtml5==2.1.0

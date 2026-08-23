@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, sviluppo]
+    branches: [main]
   pull_request:
     branches: [main, sviluppo]
 
@@ -37,6 +37,10 @@ jobs:
       RESEND_API_KEY: dummy-key-not-used-in-tests
       FRONTEND_ACTIVATION_URL: legole://activate
       FRONTEND_RESET_URL: legole://reset-password
+      # Mai usate per un upload reale: conftest.py forza lo storage su filesystem locale in test.
+      CLOUDINARY_CLOUD_NAME: dummy-cloud-not-used-in-tests
+      CLOUDINARY_API_KEY: dummy-key-not-used-in-tests
+      CLOUDINARY_API_SECRET: dummy-secret-not-used-in-tests
 
     defaults:
       run:
@@ -78,6 +82,7 @@ jobs:
           coverage xml --data-file=.coverage --include="prenotazioni/*" -o coverage-prenotazioni.xml
           coverage xml --data-file=.coverage --include="struttura/*" -o coverage-struttura.xml
           coverage xml --data-file=.coverage --include="users/*" -o coverage-users.xml
+          coverage xml --data-file=.coverage --include="menu/*" -o coverage-menu.xml
 
       # <source> vuoto nei tre XML: SonarQube risolve i path relativi alla root del repo, quindi
       # senza questo step cercherebbe "prenotazioni/models.py" invece di "le-gole-be/prenotazioni/models.py".
@@ -92,6 +97,7 @@ jobs:
             le-gole-be/coverage-prenotazioni.xml
             le-gole-be/coverage-struttura.xml
             le-gole-be/coverage-users.xml
+            le-gole-be/coverage-menu.xml
 
   frontend-tests:
     name: Frontend tests (jest)

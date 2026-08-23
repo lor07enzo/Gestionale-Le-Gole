@@ -1,16 +1,20 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { StaffNotificationsProvider, useStaffNotifications } from '../StaffNotificationsContext';
 import { getNotificheLetteIds, saveNotificheLetteIds } from '../../utils/storage';
-import type { PrenotazionePiscina } from '../../services/prenotazioni';
+import type { PrenotazioneAsporto, PrenotazionePiscina } from '../../services/prenotazioni';
 
 // Mock completo del servizio: evita di eseguire services/api.ts (axios reale).
 jest.mock('../../services/prenotazioni', () => ({
   listPrenotazioniRecenti: jest.fn(),
+  listPrenotazioniAsportoRecenti: jest.fn(),
 }));
 
-import { listPrenotazioniRecenti } from '../../services/prenotazioni';
+import { listPrenotazioniAsportoRecenti, listPrenotazioniRecenti } from '../../services/prenotazioni';
 
 const mockListRecenti = listPrenotazioniRecenti as jest.MockedFunction<typeof listPrenotazioniRecenti>;
+const mockListAsportoRecenti = listPrenotazioniAsportoRecenti as jest.MockedFunction<
+  typeof listPrenotazioniAsportoRecenti
+>;
 
 function buildPrenotazione(overrides: Partial<PrenotazionePiscina> = {}): PrenotazionePiscina {
   return {
@@ -39,9 +43,31 @@ function buildPrenotazione(overrides: Partial<PrenotazionePiscina> = {}): Prenot
   };
 }
 
+function buildPrenotazioneAsporto(overrides: Partial<PrenotazioneAsporto> = {}): PrenotazioneAsporto {
+  return {
+    id: 'asporto-default',
+    cliente_id: 'cliente-2',
+    cliente_nome: 'Luca Bianchi',
+    cliente_telefono: '3331111111',
+    note: '',
+    data: '2026-08-10',
+    ora: '19:30:00',
+    stato: 'CONFIRMED',
+    creata_da_staff: false,
+    totale: '12.50',
+    created_at: '2026-08-10T09:00:00.000Z',
+    updated_at: '2026-08-10T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   localStorage.clear();
   mockListRecenti.mockReset();
+  mockListAsportoRecenti.mockReset();
+  // Default: nessun ordine asporto — la maggior parte dei test riguarda solo la piscina, evita
+  // di doverlo ripetere ovunque; i test dedicati all'asporto lo sovrascrivono esplicitamente.
+  mockListAsportoRecenti.mockResolvedValue([]);
 });
 
 describe('StaffNotificationsProvider', () => {
@@ -56,18 +82,6 @@ describe('StaffNotificationsProvider', () => {
     expect(result.current.notifiche).toHaveLength(1);
     expect(result.current.unreadCount).toBe(1);
     expect(result.current.error).toBeNull();
-  });
-
-  it('imposta un messaggio di errore se il polling fallisce, senza rompere il resto dello stato', async () => {
-    mockListRecenti.mockRejectedValue(new Error('network error'));
-
-    const { result } = await renderHook(() => useStaffNotifications(), {
-      wrapper: StaffNotificationsProvider,
-    });
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.error).toMatch(/Impossibile controllare/);
-    expect(result.current.notifiche).toEqual([]);
   });
 
   it('markAsRead rimuove la notifica dal conteggio non letto e persiste la lettura', async () => {
@@ -158,5 +172,52 @@ describe('StaffNotificationsProvider', () => {
     await waitFor(async () => {
       expect(await getNotificheLetteIds()).toEqual(['a']);
     });
+  });
+
+  it('unisce piscina e asporto in un unico elenco ordinato per data di creazione decrescente', async () => {
+    mockListRecenti.mockResolvedValue([
+      buildPrenotazione({ id: 'p-vecchia', created_at: '2026-08-10T08:00:00.000Z' }),
+    ]);
+    mockListAsportoRecenti.mockResolvedValue([
+      buildPrenotazioneAsporto({ id: 'a-nuova', created_at: '2026-08-10T10:00:00.000Z' }),
+    ]);
+
+    const { result } = await renderHook(() => useStaffNotifications(), {
+      wrapper: StaffNotificationsProvider,
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.notifiche).toHaveLength(2);
+    expect(result.current.notifiche.map((n) => n.prenotazione.id)).toEqual(['a-nuova', 'p-vecchia']);
+    expect(result.current.notifiche[0].categoria).toBe('ASPORTO');
+    expect(result.current.notifiche[1].categoria).toBe('PISCINA');
+    expect(result.current.unreadCount).toBe(2);
+  });
+
+  it('un fallimento di una sola categoria non azzera l\'altra né imposta un errore globale', async () => {
+    mockListRecenti.mockResolvedValue([buildPrenotazione({ id: 'p-1' })]);
+    mockListAsportoRecenti.mockRejectedValue(new Error('network error'));
+
+    const { result } = await renderHook(() => useStaffNotifications(), {
+      wrapper: StaffNotificationsProvider,
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.notifiche).toHaveLength(1);
+    expect(result.current.notifiche[0].categoria).toBe('PISCINA');
+    expect(result.current.error).toBeNull();
+  });
+
+  it('imposta un errore globale solo se entrambe le categorie falliscono', async () => {
+    mockListRecenti.mockRejectedValue(new Error('network error'));
+    mockListAsportoRecenti.mockRejectedValue(new Error('network error'));
+
+    const { result } = await renderHook(() => useStaffNotifications(), {
+      wrapper: StaffNotificationsProvider,
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.notifiche).toEqual([]);
+    expect(result.current.error).toMatch(/Impossibile controllare/);
   });
 });

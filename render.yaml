@@ -44,6 +44,13 @@ services:
         value: "2"
       - key: RESEND_API_KEY
         sync: false
+      # Credenziali Cloudinary (storage foto prodotti, sezione 1) — dashboard Cloudinary, mai salvate qui.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
       # Da impostare manualmente su https://osterialegole.com/activate e /reset-password.
       - key: FRONTEND_ACTIVATION_URL
         sync: false

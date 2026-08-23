@@ -30,7 +30,7 @@ import {
 } from '../../services/struttura';
 import { formatOrarioInput } from '../../utils/piscinaMappa';
 
-type TipoInventario = 'PISCINA' | 'ASPORTO' | 'SALA' | 'PADEL';
+type TipoInventario = 'PISCINA' | 'SALA' | 'PADEL';
 
 const TIPO_INVENTARIO_OPTIONS: Array<{
   tipo: TipoInventario;
@@ -40,7 +40,6 @@ const TIPO_INVENTARIO_OPTIONS: Array<{
   disponibile: boolean;
 }> = [
   { tipo: 'PISCINA', icon: '🏊', label: 'Piscina', descrizione: 'Listino, ombrelloni, gazebi, lettini e sdraie', disponibile: true },
-  { tipo: 'ASPORTO', icon: '🥡', label: 'Asporto', descrizione: 'In arrivo', disponibile: false },
   { tipo: 'SALA', icon: '🍽️', label: 'Sala', descrizione: 'In arrivo', disponibile: false },
   { tipo: 'PADEL', icon: '🎾', label: 'Padel', descrizione: 'In arrivo', disponibile: false },
 ];

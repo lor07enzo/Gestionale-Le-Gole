@@ -2,6 +2,8 @@ import pytest
 from django.urls import reverse
 from rest_framework import status
 
+from users.test.factories import ClienteFactory
+
 from .factories import GiornoPienoPiscinaFactory, PrenotazionePiscinaFactory
 
 pytestmark = pytest.mark.django_db
@@ -121,6 +123,91 @@ class TestRecenti:
 
         ids = [row["id"] for row in response.data]
         assert ids == [str(self_service.pk)]
+
+
+class TestStoricoTelefono:
+    def test_richiede_il_parametro_telefono(self, api_client):
+        response = api_client.get(reverse("prenotazione-piscina-storico-telefono"))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_pubblico_e_match_esatto_sul_telefono(self, api_client, inventario):
+        cliente = ClienteFactory(telefono="3331112222")
+        altro_cliente = ClienteFactory(telefono="3339998888")
+        propria = PrenotazionePiscinaFactory(inventario=inventario, cliente_id=cliente, data="2026-08-01")
+        PrenotazionePiscinaFactory(inventario=inventario, cliente_id=altro_cliente, data="2026-08-02")
+
+        response = api_client.get(
+            reverse("prenotazione-piscina-storico-telefono"), {"telefono": "3331112222"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = [row["id"] for row in response.data]
+        assert ids == [str(propria.pk)]
+
+    def test_nessun_match_restituisce_lista_vuota(self, api_client):
+        response = api_client.get(
+            reverse("prenotazione-piscina-storico-telefono"), {"telefono": "0000000000"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+
+    def test_include_anche_le_cancellate(self, api_client, inventario):
+        # A differenza di 'recenti' (pannello notifiche staff), qui il cliente deve vedere anche
+        # le proprie prenotazioni annullate — è il suo storico completo, non un feed di arrivi.
+        cliente = ClienteFactory(telefono="3331112222")
+        cancellata = PrenotazionePiscinaFactory(inventario=inventario, cliente_id=cliente, stato="CANCELLED")
+
+        response = api_client.get(
+            reverse("prenotazione-piscina-storico-telefono"), {"telefono": "3331112222"}
+        )
+
+        ids = [row["id"] for row in response.data]
+        assert str(cancellata.pk) in ids
+
+    def test_ordina_per_data_decrescente(self, api_client, inventario):
+        cliente = ClienteFactory(telefono="3331112222")
+        vecchia = PrenotazionePiscinaFactory(inventario=inventario, cliente_id=cliente, data="2026-01-01")
+        recente = PrenotazionePiscinaFactory(inventario=inventario, cliente_id=cliente, data="2026-06-01")
+
+        response = api_client.get(
+            reverse("prenotazione-piscina-storico-telefono"), {"telefono": "3331112222"}
+        )
+
+        ids = [row["id"] for row in response.data]
+        assert ids == [str(recente.pk), str(vecchia.pk)]
+
+
+class TestDettaglioPubblico:
+    def test_pubblico_restituisce_il_dettaglio_completo(self, api_client, inventario):
+        cliente = ClienteFactory(telefono="3331112222", nome="Anna Dettaglio")
+        prenotazione = PrenotazionePiscinaFactory(
+            inventario=inventario, cliente_id=cliente, data="2026-08-10", ora="10:00", note="Allergia nichel"
+        )
+
+        response = api_client.get(reverse("prenotazione-piscina-dettaglio-pubblico", args=[prenotazione.pk]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["id"] == str(prenotazione.pk)
+        assert response.data["cliente_nome"] == "Anna Dettaglio"
+        assert response.data["cliente_telefono"] == "3331112222"
+        assert response.data["note"] == "Allergia nichel"
+        assert response.data["inventario_nome"] == inventario.nome
+
+    def test_pubblico_anche_per_una_prenotazione_cancellata(self, api_client, inventario):
+        # A differenza di scarica_biglietto, qui non c'è alcun blocco per stato: consultare i
+        # dettagli di una prenotazione passata/cancellata resta lecito.
+        prenotazione = PrenotazionePiscinaFactory(inventario=inventario, stato="CANCELLED")
+
+        response = api_client.get(reverse("prenotazione-piscina-dettaglio-pubblico", args=[prenotazione.pk]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["stato"] == "CANCELLED"
+
+    def test_id_inesistente_restituisce_404(self, api_client):
+        response = api_client.get(
+            reverse("prenotazione-piscina-dettaglio-pubblico", args=["00000000-0000-0000-0000-000000000000"])
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestConteggi:

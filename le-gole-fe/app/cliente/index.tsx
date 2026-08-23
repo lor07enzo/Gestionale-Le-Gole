@@ -5,6 +5,7 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { ServiziClienteSection } from '../../src/components/cliente/ServiziClienteSection';
+import { StoricoPrenotazioniSearch } from '../../src/components/cliente/StoricoPrenotazioniSearch';
 import { ClienteFooter } from '../../src/components/cliente/ClienteFooter';
 import { BackButton } from '../../src/components/cliente/BackButton';
 
@@ -85,6 +86,8 @@ export default function AreaClienteScreen() {
           </Heading>
           <ServiziClienteSection />
         </VStack>
+
+        <StoricoPrenotazioniSearch />
 
         <BackButton fallbackHref="/" />
 
