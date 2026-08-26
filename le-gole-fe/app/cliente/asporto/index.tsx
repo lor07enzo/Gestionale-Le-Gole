@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
@@ -10,11 +10,6 @@ import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { AddIcon, ClockIcon, Icon, LockIcon, PhoneIcon, RemoveIcon } from '@/components/ui/icon';
-// Caricato dinamicamente per non farlo entrare nel bundle valutato su ogni pagina, stesso
-// principio già usato dal flusso self-service piscina (sezione 14 di CLAUDE.md).
-const TimePickerModal = lazy(() =>
-  import('react-native-paper-dates').then((m) => ({ default: m.TimePickerModal }))
-);
 import { createVoceOrdine, type Prodotto } from '../../../src/services/menu';
 import { createPrenotazioneAsporto, getRicevutaUrl } from '../../../src/services/prenotazioni';
 import { createCliente } from '../../../src/services/clienti';
@@ -25,7 +20,6 @@ import { apriBigliettoPdf } from '../../../src/utils/biglietto';
 import { useCarrelloAsporto } from '../../../src/context/CarrelloAsportoContext';
 import {
   addDays,
-  computeDefaultOrario,
   formatDateDDMMYYYY,
   minutesToHHMM,
   nowHHMM,
@@ -43,6 +37,21 @@ const PIZZA_CATEGORIA_NOME = 'Pizze';
 const SOGLIA_PIZZE_ANTICIPO_ESTESO = 10;
 const ANTICIPO_MINUTI_STANDARD = 15;
 const ANTICIPO_MINUTI_ESTESO = 30;
+// Sotto questo numero di prodotti ancora prenotabili per un orario (limite globale meno quanto
+// già prenotato, sezione 1/15 di CLAUDE.md), mostriamo il conteggio residuo sotto lo slot — un
+// preavviso prima che l'orario diventi "Esaurito" del tutto, non solo quel messaggio finale.
+const SOGLIA_AVVISO_RESIDUO_ORARIO = 5;
+// Sotto questa ulteriore soglia (più stringente della precedente) il testo passa da ambra a rosa
+// — stessa scala verde/ambra/rosa già usata altrove nel progetto per la disponibilità residua
+// (es. DisponibilitaCards, piscina) applicata qui al residuo per singolo orario.
+const RESIDUO_CRITICO = 2;
+
+// Colore del testo "N rimasti" — sta FUORI dal bottone dello slot (didascalia sotto, non più un
+// badge annidato dentro il bottone stesso): non deve più adattarsi allo sfondo pieno del bottone
+// selezionato, quindi un solo colore per fascia, nessun ramo "selezionato".
+function residuoTextClassName(residuo: number): string {
+  return residuo <= RESIDUO_CRITICO ? 'text-rose-600' : 'text-amber-600';
+}
 
 type FormState = {
   nome: string;
@@ -129,6 +138,87 @@ function validateOrarioRitiro(
     return `Con questo ordine serve un anticipo di almeno ${anticipoMinimoMinuti} minuti rispetto all'ora attuale.`;
   }
   return null;
+}
+
+// Elenco di orari selezionabili ogni `stepMinuti` tra apertura e chiusura (es. 12:00, 12:15,
+// 12:30...) — sostituisce il `TimePickerModal` di `react-native-paper-dates` usato invece dalla
+// piscina (sezione 7): qui il cliente sceglie direttamente da un elenco di orari validi, senza
+// aprire una libreria/un modale esterno. `minuti <= fine` incluso: il backend accetta l'orario di
+// chiusura stesso come valido (`validateOrarioRitiro` sopra confronta con `<=`).
+function generaSlotOrario(apertura: string, chiusura: string, stepMinuti = 15): string[] {
+  const inizio = parseHHMMToMinutes(apertura);
+  const fine = parseHHMMToMinutes(chiusura);
+  if (inizio === null || fine === null) return [];
+  const slots: string[] = [];
+  for (let minuti = inizio; minuti <= fine; minuti += stepMinuti) {
+    slots.push(minutesToHHMM(minuti));
+  }
+  return slots;
+}
+
+type BloccoOrario = { ora: string; label: string; slots: string[] };
+
+// Raggruppa gli slot da 15 minuti per fascia oraria di appartenenza (es. "12:00-13:00" contiene
+// 12:00/12:15/12:30/12:45) — un tap su una fascia espande solo i suoi orari, invece di mostrare
+// fin da subito un'unica griglia lunga con ogni slot tra apertura e chiusura.
+function raggruppaSlotPerOra(slots: string[]): BloccoOrario[] {
+  const blocchi: BloccoOrario[] = [];
+  for (const slot of slots) {
+    const ora = slot.slice(0, 2);
+    const ultimo = blocchi[blocchi.length - 1];
+    if (ultimo && ultimo.ora === ora) {
+      ultimo.slots.push(slot);
+      continue;
+    }
+    const oraFine = String((Number.parseInt(ora, 10) + 1) % 24).padStart(2, '0');
+    blocchi.push({ ora, label: `${ora}:00-${oraFine}:00`, slots: [slot] });
+  }
+  return blocchi;
+}
+
+type FinestraOraria = { apertura: string; chiusura: string };
+
+// Configurazione con eventuale secondo turno (pranzo/cena) — stessa forma di `ConfigurazioneAsporto`
+// (src/services/menu.ts), ridotta ai soli campi orario per non legare questo helper puro al tipo
+// completo del servizio.
+type ConfigurazioneConTurni = {
+  orario_apertura: string;
+  orario_chiusura: string;
+  orario_apertura_2: string | null;
+  orario_chiusura_2: string | null;
+};
+
+// "Mostra un turno alla volta": la finestra attiva è la prima non ancora chiusa (chiusura > ora
+// attuale) — prima della chiusura del pranzo resta il pranzo, anche se non ancora aperto (stesso
+// comportamento "fuori orario ma consultabile" di un servizio a turno singolo); una volta chiuso
+// il pranzo lo switch avviene da solo verso la cena, anche prima che la cena apra (banner "fuori
+// orario" invariato, solo riferito al turno giusto). Se anche l'ultimo turno è già chiuso per
+// oggi, si mostra comunque quello — serve solo da riferimento per il messaggio "servizio chiuso".
+function getFinestraAttiva(configurazione: ConfigurazioneConTurni, nowMinuti: number): FinestraOraria {
+  const finestre: FinestraOraria[] = [
+    { apertura: configurazione.orario_apertura.slice(0, 5), chiusura: configurazione.orario_chiusura.slice(0, 5) },
+  ];
+  if (configurazione.orario_apertura_2 && configurazione.orario_chiusura_2) {
+    finestre.push({
+      apertura: configurazione.orario_apertura_2.slice(0, 5),
+      chiusura: configurazione.orario_chiusura_2.slice(0, 5),
+    });
+  }
+  return finestre.find((f) => parseHHMMToMinutes(f.chiusura)! > nowMinuti) ?? finestre[finestre.length - 1];
+}
+
+// Descrizione leggibile di entrambi i turni insieme (non solo quello attivo) — usata per il testo
+// introduttivo della pagina, dove il cliente deve vedere l'intero orario del servizio, non solo il
+// turno che sta per scegliere. Stesso principio/stessa forma di `descrizione_orari()` lato backend
+// (menu/models.py, ConfigurazioneAsporto).
+function descrizioneOrari(configurazione: ConfigurazioneConTurni): string {
+  const turni = [`dalle ${configurazione.orario_apertura.slice(0, 5)} alle ${configurazione.orario_chiusura.slice(0, 5)}`];
+  if (configurazione.orario_apertura_2 && configurazione.orario_chiusura_2) {
+    turni.push(
+      `dalle ${configurazione.orario_apertura_2.slice(0, 5)} alle ${configurazione.orario_chiusura_2.slice(0, 5)}`
+    );
+  }
+  return turni.join(' e ');
 }
 
 type BloccoChiusura = { inizio: string; fine: string; includeOggi: boolean };
@@ -269,6 +359,7 @@ export default function ClienteAsportoScreen() {
     prodottiDisponibili,
     configurazione,
     chiusureFuture,
+    prenotatiPerOrario,
     isLoading,
     loadError,
     quantities,
@@ -282,23 +373,55 @@ export default function ClienteAsportoScreen() {
   const [form, setForm] = useState<FormState>({ nome: '', telefono: '', note: '', orario: '' });
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
   const [ordineInviato, setOrdineInviato] = useState(false);
   const [riepilogo, setRiepilogo] = useState<RiepilogoOrdine | null>(null);
   const [isDownloadingRicevuta, setIsDownloadingRicevuta] = useState(false);
+  // Fascia oraria attualmente espansa nel picker orario (es. "12" per "12:00-13:00") — un solo
+  // accordion aperto alla volta, nessuna preselezione (stesso principio "nessuna precompilazione"
+  // già seguito sotto per l'orario stesso).
+  const [oraEspansa, setOraEspansa] = useState<string | null>(null);
 
   const setField = <K extends keyof FormState>(key: K) => (value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  // L'orario di default dipende da `configurazione`, disponibile solo dopo il caricamento del
-  // context — precompilato non appena arriva, non al mount (che qui non ha più i dati).
-  useEffect(() => {
-    if (!configurazione || form.orario) return;
-    setForm((prev) => ({
-      ...prev,
-      orario: computeDefaultOrario(null, new Date(), configurazione.orario_apertura.slice(0, 5)),
-    }));
-  }, [configurazione, form.orario]);
+  // "Mostra un turno alla volta" (sezione 15): finché il turno attivo non è ancora chiuso, i
+  // picker/il banner sotto restano ancorati a lui — appena chiude, `getFinestraAttiva` passa da
+  // sé al successivo (se configurato un secondo turno), senza alcuna azione del cliente.
+  const finestraAttiva = useMemo(
+    () => (configurazione ? getFinestraAttiva(configurazione, parseHHMMToMinutes(nowHHMM())!) : null),
+    [configurazione]
+  );
+
+  // Nessuna precompilazione: il cliente sceglie sempre esplicitamente uno slot tra quelli
+  // proposti (sotto) — a differenza del vecchio TimePickerModal, un default "adesso" non
+  // sarebbe comunque mai stato uno slot valido (l'anticipo minimo lo esclude sempre).
+  const slotsOrario = useMemo(
+    () => (finestraAttiva ? generaSlotOrario(finestraAttiva.apertura, finestraAttiva.chiusura) : []),
+    [finestraAttiva]
+  );
+  const blocchiOrario = useMemo(() => raggruppaSlotPerOra(slotsOrario), [slotsOrario]);
+
+  // Limite globale di prodotti per orario (ConfigurazioneAsporto.limite_prodotti_orario, sezione
+  // 15) — si applica automaticamente a *qualunque* orario, non scelto per singola fascia. Se non
+  // impostato (null), nessuno slot risulta mai esaurito. `richiesti` è il totale di prodotti nel
+  // carrello (non il numero di prodotti distinti): un ordine con 10 pizze pesa 10 su un limite
+  // espresso in "prodotti", non 1. `Math.max(..., 1)` copre il caso limite di uno slot già del
+  // tutto esaurito toccato prima ancora di aver aggiunto qualcosa al carrello.
+  const limiteProdottiOrario = configurazione?.limite_prodotti_orario ?? null;
+  const richiestiOrario = Math.max(totaleArticoli, 1);
+  const isSlotEsaurito = (slot: string) => {
+    if (limiteProdottiOrario === null) return false;
+    const prenotati = prenotatiPerOrario[slot] ?? 0;
+    return limiteProdottiOrario - prenotati < richiestiOrario;
+  };
+  // Residuo "grezzo" dello slot (limite meno quanto già prenotato da tutti, non solo da questo
+  // carrello) — a differenza di isSlotEsaurito, non tiene conto di richiestiOrario: serve solo a
+  // mostrare "quanti ne restano in tutto", non se il carrello attuale ci sta.
+  const residuoSlot = (slot: string): number | null => {
+    if (limiteProdottiOrario === null) return null;
+    const prenotati = prenotatiPerOrario[slot] ?? 0;
+    return limiteProdottiOrario - prenotati;
+  };
 
   const bloccoChiusura = useMemo(() => trovaBloccoChiusura(chiusureFuture, new Date()), [chiusureFuture]);
 
@@ -319,8 +442,6 @@ export default function ClienteAsportoScreen() {
   const anticipoMinimoMinuti =
     quantitaPizze > SOGLIA_PIZZE_ANTICIPO_ESTESO ? ANTICIPO_MINUTI_ESTESO : ANTICIPO_MINUTI_STANDARD;
 
-  const orarioMinutiCorrenti = parseHHMMToMinutes(form.orario);
-
   // `fuoriOrarioApertura`: il servizio è chiuso in senso stretto (prima dell'apertura o dopo la
   // chiusura). `servizioChiuso` è invece "nessun orario di ritiro sarebbe comunque accettabile
   // adesso" — vero anche quando siamo ancora nominalmente dentro l'orario di apertura ma troppo
@@ -330,14 +451,14 @@ export default function ClienteAsportoScreen() {
   // stretta, lasciando una finestra "silenziosa" in cui il cliente vedeva il servizio come aperto
   // ma ogni invio falliva comunque al submit — ora il banner anticipa lo stesso esito.
   const { fuoriOrarioApertura, servizioChiuso } = useMemo(() => {
-    if (!configurazione) return { fuoriOrarioApertura: false, servizioChiuso: false };
+    if (!finestraAttiva) return { fuoriOrarioApertura: false, servizioChiuso: false };
     const now = parseHHMMToMinutes(nowHHMM())!;
-    const apertura = parseHHMMToMinutes(configurazione.orario_apertura.slice(0, 5))!;
-    const chiusura = parseHHMMToMinutes(configurazione.orario_chiusura.slice(0, 5))!;
+    const apertura = parseHHMMToMinutes(finestraAttiva.apertura)!;
+    const chiusura = parseHHMMToMinutes(finestraAttiva.chiusura)!;
     const fuoriOrario = now < apertura || now >= chiusura;
     const senzaMargine = !fuoriOrario && now + anticipoMinimoMinuti > chiusura;
     return { fuoriOrarioApertura: fuoriOrario, servizioChiuso: fuoriOrario || senzaMargine };
-  }, [configurazione, anticipoMinimoMinuti]);
+  }, [finestraAttiva, anticipoMinimoMinuti]);
 
   // Nodo DOM reale di ogni card categoria, catturato via ref — non `nativeID` (su web, attraverso
   // il wrapper NativeWind, non diventa un vero attributo `id` nel DOM: stesso gotcha già
@@ -446,13 +567,26 @@ export default function ClienteAsportoScreen() {
       setError('Inserisci nome e telefono.');
       return;
     }
-    if (!configurazione) {
+    if (!configurazione || !finestraAttiva) {
       setError('Impossibile verificare gli orari del servizio. Riprova più tardi.');
       return;
     }
-    const orarioError = validateOrarioRitiro(form.orario, configurazione, anticipoMinimoMinuti);
+    const orarioError = validateOrarioRitiro(
+      form.orario,
+      { orario_apertura: finestraAttiva.apertura, orario_chiusura: finestraAttiva.chiusura },
+      anticipoMinimoMinuti
+    );
     if (orarioError) {
       setError(orarioError);
+      return;
+    }
+    // Backstop: il residuo per orario è quello letto al caricamento della pagina, potrebbe
+    // essere nel frattempo cambiato (un altro cliente ha esaurito lo stesso slot) — la UI (sopra)
+    // già disabilita lo slot appena il residuo letto localmente non basta più, ma se lo slot era
+    // già stato scelto prima che il carrello raggiungesse questa quantità va comunque ribadito
+    // qui. Il backend resta comunque l'ultima parola (VoceOrdineSerializer.validate()).
+    if (isSlotEsaurito(form.orario.trim())) {
+      setError('Numero massimo di prodotti raggiunto per questo orario: scegli un altro orario.');
       return;
     }
 
@@ -549,9 +683,8 @@ export default function ClienteAsportoScreen() {
         <VStack space="xs">
           <Heading size="xl">Asporto</Heading>
           <Text size="sm" className="text-muted-foreground">
-            Servizio attivo dalle {configurazione.orario_apertura.slice(0, 5)} alle{' '}
-            {configurazione.orario_chiusura.slice(0, 5)}. Scegli i piatti, poi completa l'ordine con
-            i tuoi dati.
+            Servizio attivo {descrizioneOrari(configurazione)}. Scegli i piatti, poi completa
+            l'ordine con i tuoi dati.
           </Text>
         </VStack>
 
@@ -628,8 +761,8 @@ export default function ClienteAsportoScreen() {
                     </Text>
                     <Text size="xs" className="mt-1 text-amber-800">
                       {fuoriOrarioApertura
-                        ? `Puoi comunque sfogliare il menu e aggiungere piatti al carrello, ma potrai completare l'ordine solo durante l'orario di apertura (${configurazione.orario_apertura.slice(0, 5)} - ${configurazione.orario_chiusura.slice(0, 5)}).`
-                        : `Mancano meno di ${anticipoMinimoMinuti} minuti alla chiusura (${configurazione.orario_chiusura.slice(0, 5)}): non c'è più abbastanza tempo per preparare un nuovo ordine oggi. Puoi comunque sfogliare il menu, riprova domani.`}
+                        ? `Puoi comunque sfogliare il menu e aggiungere piatti al carrello, ma potrai completare l'ordine solo durante l'orario di apertura (${finestraAttiva!.apertura} - ${finestraAttiva!.chiusura}).`
+                        : `Mancano meno di ${anticipoMinimoMinuti} minuti alla chiusura (${finestraAttiva!.chiusura}): non c'è più abbastanza tempo per preparare un nuovo ordine oggi. Puoi comunque sfogliare il menu, riprova domani.`}
                     </Text>
                   </VStack>
                 </HStack>
@@ -830,9 +963,7 @@ export default function ClienteAsportoScreen() {
                       />
                     </Input>
                     <Text size="2xs" className="text-sky-900/60">
-                      📌 Usa sempre lo stesso numero: ci aiuta a riconoscerti e a ritrovare le tue
-                      preferenze, ed è anche quello con cui potrai ritrovare le tue prenotazioni in
-                      "Le mie prenotazioni", dalla home.
+                      📌 Usa sempre lo stesso numero: ti aiuta a ritrovare prenotazioni e preferenze.
                     </Text>
                   </VStack>
 
@@ -865,53 +996,159 @@ export default function ClienteAsportoScreen() {
                         *
                       </Text>
                     </HStack>
-                    <Pressable
-                      onPress={() => setIsTimePickerOpen(true)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Scegli l'orario di ritiro dall'orologio"
-                      className="min-h-9 w-full flex-row items-center justify-between rounded-md border border-border bg-transparent px-3 py-2"
-                    >
-                      <Text size="sm" className={form.orario ? 'font-semibold text-sky-900' : 'text-muted-foreground'}>
-                        {form.orario || `Es. ${configurazione.orario_apertura.slice(0, 5)}`}
+                    {configurazione.orario_apertura_2 && configurazione.orario_chiusura_2 ? (
+                      // Con un secondo turno configurato, il cliente vede sempre e solo il turno
+                      // "attivo" (getFinestraAttiva sopra) — questa riga chiarisce quale dei due
+                      // sta guardando adesso, dato che il testo introduttivo in cima alla pagina
+                      // elenca invece entrambi i turni insieme.
+                      <Text size="2xs" className="font-medium text-sky-700">
+                        Turno attuale: dalle {finestraAttiva!.apertura} alle {finestraAttiva!.chiusura}.
                       </Text>
-                      <Icon as={ClockIcon} size="sm" className="text-sky-700" />
-                    </Pressable>
+                    ) : null}
+                    {/* Livello 1 — fasce orarie (es. "12:00-13:00"): tap per espandere/comprimere
+                        i singoli orari ogni 15 minuti al suo interno, un accordion alla volta,
+                        invece di un'unica griglia lunga con ogni slot tra apertura e chiusura. */}
+                    <HStack space="xs" className="flex-wrap">
+                      {blocchiOrario.map((blocco) => {
+                        const isEspansa = blocco.ora === oraEspansa;
+                        const contieneSelezionato = blocco.slots.includes(form.orario);
+                        // Se ogni orario da 15 minuti di questa fascia viola l'anticipo minimo
+                        // (fascia interamente nel passato/troppo vicina), non ha senso poterla
+                        // espandere: non ci sarebbe comunque nulla di selezionabile al suo
+                        // interno — stessa "disabled visibile" già usata per i singoli slot, non
+                        // nascosta del tutto.
+                        const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
+                        const tuttiDisabilitati = blocco.slots.every(
+                          (slot) =>
+                            parseHHMMToMinutes(slot)! < nowMinuti + anticipoMinimoMinuti || isSlotEsaurito(slot)
+                        );
+                        return (
+                          <Pressable
+                            key={blocco.ora}
+                            onPress={() =>
+                              !tuttiDisabilitati &&
+                              setOraEspansa((prev) => (prev === blocco.ora ? null : blocco.ora))
+                            }
+                            disabled={tuttiDisabilitati}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Fascia oraria ${blocco.label}${tuttiDisabilitati ? ', non più disponibile' : ''}`}
+                            accessibilityState={{ expanded: isEspansa, selected: contieneSelezionato, disabled: tuttiDisabilitati }}
+                            className={`rounded-full border-2 px-3 py-1.5 ${
+                              tuttiDisabilitati
+                                ? 'border-sky-100 bg-white opacity-40'
+                                : isEspansa
+                                  ? 'border-sky-600 bg-sky-600'
+                                  : contieneSelezionato
+                                    ? 'border-sky-600 bg-white'
+                                    : 'border-sky-300 bg-white active:bg-sky-50'
+                            }`}
+                          >
+                            <Text
+                              size="xs"
+                              className={`font-medium ${
+                                tuttiDisabilitati ? 'text-muted-foreground' : isEspansa ? 'text-white' : 'text-sky-900'
+                              }`}
+                            >
+                              {contieneSelezionato && !isEspansa ? '✓ ' : ''}
+                              {blocco.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </HStack>
+
+                    {/* Livello 2 — orari ogni 15 minuti dentro la fascia scelta sopra. */}
+                    {oraEspansa ? (
+                      <HStack space="xs" className="flex-wrap rounded-xl border border-sky-200 bg-sky-50 p-2">
+                        {(blocchiOrario.find((b) => b.ora === oraEspansa)?.slots ?? []).map((slot) => {
+                          const minutiSlot = parseHHMMToMinutes(slot)!;
+                          const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
+                          const troppoVicino = minutiSlot < nowMinuti + anticipoMinimoMinuti;
+                          const esaurito = !troppoVicino && isSlotEsaurito(slot);
+                          const disabilitato = troppoVicino || esaurito;
+                          const selezionato = form.orario === slot;
+                          const residuo = residuoSlot(slot);
+                          const mostraResiduo =
+                            !disabilitato && residuo !== null && residuo <= SOGLIA_AVVISO_RESIDUO_ORARIO;
+                          return (
+                            <VStack key={slot} className="items-center">
+                              <Pressable
+                                onPress={() => !disabilitato && setField('orario')(slot)}
+                                disabled={disabilitato}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Orario di ritiro ${slot}${esaurito ? ', esaurito: numero massimo di prodotti raggiunto per questo orario' : mostraResiduo ? `, solo ${residuo} prodotti ancora disponibili per questo orario` : ''}`}
+                                className={`rounded-full border-2 px-3 py-1.5 ${
+                                  selezionato
+                                    ? 'border-sky-600 bg-sky-600'
+                                    : disabilitato
+                                      ? 'border-sky-100 bg-white opacity-40'
+                                      : 'border-sky-300 bg-white active:bg-sky-100'
+                                }`}
+                              >
+                                <Text
+                                  size="xs"
+                                  className={
+                                    selezionato
+                                      ? 'font-bold text-white'
+                                      : disabilitato
+                                        ? 'text-muted-foreground'
+                                        : 'font-medium text-sky-900'
+                                  }
+                                >
+                                  {slot}
+                                  {esaurito ? ' · Esaurito' : ''}
+                                </Text>
+                              </Pressable>
+                              {/* Didascalia FUORI dal bottone, esattamente sotto — non più un badge
+                                  annidato dentro il Pressable (versione precedente, scartata su
+                                  richiesta esplicita dell'utente). Font più piccolo del testo dello
+                                  slot: "2xs" (`text-2xs`, 12px) era già la taglia minima della scala
+                                  `Text`/Tailwind — per scendere sotto quella soglia serve la prop
+                                  nativa `style` (qui `fontSize: 9`), non una classe arbitraria
+                                  `text-[9px]`: quest'ultima, verificato con Playwright, non viene
+                                  applicata da NativeWind/react-native-css (alpha) su questo target
+                                  web e in più fa fallire silenziosamente anche le altre classi sullo
+                                  stesso elemento (stesso genere di gotcha già noto per altre
+                                  proprietà di questa libreria, sezione 4/5 di CLAUDE.md) — `style`
+                                  nativo bypassa del tutto quel livello e arriva sempre a
+                                  destinazione. */}
+                              {mostraResiduo ? (
+                                <Text
+                                  style={{ fontSize: 9 }}
+                                  className={`font-semibold ${residuoTextClassName(residuo!)}`}
+                                >
+                                  {residuo} rimast{residuo === 1 ? 'o' : 'i'}
+                                </Text>
+                              ) : null}
+                            </VStack>
+                          );
+                        })}
+                      </HStack>
+                    ) : (
+                      <Text size="2xs" className="text-sky-900/50">
+                        Tocca una fascia oraria per scegliere l'orario esatto.
+                      </Text>
+                    )}
                     <Text size="2xs" className="text-sky-900/60">
-                      Orario del servizio: {configurazione.orario_apertura.slice(0, 5)} -{' '}
-                      {configurazione.orario_chiusura.slice(0, 5)}
+                      Servizio: {descrizioneOrari(configurazione)}.
                     </Text>
+                    {limiteProdottiOrario !== null ? (
+                      <Text size="2xs" className="text-sky-900/60">
+                        Alcuni orari hanno un numero limitato di prodotti disponibili.
+                      </Text>
+                    ) : null}
                     {quantitaPizze > SOGLIA_PIZZE_ANTICIPO_ESTESO ? (
                       <Text size="2xs" className="text-amber-700">
-                        🍕 Con più di {SOGLIA_PIZZE_ANTICIPO_ESTESO} pizze nello stesso ordine serve un
-                        anticipo minimo di {ANTICIPO_MINUTI_ESTESO} minuti (invece di{' '}
-                        {ANTICIPO_MINUTI_STANDARD}).
+                        🍕 Oltre {SOGLIA_PIZZE_ANTICIPO_ESTESO} pizze: anticipo minimo {ANTICIPO_MINUTI_ESTESO}{' '}
+                        minuti (invece di {ANTICIPO_MINUTI_STANDARD}).
                       </Text>
                     ) : (
                       <Text size="2xs" className="text-sky-900/60">
-                        Anticipo minimo richiesto: {ANTICIPO_MINUTI_STANDARD} minuti da adesso.
+                        Anticipo minimo: {ANTICIPO_MINUTI_STANDARD} minuti.
                       </Text>
                     )}
                   </VStack>
                 </VStack>
-
-                <Suspense fallback={null}>
-                  <TimePickerModal
-                    visible={isTimePickerOpen}
-                    onDismiss={() => setIsTimePickerOpen(false)}
-                    onConfirm={({ hours, minutes }) => {
-                      setIsTimePickerOpen(false);
-                      setField('orario')(minutesToHHMM(hours * 60 + minutes));
-                    }}
-                    hours={orarioMinutiCorrenti !== null ? Math.floor(orarioMinutiCorrenti / 60) : undefined}
-                    minutes={orarioMinutiCorrenti !== null ? orarioMinutiCorrenti % 60 : undefined}
-                    use24HourClock
-                    locale="it"
-                    label="Orario di ritiro"
-                    cancelLabel="Annulla"
-                    confirmLabel="OK"
-                    animationType="fade"
-                  />
-                </Suspense>
 
                 {error ? (
                   <Text size="sm" className="text-center text-destructive">

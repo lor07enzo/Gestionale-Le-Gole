@@ -9,6 +9,7 @@ import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import {
   Actionsheet,
   ActionsheetBackdrop,
@@ -16,7 +17,15 @@ import {
   ActionsheetDragIndicator,
   ActionsheetDragIndicatorWrapper,
 } from '@/components/ui/actionsheet';
-import { ArrowLeftIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, Icon } from '@/components/ui/icon';
+import {
+  AlertCircleIcon,
+  ArrowLeftIcon,
+  CalendarDaysIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  Icon,
+} from '@/components/ui/icon';
 import { goBackOr } from '../../src/utils/navigation';
 import { MenuAsportoSection } from '../../src/components/staff/MenuAsportoSection';
 import {
@@ -130,14 +139,26 @@ function StoricoOrdiniLinkCard() {
 
 // Orario di inizio/fine disponibilità del servizio asporto — una sola impostazione condivisa
 // (nessun concetto di "listino/inventario" per l'asporto, sezione 1 di CLAUDE.md), letta/scritta
-// sulla riga singleton `ConfigurazioneAsporto` lato backend.
+// sulla riga singleton `ConfigurazioneAsporto` lato backend. Il secondo turno (sotto, opzionale —
+// es. pranzo/cena) è una seconda sezione dentro la stessa card, non una card a sé: concettualmente
+// è lo stesso "orario di disponibilità", solo con una seconda fascia — un solo Salva per l'intera
+// configurazione evita due stati di dirty/salvataggio separati per impostazioni correlate.
 function OrarioDisponibilitaCard() {
   const [apertura, setApertura] = useState('');
   const [chiusura, setChiusura] = useState('');
+  // Secondo turno: `secondoTurnoAttivo` decide se i campi sotto sono mostrati/inviati, i valori
+  // restano comunque in stato locale anche da disattivato (riattivarlo senza aver salvato non
+  // perde quanto digitato).
+  const [secondoTurnoAttivo, setSecondoTurnoAttivo] = useState(false);
+  const [apertura2, setApertura2] = useState('');
+  const [chiusura2, setChiusura2] = useState('');
   // Ultimi valori confermati dal backend (al caricamento o dopo un salvataggio riuscito) — il
-  // confronto con apertura/chiusura correnti decide se c'è davvero qualcosa da salvare.
+  // confronto con i valori correnti decide se c'è davvero qualcosa da salvare.
   const [savedApertura, setSavedApertura] = useState('');
   const [savedChiusura, setSavedChiusura] = useState('');
+  const [savedSecondoTurnoAttivo, setSavedSecondoTurnoAttivo] = useState(false);
+  const [savedApertura2, setSavedApertura2] = useState('');
+  const [savedChiusura2, setSavedChiusura2] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,16 +169,29 @@ function OrarioDisponibilitaCard() {
       .then((config: ConfigurazioneAsporto) => {
         const oraApertura = formatTime(config.orario_apertura);
         const oraChiusura = formatTime(config.orario_chiusura);
+        const attivo2 = Boolean(config.orario_apertura_2 && config.orario_chiusura_2);
+        const oraApertura2 = config.orario_apertura_2 ? formatTime(config.orario_apertura_2) : '';
+        const oraChiusura2 = config.orario_chiusura_2 ? formatTime(config.orario_chiusura_2) : '';
         setApertura(oraApertura);
         setChiusura(oraChiusura);
         setSavedApertura(oraApertura);
         setSavedChiusura(oraChiusura);
+        setSecondoTurnoAttivo(attivo2);
+        setSavedSecondoTurnoAttivo(attivo2);
+        setApertura2(oraApertura2);
+        setChiusura2(oraChiusura2);
+        setSavedApertura2(oraApertura2);
+        setSavedChiusura2(oraChiusura2);
       })
       .catch(() => setError("Impossibile caricare l'orario del servizio."))
       .finally(() => setIsLoading(false));
   }, []);
 
-  const isDirty = apertura !== savedApertura || chiusura !== savedChiusura;
+  const isDirty =
+    apertura !== savedApertura ||
+    chiusura !== savedChiusura ||
+    secondoTurnoAttivo !== savedSecondoTurnoAttivo ||
+    (secondoTurnoAttivo && (apertura2 !== savedApertura2 || chiusura2 !== savedChiusura2));
 
   const handleChangeApertura = (next: string) => {
     setApertura(formatOrarioInput(apertura, next));
@@ -169,11 +203,30 @@ function OrarioDisponibilitaCard() {
     setJustSaved(false);
   };
 
+  const handleChangeApertura2 = (next: string) => {
+    setApertura2(formatOrarioInput(apertura2, next));
+    setJustSaved(false);
+  };
+
+  const handleChangeChiusura2 = (next: string) => {
+    setChiusura2(formatOrarioInput(chiusura2, next));
+    setJustSaved(false);
+  };
+
+  const handleToggleSecondoTurno = (next: boolean) => {
+    setSecondoTurnoAttivo(next);
+    setError(null);
+    setJustSaved(false);
+  };
+
   // Riporta i campi agli ultimi valori confermati dal backend — compare solo quando c'è
   // effettivamente qualcosa da scartare (`isDirty`, sotto), stesso principio del pulsante "Salva".
   const handleCancel = () => {
     setApertura(savedApertura);
     setChiusura(savedChiusura);
+    setSecondoTurnoAttivo(savedSecondoTurnoAttivo);
+    setApertura2(savedApertura2);
+    setChiusura2(savedChiusura2);
     setError(null);
     setJustSaved(false);
   };
@@ -190,19 +243,52 @@ function OrarioDisponibilitaCard() {
       setError("L'orario di fine deve essere successivo a quello di inizio.");
       return;
     }
+
+    let payloadApertura2: string | null = null;
+    let payloadChiusura2: string | null = null;
+    if (secondoTurnoAttivo) {
+      const minutiApertura2 = parseHHMMToMinutes(apertura2);
+      const minutiChiusura2 = parseHHMMToMinutes(chiusura2);
+      if (minutiApertura2 === null || minutiChiusura2 === null) {
+        setError('Inserisci due orari validi per il secondo turno (HH:MM).');
+        return;
+      }
+      if (minutiApertura2 >= minutiChiusura2) {
+        setError("L'orario di fine del secondo turno deve essere successivo a quello di inizio.");
+        return;
+      }
+      if (minutiApertura2 < minutiChiusura) {
+        setError('Il secondo turno deve iniziare non prima della chiusura del primo.');
+        return;
+      }
+      payloadApertura2 = apertura2;
+      payloadChiusura2 = chiusura2;
+    }
+
     setError(null);
     setIsSaving(true);
     try {
       const updated = await updateConfigurazioneAsporto({
         orario_apertura: apertura,
         orario_chiusura: chiusura,
+        orario_apertura_2: payloadApertura2,
+        orario_chiusura_2: payloadChiusura2,
       });
       const oraApertura = formatTime(updated.orario_apertura);
       const oraChiusura = formatTime(updated.orario_chiusura);
+      const attivo2 = Boolean(updated.orario_apertura_2 && updated.orario_chiusura_2);
+      const oraApertura2 = updated.orario_apertura_2 ? formatTime(updated.orario_apertura_2) : '';
+      const oraChiusura2 = updated.orario_chiusura_2 ? formatTime(updated.orario_chiusura_2) : '';
       setApertura(oraApertura);
       setChiusura(oraChiusura);
       setSavedApertura(oraApertura);
       setSavedChiusura(oraChiusura);
+      setSecondoTurnoAttivo(attivo2);
+      setSavedSecondoTurnoAttivo(attivo2);
+      setApertura2(oraApertura2);
+      setChiusura2(oraChiusura2);
+      setSavedApertura2(oraApertura2);
+      setSavedChiusura2(oraChiusura2);
       setJustSaved(true);
     } catch (err) {
       setError(extractErrorMessage(err, "Impossibile salvare l'orario."));
@@ -258,6 +344,56 @@ function OrarioDisponibilitaCard() {
             </VStack>
           </HStack>
 
+          {/* Seconda sezione — secondo turno opzionale (es. pranzo/cena): il servizio può essere
+              disponibile in due fasce separate nella stessa giornata invece di un unico
+              intervallo continuo. Il divisore sopra e l'etichetta sotto la rendono una sezione
+              distinta pur restando nella stessa card/stesso Salva del primo turno. */}
+          <Box className="h-px w-full bg-sky-100" />
+          <HStack space="sm" className="items-center justify-between">
+            <VStack className="flex-1">
+              <Text size="sm" className="font-medium">
+                Secondo turno
+              </Text>
+              <Text size="xs" className="text-muted-foreground">
+                Es. pranzo e cena, con una pausa nel mezzo — opzionale.
+              </Text>
+            </VStack>
+            <Switch value={secondoTurnoAttivo} onValueChange={handleToggleSecondoTurno} />
+          </HStack>
+
+          {secondoTurnoAttivo ? (
+            <HStack space="md" className="items-start">
+              <VStack space="xs" className="flex-1">
+                <Text size="sm" className="font-medium">
+                  Dalle
+                </Text>
+                <Input>
+                  <InputField
+                    placeholder="Es. 19:00"
+                    keyboardType="numeric"
+                    maxLength={5}
+                    value={apertura2}
+                    onChangeText={handleChangeApertura2}
+                  />
+                </Input>
+              </VStack>
+              <VStack space="xs" className="flex-1">
+                <Text size="sm" className="font-medium">
+                  Alle
+                </Text>
+                <Input>
+                  <InputField
+                    placeholder="Es. 22:30"
+                    keyboardType="numeric"
+                    maxLength={5}
+                    value={chiusura2}
+                    onChangeText={handleChangeChiusura2}
+                  />
+                </Input>
+              </VStack>
+            </HStack>
+          ) : null}
+
           {error ? (
             <Text size="xs" className="text-destructive">
               {error}
@@ -278,6 +414,142 @@ function OrarioDisponibilitaCard() {
               className="self-start"
             >
               {isSaving ? <ButtonSpinner /> : <ButtonText>Salva orario</ButtonText>}
+            </Button>
+            {isDirty ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={handleCancel}
+                disabled={isSaving}
+                isDisabled={isSaving}
+                className="self-start border-2 border-sky-300 bg-white"
+              >
+                <ButtonText className="text-sky-700">Annulla</ButtonText>
+              </Button>
+            ) : null}
+          </HStack>
+        </>
+      )}
+    </VStack>
+  );
+}
+
+// Numero massimo di prodotti ordinabili complessivamente a un qualunque orario di ritiro — un
+// UNICO valore globale (`ConfigurazioneAsporto.limite_prodotti_orario`), applicato automaticamente
+// a ogni orario: lo staff imposta solo la quantità, non deve scegliere l'ora (su richiesta
+// esplicita dell'utente, che ha corretto una prima versione per-orario proprio per questo). Se un
+// cliente ne ordina 10 e un altro ne vuole altri 6 sullo stesso orario con un limite di 15, il
+// secondo vede quell'orario come "non più disponibile" (sezioni 7/15 dei picker orario
+// cliente/staff) — riflette quanti piatti la cucina riesce davvero a preparare in una fascia, non
+// un tetto per singolo ordine/cliente. Stesso pattern "campo + Salva/Annulla" di
+// `OrarioDisponibilitaCard` sopra, entrambe leggono/scrivono la stessa riga singleton.
+function LimiteProdottiOrarioCard() {
+  const [limite, setLimite] = useState('');
+  // Ultimo valore confermato dal backend (null = nessun limite) — il confronto con `limite`
+  // decide se c'è davvero qualcosa da salvare, stesso principio di `isDirty` sopra.
+  const [savedLimite, setSavedLimite] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+
+  useEffect(() => {
+    getConfigurazioneAsporto()
+      .then((config: ConfigurazioneAsporto) => {
+        setSavedLimite(config.limite_prodotti_orario);
+        setLimite(config.limite_prodotti_orario != null ? String(config.limite_prodotti_orario) : '');
+      })
+      .catch(() => setError('Impossibile caricare il limite.'))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const limiteNumero = limite.trim() === '' ? null : Number.parseInt(limite, 10);
+  const isDirty = limiteNumero !== savedLimite;
+
+  const handleChangeLimite = (next: string) => {
+    // Solo cifre: un campo numerico puro, non mascherato come gli orari.
+    setLimite(next.replace(/[^0-9]/g, ''));
+    setJustSaved(false);
+  };
+
+  const handleCancel = () => {
+    setLimite(savedLimite != null ? String(savedLimite) : '');
+    setError(null);
+    setJustSaved(false);
+  };
+
+  const handleSave = async () => {
+    setJustSaved(false);
+    if (limite.trim() !== '' && (!Number.isFinite(limiteNumero) || (limiteNumero as number) < 1)) {
+      setError('Inserisci un numero valido (almeno 1), oppure lascia vuoto per nessun limite.');
+      return;
+    }
+    setError(null);
+    setIsSaving(true);
+    try {
+      const updated = await updateConfigurazioneAsporto({ limite_prodotti_orario: limiteNumero });
+      setSavedLimite(updated.limite_prodotti_orario);
+      setLimite(updated.limite_prodotti_orario != null ? String(updated.limite_prodotti_orario) : '');
+      setJustSaved(true);
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Impossibile salvare il limite.'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <VStack space="sm" className="w-full rounded-2xl border border-sky-200 bg-white p-4">
+      <HStack space="xs" className="items-center">
+        <Icon as={AlertCircleIcon} size="sm" className="text-sky-700" />
+        <Heading size="sm">Limite prodotti per orario</Heading>
+      </HStack>
+      <Text size="xs" className="text-muted-foreground">
+        Numero massimo di prodotti ordinabili complessivamente a ciascun orario di ritiro — si
+        applica automaticamente a tutti gli orari, non solo a uno specifico. Lascia vuoto per
+        nessun limite. Bevande e vini non vengono conteggiati in questo limite.
+      </Text>
+
+      {isLoading ? (
+        <HStack space="sm" className="items-center py-2">
+          <Spinner size="small" />
+        </HStack>
+      ) : (
+        <>
+          <VStack space="xs" className="max-w-40">
+            <Text size="sm" className="font-medium">
+              Max prodotti
+            </Text>
+            <Input>
+              <InputField
+                placeholder="Nessun limite"
+                keyboardType="numeric"
+                value={limite}
+                onChangeText={handleChangeLimite}
+              />
+            </Input>
+          </VStack>
+
+          {error ? (
+            <Text size="xs" className="text-destructive">
+              {error}
+            </Text>
+          ) : null}
+          {justSaved && !error ? (
+            <Text size="xs" className="text-emerald-700">
+              {limiteNumero != null ? 'Limite aggiornato.' : 'Limite rimosso.'}
+            </Text>
+          ) : null}
+
+          <HStack space="sm" className="items-center">
+            <Button
+              size="sm"
+              onPress={handleSave}
+              disabled={isSaving || !isDirty}
+              isDisabled={isSaving || !isDirty}
+              className="self-start"
+            >
+              {isSaving ? <ButtonSpinner /> : <ButtonText>Salva limite</ButtonText>}
             </Button>
             {isDirty ? (
               <Button
@@ -507,6 +779,7 @@ export default function AsportoScreen() {
         <NuovoOrdineLinkCard />
         <StoricoOrdiniLinkCard />
         <OrarioDisponibilitaCard />
+        <LimiteProdottiOrarioCard />
         <GiorniChiusuraAsportoCard />
         <Box className="h-px w-full bg-sky-200" />
         <MenuAsportoSection />

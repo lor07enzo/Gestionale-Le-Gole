@@ -623,9 +623,7 @@ export default function ClientePiscinaBookingScreen() {
                   />
                 </Input>
                 <Text size="2xs" className="text-sky-900/60">
-                  📌 Usa sempre lo stesso numero: ci aiuta a riconoscerti e a ritrovare le tue
-                  preferenze, ed è anche quello con cui potrai ritrovare le tue prenotazioni in
-                  "Le mie prenotazioni", dalla home.
+                  📌 Usa sempre lo stesso numero: ti aiuta a ritrovare prenotazioni e preferenze.
                 </Text>
               </VStack>
 

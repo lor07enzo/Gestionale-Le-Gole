@@ -127,9 +127,11 @@ class PrenotazioneAsportoSerializer(serializers.ModelSerializer):
         # unconditional già riservato all'orario apertura/chiusura piscina sopra.
         if ora_richiesta:
             configurazione = ConfigurazioneAsporto.get_solo()
-            if ora_richiesta < configurazione.orario_apertura or ora_richiesta > configurazione.orario_chiusura:
+            # orario_valido() accetta il primo turno o, se configurato, il secondo (pranzo/cena) —
+            # descrizione_orari() elenca entrambi nel messaggio d'errore quando pertinente.
+            if not configurazione.orario_valido(ora_richiesta):
                 raise serializers.ValidationError({
-                    "ora": f"Il servizio asporto è attivo dalle {configurazione.orario_apertura.strftime('%H:%M')} alle {configurazione.orario_chiusura.strftime('%H:%M')}."
+                    "ora": f"Il servizio asporto è attivo {configurazione.descrizione_orari()}."
                 })
 
         return data

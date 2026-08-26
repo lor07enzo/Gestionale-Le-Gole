@@ -90,8 +90,11 @@ function DateNav({
 
       <Pressable
         accessibilityLabel="Giorno successivo"
-        onPress={() => onChange(addDays(selectedDate, 1))}
-        className="h-10 w-10 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50"
+        onPress={() => !isToday && onChange(addDays(selectedDate, 1))}
+        disabled={isToday}
+        className={`h-10 w-10 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50 ${
+          isToday ? 'opacity-40' : ''
+        }`}
       >
         <Icon as={ChevronRightIcon} size="md" className="text-sky-900" />
       </Pressable>
@@ -144,6 +147,13 @@ export default function OrdiniAsportoScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Backstop, non solo il pulsante ▶ disabilitato in `DateNav`: mai fidarsi solo del `disabled`
+  // lato UI, stesso principio seguito ovunque nel progetto (es. isPastDate sulla mappa piscina).
+  const handleChangeDate = (next: Date) => {
+    if (toISODate(next) > toISODate(new Date())) return;
+    setSelectedDate(next);
+  };
+
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
@@ -171,7 +181,7 @@ export default function OrdiniAsportoScreen() {
       <VStack space="lg" className="w-full">
         <OrdiniHeader />
 
-        <DateNav selectedDate={selectedDate} onChange={setSelectedDate} />
+        <DateNav selectedDate={selectedDate} onChange={handleChangeDate} />
 
         <Pressable
           onPress={() => router.push('/staff/asporto/ordini/nuovo' as Href)}
@@ -181,7 +191,7 @@ export default function OrdiniAsportoScreen() {
         >
           <Icon as={AddIcon} size="sm" className="text-sky-700" />
           <Text size="sm" className="font-bold text-sky-700">
-            Nuovo ordine (walk-in)
+            Nuovo ordine
           </Text>
         </Pressable>
 

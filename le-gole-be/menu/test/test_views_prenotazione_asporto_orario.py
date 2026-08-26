@@ -86,6 +86,59 @@ class TestValidazioneOrarioRitiro:
         assert "ora" in response.data
 
 
+class TestValidazioneOrarioRitiroDoppioTurno:
+    # Secondo turno opzionale (pranzo/cena, sezione 15) — l'orario di ritiro è accettato se
+    # rientra nel primo turno O, se configurato, nel secondo; il vuoto "tra" i due turni resta
+    # invece rifiutato, sia per il self-service anonimo sia per lo staff.
+    def _imposta_doppio_turno(self):
+        configurazione = ConfigurazioneAsporto.get_solo()
+        configurazione.orario_apertura = "12:00"
+        configurazione.orario_chiusura = "15:30"
+        configurazione.orario_apertura_2 = "19:00"
+        configurazione.orario_chiusura_2 = "22:00"
+        configurazione.save()
+
+    def test_accettato_dentro_il_primo_turno(self, api_client):
+        cliente = ClienteFactory()
+        self._imposta_doppio_turno()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:30"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_accettato_dentro_il_secondo_turno(self, api_client):
+        cliente = ClienteFactory()
+        self._imposta_doppio_turno()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "20:00"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_rifiutato_nella_pausa_tra_i_due_turni(self, api_client):
+        cliente = ClienteFactory()
+        self._imposta_doppio_turno()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "17:00"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "ora" in response.data
+        assert "12:00" in response.data["ora"][0]
+        assert "19:00" in response.data["ora"][0]
+
+    def test_rifiutato_nella_pausa_anche_per_lo_staff(self, auth_client):
+        cliente = ClienteFactory()
+        self._imposta_doppio_turno()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "17:00"}
+
+        response = auth_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "ora" in response.data
+
+
 class TestValidazioneGiornoChiuso:
     def test_ordine_anonimo_rifiutato_in_un_giorno_segnato_chiuso(self, api_client):
         cliente = ClienteFactory()

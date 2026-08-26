@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, Pressable, ScrollView } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
@@ -12,6 +12,7 @@ import { Spinner } from '@/components/ui/spinner';
 import {
   AddIcon,
   ArrowLeftIcon,
+  ChevronDownIcon,
   ClockIcon,
   CloseIcon,
   Icon,
@@ -25,15 +26,17 @@ import { createPrenotazioneAsporto } from '../../../../src/services/prenotazioni
 import {
   createVoceOrdine,
   getConfigurazioneAsporto,
+  getProdottiPrenotatiPerOrario,
   listProdotti,
   type ConfigurazioneAsporto,
+  type ProdottiPrenotatiPerOrario,
   type Prodotto,
 } from '../../../../src/services/menu';
 import {
-  computeDefaultOrario,
   formatDisplayDate,
-  formatOrarioInput,
   formatTime,
+  minutesToHHMM,
+  nowHHMM,
   parseHHMMToMinutes,
   toISODate,
 } from '../../../../src/utils/piscinaMappa';
@@ -45,6 +48,77 @@ import { formatPrezzo } from '../../../../src/utils/prezzi';
 // della piscina, qui vive in una pagina dedicata (non un Actionsheet) perché scegliere i prodotti
 // dal catalogo richiede più spazio verticale di un foglio.
 
+type BloccoOrario = { ora: string; label: string; slots: string[] };
+
+// Sotto questo numero di prodotti ancora prenotabili per un orario, mostriamo il conteggio
+// residuo sotto lo slot — stessa soglia/stesso principio delle pagine cliente asporto.
+const SOGLIA_AVVISO_RESIDUO_ORARIO = 5;
+
+// Estratte perché ripetute identiche su 4 sezioni della pagina (rilevato da SonarQube — regola
+// "Define a constant instead of duplicating this literal"): un solo punto da aggiornare se lo
+// stile di titolo/card sezione cambia, invece di quattro.
+const SEZIONE_TITOLO_CLASS = 'font-bold uppercase tracking-wide text-sky-700';
+const SEZIONE_CARD_CLASS = 'w-full rounded-2xl border border-sky-200 bg-white p-4';
+
+// Stesse identiche funzioni pure delle pagine cliente asporto (app/cliente/asporto/index.tsx,
+// app/cliente/storico/asporto/[id].tsx) — duplicate qui invece di astratte in un modulo condiviso,
+// stesso principio "copia diretta" già seguito per `scrollChipIntoView` tra le pagine cliente.
+// Nessun anticipo minimo qui, a differenza delle due pagine cliente: lo staff ha visibilità
+// diretta sulla cucina (stesso principio per cui bypassa GiornoPienoPiscina/GiornoChiusoAsporto
+// online, sezioni 2/15) — un walk-in può benissimo essere ritirato "adesso", quindi un orario
+// coincidente con l'ora corrente resta selezionabile. Solo gli orari già passati (prima di
+// adesso, non prima di adesso+un margine) sono disabilitati — un ordine per un orario già
+// trascorso oggi non avrebbe comunque senso.
+function generaSlotOrario(apertura: string, chiusura: string, stepMinuti = 15): string[] {
+  const inizio = parseHHMMToMinutes(apertura);
+  const fine = parseHHMMToMinutes(chiusura);
+  if (inizio === null || fine === null) return [];
+  const slots: string[] = [];
+  for (let minuti = inizio; minuti <= fine; minuti += stepMinuti) {
+    slots.push(minutesToHHMM(minuti));
+  }
+  return slots;
+}
+
+function raggruppaSlotPerOra(slots: string[]): BloccoOrario[] {
+  const blocchi: BloccoOrario[] = [];
+  for (const slot of slots) {
+    const ora = slot.slice(0, 2);
+    const ultimo = blocchi.at(-1);
+    if (ultimo?.ora === ora) {
+      ultimo.slots.push(slot);
+      continue;
+    }
+    const oraFine = String((Number.parseInt(ora, 10) + 1) % 24).padStart(2, '0');
+    blocchi.push({ ora, label: `${ora}:00-${oraFine}:00`, slots: [slot] });
+  }
+  return blocchi;
+}
+
+// Descrizione leggibile di entrambi i turni insieme (pranzo/cena, sezione 15) — stessa forma di
+// `descrizione_orari()` lato backend (menu/models.py, ConfigurazioneAsporto).
+function descrizioneOrari(configurazione: ConfigurazioneAsporto): string {
+  const turni = [`dalle ${formatTime(configurazione.orario_apertura)} alle ${formatTime(configurazione.orario_chiusura)}`];
+  if (configurazione.orario_apertura_2 && configurazione.orario_chiusura_2) {
+    turni.push(`dalle ${formatTime(configurazione.orario_apertura_2)} alle ${formatTime(configurazione.orario_chiusura_2)}`);
+  }
+  return turni.join(' e ');
+}
+
+// True se `minuti` rientra nel primo turno o, se configurato, nel secondo — stessa logica di
+// `ConfigurazioneAsporto.orario_valido()` lato backend.
+function isOraInFinestre(configurazione: ConfigurazioneAsporto, minuti: number): boolean {
+  const apertura1 = parseHHMMToMinutes(formatTime(configurazione.orario_apertura));
+  const chiusura1 = parseHHMMToMinutes(formatTime(configurazione.orario_chiusura));
+  if (apertura1 !== null && chiusura1 !== null && minuti >= apertura1 && minuti <= chiusura1) return true;
+  if (configurazione.orario_apertura_2 && configurazione.orario_chiusura_2) {
+    const apertura2 = parseHHMMToMinutes(formatTime(configurazione.orario_apertura_2));
+    const chiusura2 = parseHHMMToMinutes(formatTime(configurazione.orario_chiusura_2));
+    if (apertura2 !== null && chiusura2 !== null && minuti >= apertura2 && minuti <= chiusura2) return true;
+  }
+  return false;
+}
+
 function extractErrorMessage(error: unknown, fallback: string): string {
   const detail = (error as { response?: { data?: unknown } })?.response?.data;
   if (detail && typeof detail === 'object') {
@@ -52,6 +126,47 @@ function extractErrorMessage(error: unknown, fallback: string): string {
     if (message) return message;
   }
   return fallback;
+}
+
+// Estratte dai rispettivi JSX (ternari annidati, rilevati da SonarQube — regola "Ternary operators
+// should not be nested") in funzioni pure con un solo livello di if/return ciascuna: stesso
+// risultato visivo, complessità cognitiva più bassa sia qui sia nei due `.map()` che le usano.
+function fasciaClassName(nonSelezionabile: boolean, isEspansa: boolean, contieneSelezionato: boolean): string {
+  if (nonSelezionabile) return 'border-sky-100 bg-white opacity-40';
+  if (isEspansa) return 'border-sky-600 bg-sky-600';
+  if (contieneSelezionato) return 'border-sky-600 bg-white';
+  return 'border-sky-300 bg-white active:bg-sky-50';
+}
+
+function fasciaTextClassName(nonSelezionabile: boolean, isEspansa: boolean): string {
+  if (nonSelezionabile) return 'text-muted-foreground';
+  if (isEspansa) return 'text-white';
+  return 'text-sky-900';
+}
+
+function slotClassName(selezionato: boolean, disabilitato: boolean): string {
+  if (selezionato) return 'border-sky-600 bg-sky-600';
+  if (disabilitato) return 'border-sky-100 bg-white opacity-40';
+  return 'border-sky-300 bg-white active:bg-sky-100';
+}
+
+function slotTextClassName(selezionato: boolean, disabilitato: boolean): string {
+  if (selezionato) return 'font-bold text-white';
+  if (disabilitato) return 'text-muted-foreground';
+  return 'font-medium text-sky-900';
+}
+
+function slotAccessibilityLabel(
+  slot: string,
+  passato: boolean,
+  esaurito: boolean,
+  mostraResiduo: boolean,
+  residuo: number | null
+): string {
+  if (passato) return `Orario di ritiro ${slot}, già passato`;
+  if (esaurito) return `Orario di ritiro ${slot}, esaurito: numero massimo di prodotti raggiunto per questo orario`;
+  if (mostraResiduo) return `Orario di ritiro ${slot}, solo ${residuo} prodotti ancora disponibili per questo orario`;
+  return `Orario di ritiro ${slot}`;
 }
 
 function RequiredLabel({ children }: Readonly<{ children: string }>) {
@@ -80,7 +195,7 @@ function NuovoOrdineHeader() {
       <VStack className="flex-1">
         <Heading size="xl">Nuovo ordine</Heading>
         <Text size="sm" className="text-muted-foreground">
-          Registra un ordine al banco o per telefono: crea l'anagrafica cliente e l'ordine, già
+          Usa questa pagina per un cliente al banco o al telefono: l'ordine viene creato già
           confermato.
         </Text>
       </VStack>
@@ -139,10 +254,8 @@ function validateOra(value: string, configurazione: ConfigurazioneAsporto | null
   const minuti = parseHHMMToMinutes(value);
   if (minuti === null) return 'Formato orario non valido (HH:MM).';
   if (!configurazione) return null;
-  const apertura = parseHHMMToMinutes(formatTime(configurazione.orario_apertura));
-  const chiusura = parseHHMMToMinutes(formatTime(configurazione.orario_chiusura));
-  if (apertura !== null && chiusura !== null && (minuti < apertura || minuti > chiusura)) {
-    return `Il servizio asporto è attivo dalle ${formatTime(configurazione.orario_apertura)} alle ${formatTime(configurazione.orario_chiusura)}.`;
+  if (!isOraInFinestre(configurazione, minuti)) {
+    return `Il servizio asporto è attivo ${descrizioneOrari(configurazione)}.`;
   }
   return null;
 }
@@ -157,7 +270,11 @@ export default function NuovoOrdineAsportoScreen() {
   // diverso): fissata una sola volta al mount, non un campo del form.
   const [oggi] = useState(() => new Date());
   const [ora, setOra] = useState('');
+  // Fascia oraria espansa nel picker a due livelli — stesso identico principio delle pagine
+  // cliente asporto, nessuna precompilazione: lo staff sceglie sempre esplicitamente uno slot.
+  const [oraEspansa, setOraEspansa] = useState<string | null>(null);
   const [configurazione, setConfigurazione] = useState<ConfigurazioneAsporto | null>(null);
+  const [prenotatiPerOrario, setPrenotatiPerOrario] = useState<ProdottiPrenotatiPerOrario>({});
 
   const [prodotti, setProdotti] = useState<Prodotto[]>([]);
   const [isLoadingCatalogo, setIsLoadingCatalogo] = useState(true);
@@ -168,22 +285,29 @@ export default function NuovoOrdineAsportoScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    Promise.all([getConfigurazioneAsporto(), listProdotti()])
-      .then(([config, prodottiList]) => {
+    Promise.all([getConfigurazioneAsporto(), listProdotti(), getProdottiPrenotatiPerOrario(toISODate(new Date()))])
+      .then(([config, prodottiList, prenotati]) => {
         setConfigurazione(config);
         setProdotti(prodottiList);
+        setPrenotatiPerOrario(prenotati);
       })
       .catch(() => setError("Impossibile caricare l'orario/il catalogo del servizio."))
       .finally(() => setIsLoadingCatalogo(false));
   }, []);
 
-  // Precompilato una sola volta (non appena la configurazione è nota): "adesso" se oggi e già
-  // dentro l'orario di apertura, altrimenti l'orario di apertura stesso — non sovrascrive un
-  // valore che lo staff ha già iniziato a digitare.
-  useEffect(() => {
-    if (!configurazione) return;
-    setOra((prev) => prev || computeDefaultOrario(null, oggi, formatTime(configurazione.orario_apertura)));
-  }, [configurazione, oggi]);
+  // A differenza delle pagine cliente (che mostrano un turno alla volta, switch dopo la
+  // chiusura), lo staff vede sempre gli slot di ENTRAMBI i turni insieme — ha visibilità diretta
+  // sulla cucina e può voler registrare un walk-in per la cena anche a metà mattina, senza dover
+  // aspettare che il pranzo chiuda.
+  const blocchiOrario = useMemo(() => {
+    if (!configurazione) return [];
+    const slotsTurno1 = generaSlotOrario(formatTime(configurazione.orario_apertura), formatTime(configurazione.orario_chiusura));
+    const slotsTurno2 =
+      configurazione.orario_apertura_2 && configurazione.orario_chiusura_2
+        ? generaSlotOrario(formatTime(configurazione.orario_apertura_2), formatTime(configurazione.orario_chiusura_2))
+        : [];
+    return raggruppaSlotPerOra([...slotsTurno1, ...slotsTurno2]);
+  }, [configurazione]);
 
   const prodottiFiltrati = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -203,6 +327,60 @@ export default function NuovoOrdineAsportoScreen() {
     () => cartLines.reduce((sum, line) => sum + line.quantita * (Number.parseFloat(line.prodotto.prezzo) || 0), 0),
     [cartLines]
   );
+  const totaleArticoli = useMemo(() => cartLines.reduce((sum, line) => sum + line.quantita, 0), [cartLines]);
+
+  // Limite globale di prodotti per orario (ConfigurazioneAsporto.limite_prodotti_orario, sezione
+  // 15) — vincolato anche per lo staff (a differenza dell'anticipo minimo, che qui non esiste
+  // affatto): riflette la reale capacità di preparazione della cucina, non un gate sul solo
+  // canale online. `richiesti` è il totale di prodotti nell'ordine che si sta componendo, non il
+  // numero di righe distinte.
+  const limiteProdottiOrario = configurazione?.limite_prodotti_orario ?? null;
+  const richiestiOrario = Math.max(totaleArticoli, 1);
+
+  // Pulsante fluttuante "vai al carrello" (sotto, solo se cartLines non è vuoto) — stesso
+  // meccanismo ref+scrollIntoView già usato per `scrollToCarrello`/`cartSectionRef` in
+  // app/cliente/asporto/index.tsx, qui riportato identico (principio "copia diretta", sezione
+  // 15/7 di CLAUDE.md). Il ref va sull'unico `Box` reale (non su una `VStack`, la cui resa web
+  // non garantisce che il ref raggiunga il vero nodo DOM — stesso gotcha già documentato per
+  // `CategoriaCard`/`scrollToCategoria`).
+  const cartSectionRef = useRef<unknown>(null);
+  const registerCartRef = (node: unknown) => {
+    cartSectionRef.current = node;
+  };
+  const scrollToCarrello = () => {
+    if (Platform.OS !== 'web') return;
+    const node = cartSectionRef.current as { scrollIntoView?: (opts: unknown) => void } | undefined;
+    node?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Il pulsante non ha senso quando la sezione "Riepilogo ordine" è già visibile a schermo — su
+  // richiesta esplicita dell'utente, sparisce mentre lo staff sta già guardando il carrello.
+  // Stesso `IntersectionObserver` (solo web) già usato per lo scroll-spy delle categorie nelle
+  // pagine cliente asporto (`activeCategoriaId`), qui applicato a un solo nodo invece che a N.
+  const [isCarrelloInView, setIsCarrelloInView] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const node = cartSectionRef.current as Element | null;
+    if (!node) return;
+    const observer = new IntersectionObserver(([entry]) => setIsCarrelloInView(entry.isIntersecting), {
+      threshold: 0.15,
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const isSlotEsaurito = (slot: string) => {
+    if (limiteProdottiOrario === null) return false;
+    const prenotati = prenotatiPerOrario[slot] ?? 0;
+    return limiteProdottiOrario - prenotati < richiestiOrario;
+  };
+  // Residuo "grezzo" dello slot (limite meno quanto già prenotato da tutti) — stesso principio
+  // delle pagine cliente: non tiene conto di richiestiOrario, serve solo a mostrare "quanti ne
+  // restano in tutto".
+  const residuoSlot = (slot: string): number | null => {
+    if (limiteProdottiOrario === null) return null;
+    const prenotati = prenotatiPerOrario[slot] ?? 0;
+    return limiteProdottiOrario - prenotati;
+  };
 
   const setQuantita = (prodottoId: string, next: number) => {
     setQuantities((prev) => {
@@ -233,6 +411,10 @@ export default function NuovoOrdineAsportoScreen() {
       setError("Aggiungi almeno un prodotto all'ordine.");
       return;
     }
+    if (isSlotEsaurito(ora.trim())) {
+      setError('Numero massimo di prodotti raggiunto per questo orario: scegli un altro orario.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -257,13 +439,46 @@ export default function NuovoOrdineAsportoScreen() {
     }
   };
 
-  return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
-      <VStack space="lg" className="w-full">
-        <NuovoOrdineHeader />
+  // Calcolato qui, non con un ternario a tre rami nel JSX (rilevato da SonarQube — stessa regola
+  // "Ternary operators should not be nested" già risolta altrove in questo file): un if/else in
+  // sequenza, nessun annidamento.
+  let catalogoContent: React.ReactNode;
+  if (isLoadingCatalogo) {
+    catalogoContent = (
+      <HStack className="items-center justify-center py-6">
+        <Spinner size="small" />
+      </HStack>
+    );
+  } else if (prodottiFiltrati.length === 0) {
+    catalogoContent = (
+      <Text size="sm" className="text-center text-muted-foreground">
+        Nessun prodotto trovato.
+      </Text>
+    );
+  } else {
+    catalogoContent = (
+      <VStack className="rounded-xl border border-sky-100">
+        {prodottiFiltrati.map((prodotto, index) => (
+          <ProdottoPickerRow
+            key={prodotto.id}
+            prodotto={prodotto}
+            quantita={quantities[prodotto.id] ?? 0}
+            isLast={index === prodottiFiltrati.length - 1}
+            onChange={(next) => setQuantita(prodotto.id, next)}
+          />
+        ))}
+      </VStack>
+    );
+  }
 
-        <VStack space="sm" className="w-full rounded-2xl border border-sky-200 bg-white p-4">
-          <Text size="xs" className="font-bold uppercase tracking-wide text-sky-700">
+  return (
+    <>
+      <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
+        <VStack space="lg" className="w-full">
+          <NuovoOrdineHeader />
+
+        <VStack space="sm" className={SEZIONE_CARD_CLASS}>
+          <Text size="xs" className={SEZIONE_TITOLO_CLASS}>
             Dati cliente
           </Text>
 
@@ -313,8 +528,8 @@ export default function NuovoOrdineAsportoScreen() {
           </VStack>
         </VStack>
 
-        <VStack space="sm" className="w-full rounded-2xl border border-sky-200 bg-white p-4">
-          <Text size="xs" className="font-bold uppercase tracking-wide text-sky-700">
+        <VStack space="sm" className={SEZIONE_CARD_CLASS}>
+          <Text size="xs" className={SEZIONE_TITOLO_CLASS}>
             Ritiro
           </Text>
 
@@ -324,7 +539,7 @@ export default function NuovoOrdineAsportoScreen() {
             </Text>
           </HStack>
           <Text size="2xs" className="text-muted-foreground">
-            Un ordine walk-in è sempre registrato per il ritiro odierno.
+            Il ritiro è sempre per oggi: non è possibile scegliere un altro giorno.
           </Text>
 
           <VStack space="xs">
@@ -337,26 +552,104 @@ export default function NuovoOrdineAsportoScreen() {
                 *
               </Text>
             </HStack>
-            <Input>
-              <InputField
-                placeholder="Es. 19:30"
-                keyboardType="numeric"
-                maxLength={5}
-                value={ora}
-                onChangeText={(text) => setOra(formatOrarioInput(ora, text))}
-              />
-            </Input>
+            {/* Livello 1 — fasce orarie: stesso identico picker a due livelli delle pagine
+                cliente asporto (checkout/riordino), ma senza anticipo minimo — lo staff, a
+                differenza del cliente self-service, può registrare un walk-in per "adesso"
+                (vede direttamente la cucina). Disabilitata solo se OGNI orario al suo interno è
+                già passato (non "troppo vicino", proprio nel passato): un orario di ritiro
+                precedente a questo momento non avrebbe comunque senso per un ordine di oggi. */}
+            <HStack space="xs" className="flex-wrap">
+              {blocchiOrario.map((blocco) => {
+                const isEspansa = blocco.ora === oraEspansa;
+                const contieneSelezionato = blocco.slots.includes(ora);
+                const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
+                const tuttiNonSelezionabili = blocco.slots.every(
+                  (slot) => parseHHMMToMinutes(slot)! < nowMinuti || isSlotEsaurito(slot)
+                );
+                return (
+                  <Pressable
+                    key={blocco.ora}
+                    onPress={() =>
+                      !tuttiNonSelezionabili && setOraEspansa((prev) => (prev === blocco.ora ? null : blocco.ora))
+                    }
+                    disabled={tuttiNonSelezionabili}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Fascia oraria ${blocco.label}${tuttiNonSelezionabili ? ', non più disponibile' : ''}`}
+                    accessibilityState={{ expanded: isEspansa, selected: contieneSelezionato, disabled: tuttiNonSelezionabili }}
+                    className={`rounded-full border-2 px-3 py-1.5 ${fasciaClassName(tuttiNonSelezionabili, isEspansa, contieneSelezionato)}`}
+                  >
+                    <Text size="xs" className={`font-medium ${fasciaTextClassName(tuttiNonSelezionabili, isEspansa)}`}>
+                      {contieneSelezionato && !isEspansa ? '✓ ' : ''}
+                      {blocco.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </HStack>
+
+            {/* Livello 2 — orari ogni 15 minuti dentro la fascia scelta sopra. */}
+            {oraEspansa ? (
+              <HStack space="xs" className="flex-wrap rounded-xl border border-sky-100 bg-sky-50/60 p-2">
+                {(blocchiOrario.find((b) => b.ora === oraEspansa)?.slots ?? []).map((slot) => {
+                  const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
+                  const passato = parseHHMMToMinutes(slot)! < nowMinuti;
+                  const esaurito = !passato && isSlotEsaurito(slot);
+                  const disabilitato = passato || esaurito;
+                  const selezionato = ora === slot;
+                  const residuo = residuoSlot(slot);
+                  const mostraResiduo =
+                    !disabilitato && residuo !== null && residuo <= SOGLIA_AVVISO_RESIDUO_ORARIO;
+                  return (
+                    <Pressable
+                      key={slot}
+                      onPress={() => !disabilitato && setOra(slot)}
+                      disabled={disabilitato}
+                      accessibilityRole="button"
+                      accessibilityLabel={slotAccessibilityLabel(slot, passato, esaurito, mostraResiduo, residuo)}
+                      className={`rounded-full border-2 px-3 py-1.5 ${slotClassName(selezionato, disabilitato)}`}
+                    >
+                      <VStack className="items-center">
+                        <Text size="xs" className={slotTextClassName(selezionato, disabilitato)}>
+                          {slot}
+                          {esaurito ? ' · Esaurito' : ''}
+                        </Text>
+                        {mostraResiduo ? (
+                          <Text size="2xs" className={selezionato ? 'text-white/80' : 'font-medium text-amber-700'}>
+                            {residuo} rimast{residuo === 1 ? 'o' : 'i'}
+                          </Text>
+                        ) : null}
+                      </VStack>
+                    </Pressable>
+                  );
+                })}
+              </HStack>
+            ) : (
+              <Text size="2xs" className="text-sky-900/50">
+                Tocca una fascia per vedere e scegliere l'orario preciso al suo interno.
+              </Text>
+            )}
+
             {configurazione ? (
               <Text size="2xs" className="text-muted-foreground">
-                Servizio attivo dalle {formatTime(configurazione.orario_apertura)} alle{' '}
-                {formatTime(configurazione.orario_chiusura)}.
+                L'asporto è attivo {descrizioneOrari(configurazione)}.
               </Text>
+            ) : null}
+            {limiteProdottiOrario !== null ? (
+              <VStack space="xs">
+                <Text size="2xs" className="text-muted-foreground">
+                  Ogni orario accetta al massimo {limiteProdottiOrario} prodotti in totale (bevande
+                  e vini sono esclusi).
+                </Text>
+                <Text size="2xs" className="text-muted-foreground">
+                  Quando restano pochi posti, lo slot lo indica sotto l'orario.
+                </Text>
+              </VStack>
             ) : null}
           </VStack>
         </VStack>
 
-        <VStack space="sm" className="w-full rounded-2xl border border-sky-200 bg-white p-4">
-          <Text size="xs" className="font-bold uppercase tracking-wide text-sky-700">
+        <VStack space="sm" className={SEZIONE_CARD_CLASS}>
+          <Text size="xs" className={SEZIONE_TITOLO_CLASS}>
             Prodotti
           </Text>
 
@@ -374,62 +667,44 @@ export default function NuovoOrdineAsportoScreen() {
             ) : null}
           </Input>
 
-          {isLoadingCatalogo ? (
-            <HStack className="items-center justify-center py-6">
-              <Spinner size="small" />
-            </HStack>
-          ) : prodottiFiltrati.length === 0 ? (
-            <Text size="sm" className="text-center text-muted-foreground">
-              Nessun prodotto trovato.
-            </Text>
-          ) : (
-            <VStack className="rounded-xl border border-sky-100">
-              {prodottiFiltrati.map((prodotto, index) => (
-                <ProdottoPickerRow
-                  key={prodotto.id}
-                  prodotto={prodotto}
-                  quantita={quantities[prodotto.id] ?? 0}
-                  isLast={index === prodottiFiltrati.length - 1}
-                  onChange={(next) => setQuantita(prodotto.id, next)}
-                />
-              ))}
-            </VStack>
-          )}
+          {catalogoContent}
         </VStack>
 
-        <VStack space="sm" className="w-full rounded-2xl border border-sky-200 bg-white p-4">
-          <Text size="xs" className="font-bold uppercase tracking-wide text-sky-700">
-            Riepilogo ordine
-          </Text>
-
-          {cartLines.length === 0 ? (
-            <Text size="sm" className="text-muted-foreground">
-              Nessun prodotto selezionato.
+        <Box ref={registerCartRef} className={SEZIONE_CARD_CLASS}>
+          <VStack space="sm">
+            <Text size="xs" className={SEZIONE_TITOLO_CLASS}>
+              Riepilogo ordine
             </Text>
-          ) : (
-            <VStack space="xs">
-              {cartLines.map((line) => (
-                <HStack key={line.prodotto.id} className="items-center justify-between">
-                  <Text size="sm" className="flex-1 text-sky-900">
-                    {line.quantita}x {line.prodotto.nome}
+
+            {cartLines.length === 0 ? (
+              <Text size="sm" className="text-muted-foreground">
+                Nessun prodotto selezionato.
+              </Text>
+            ) : (
+              <VStack space="xs">
+                {cartLines.map((line) => (
+                  <HStack key={line.prodotto.id} className="items-center justify-between">
+                    <Text size="sm" className="flex-1 text-sky-900">
+                      {line.quantita}x {line.prodotto.nome}
+                    </Text>
+                    <Text size="sm" className="font-medium text-sky-900">
+                      €{formatPrezzo((line.quantita * Number.parseFloat(line.prodotto.prezzo)).toFixed(2))}
+                    </Text>
+                  </HStack>
+                ))}
+                <Box className="h-px w-full bg-sky-100" />
+                <HStack className="items-center justify-between">
+                  <Text size="sm" className="font-semibold text-sky-900">
+                    Totale
                   </Text>
-                  <Text size="sm" className="font-medium text-sky-900">
-                    €{formatPrezzo((line.quantita * Number.parseFloat(line.prodotto.prezzo)).toFixed(2))}
+                  <Text size="md" className="font-bold text-sky-900">
+                    €{formatPrezzo(totale.toFixed(2))}
                   </Text>
                 </HStack>
-              ))}
-              <Box className="h-px w-full bg-sky-100" />
-              <HStack className="items-center justify-between">
-                <Text size="sm" className="font-semibold text-sky-900">
-                  Totale
-                </Text>
-                <Text size="md" className="font-bold text-sky-900">
-                  €{formatPrezzo(totale.toFixed(2))}
-                </Text>
-              </HStack>
-            </VStack>
-          )}
-        </VStack>
+              </VStack>
+            )}
+          </VStack>
+        </Box>
 
         {error ? (
           <Text size="sm" className="text-center text-destructive">
@@ -446,7 +721,25 @@ export default function NuovoOrdineAsportoScreen() {
             </ButtonText>
           )}
         </Button>
-      </VStack>
-    </ScrollView>
+        </VStack>
+      </ScrollView>
+
+      {/* Pulsante fluttuante "vai al carrello" — visibile solo con almeno un prodotto nel
+          carrello, porta subito alla sezione "Riepilogo ordine" in fondo alla pagina senza dover
+          scorrere manualmente. Sparisce da sé quando quella sezione è già in vista */}
+      {cartLines.length > 0 && !isCarrelloInView ? (
+        <Pressable
+          onPress={scrollToCarrello}
+          accessibilityRole="button"
+          accessibilityLabel="Vai al riepilogo dell'ordine"
+          className="web:fixed bottom-6 right-6 z-20 flex-row items-center gap-1.5 rounded-full bg-sky-600 px-4 py-3 shadow-lg active:bg-sky-700"
+        >
+          <Text size="sm" className="font-semibold text-white">
+            🛒 {totaleArticoli} · €{formatPrezzo(totale.toFixed(2))}
+          </Text>
+          <Icon as={ChevronDownIcon} size="sm" className="text-white" />
+        </Pressable>
+      ) : null}
+    </>
   );
 }

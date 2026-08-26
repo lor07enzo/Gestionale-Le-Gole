@@ -69,6 +69,27 @@ class ConfigurazioneAsporto(models.Model):
     orario_chiusura = models.TimeField(
         default=datetime.time(22, 0), verbose_name="Orario di fine disponibilità"
     )
+    # Secondo turno opzionale (es. pranzo/cena): l'asporto può essere disponibile in due fasce
+    # separate nella stessa giornata invece di un unico intervallo continuo. `null` (default) =
+    # nessun secondo turno configurato, si comporta esattamente come prima. Se impostato, deve
+    # iniziare non prima della chiusura del primo turno (validato nel serializer) — i due turni
+    # non si sovrappongono mai, sono sempre sequenziali nella giornata.
+    orario_apertura_2 = models.TimeField(
+        null=True, blank=True, verbose_name="Orario di inizio disponibilità (secondo turno)"
+    )
+    orario_chiusura_2 = models.TimeField(
+        null=True, blank=True, verbose_name="Orario di fine disponibilità (secondo turno)"
+    )
+    # Numero massimo di prodotti ordinabili complessivamente a un qualunque orario di ritiro —
+    # si applica automaticamente a ogni orario (non un limite scelto per singola fascia), non un
+    # tetto per singolo ordine/cliente: riflette la reale capacità di preparazione della cucina.
+    # `null=True` = nessun limite impostato (default), coerente col resto del progetto dove
+    # "non configurato" è sempre distinguibile da "impostato a un valore" (qui non può essere 0,
+    # a differenza di un prezzo, perché PositiveSmallIntegerField+min_value=1 lo esclude già a
+    # livello di validazione — sotto).
+    limite_prodotti_orario = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="Limite massimo di prodotti per orario"
+    )
 
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -76,12 +97,30 @@ class ConfigurazioneAsporto(models.Model):
         verbose_name = "Configurazione Asporto"
 
     def __str__(self):
-        return f"Asporto: {self.orario_apertura.strftime('%H:%M')} - {self.orario_chiusura.strftime('%H:%M')}"
+        return f"Asporto: {self.descrizione_orari()}"
 
     @classmethod
     def get_solo(cls):
         obj, _ = cls.objects.get_or_create(pk=CONFIGURAZIONE_ASPORTO_PK)
         return obj
+
+    def descrizione_orari(self):
+        """Stringa leggibile con gli orari di disponibilità — uno o due turni."""
+        turni = [(self.orario_apertura, self.orario_chiusura)]
+        if self.orario_apertura_2 and self.orario_chiusura_2:
+            turni.append((self.orario_apertura_2, self.orario_chiusura_2))
+        return " e ".join(
+            f"dalle {apertura.strftime('%H:%M')} alle {chiusura.strftime('%H:%M')}"
+            for apertura, chiusura in turni
+        )
+
+    def orario_valido(self, ora):
+        """True se `ora` (datetime.time) rientra nel primo turno o, se configurato, nel secondo."""
+        if self.orario_apertura <= ora <= self.orario_chiusura:
+            return True
+        if self.orario_apertura_2 and self.orario_chiusura_2:
+            return self.orario_apertura_2 <= ora <= self.orario_chiusura_2
+        return False
 
 
 class Prodotto(models.Model):

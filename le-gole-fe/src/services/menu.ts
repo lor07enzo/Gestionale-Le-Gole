@@ -59,11 +59,23 @@ export type ConfigurazioneAsporto = {
   // "HH:MM:SS" (formato backend).
   orario_apertura: string;
   orario_chiusura: string;
+  // Secondo turno opzionale (es. pranzo/cena): entrambi `null` finché non è configurato, entrambi
+  // valorizzati insieme altrimenti (mai uno solo dei due — vincolato lato backend). Se impostato,
+  // inizia sempre non prima della chiusura del primo turno (i due non si sovrappongono mai).
+  orario_apertura_2: string | null;
+  orario_chiusura_2: string | null;
+  // Numero massimo di prodotti ordinabili complessivamente a un qualunque orario di ritiro — si
+  // applica automaticamente a ogni orario (non un limite scelto per singola fascia). `null` =
+  // nessun limite impostato (default).
+  limite_prodotti_orario: number | null;
   updated_at: string;
 };
 
 export type UpdateConfigurazioneAsportoPayload = Partial<
-  Pick<ConfigurazioneAsporto, 'orario_apertura' | 'orario_chiusura'>
+  Pick<
+    ConfigurazioneAsporto,
+    'orario_apertura' | 'orario_chiusura' | 'orario_apertura_2' | 'orario_chiusura_2' | 'limite_prodotti_orario'
+  >
 >;
 
 export type GiornoChiusoAsporto = {
@@ -74,6 +86,12 @@ export type GiornoChiusoAsporto = {
 };
 
 export type CreateGiornoChiusoAsportoPayload = Pick<GiornoChiusoAsporto, 'data'>;
+
+// Risposta pubblica di GET /voci-ordine/prenotati-per-orario/ — quantità totale di prodotti già
+// prenotati per ciascun orario in una data (es. `{"12:15": 10}`), solo gli orari con almeno una
+// riga d'ordine compaiono. Combinata lato client con `ConfigurazioneAsporto.limite_prodotti_orario`
+// per calcolare il residuo per ogni slot dei picker orario.
+export type ProdottiPrenotatiPerOrario = Record<string, number>;
 
 export type VoceOrdine = {
   id: string;
@@ -196,6 +214,17 @@ export function deleteGiornoChiusoAsporto(id: string): Promise<void> {
 export function getProssimeChiusureAsporto(): Promise<string[]> {
   return api
     .get<string[]>(`${GIORNI_CHIUSI_ASPORTO_PATH}prossime/`)
+    .then((response) => response.data);
+}
+
+// GET /voci-ordine/prenotati-per-orario/?data=YYYY-MM-DD — pubblico, solo gli orari con almeno
+// una VoceOrdine compaiono. Usato dai picker orario (checkout self-service, riordino, creazione
+// manuale staff) insieme a `ConfigurazioneAsporto.limite_prodotti_orario` per calcolare il
+// residuo per slot e disabilitare in anticipo uno slot già al completo, prima ancora del submit —
+// il backend resta comunque l'ultima parola su ogni singola VoceOrdine creata/modificata.
+export function getProdottiPrenotatiPerOrario(data: string): Promise<ProdottiPrenotatiPerOrario> {
+  return api
+    .get<ProdottiPrenotatiPerOrario>(`${VOCI_ORDINE_PATH}prenotati-per-orario/`, { params: { data } })
     .then((response) => response.data);
 }
 
