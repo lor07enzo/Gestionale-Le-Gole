@@ -27,12 +27,14 @@ import {
   type ProdottiPrenotatiPerOrario,
 } from '../../../../src/services/menu';
 import { apriBigliettoPdf } from '../../../../src/utils/biglietto';
+import { extractErrorMessage } from '../../../../src/utils/errors';
 import {
   formatDateDDMMYYYY,
   formatTime,
-  minutesToHHMM,
+  generaSlotOrario,
   nowHHMM,
   parseHHMMToMinutes,
+  raggruppaSlotPerOra,
   STATO_PRENOTAZIONE_BADGE,
   STATO_PRENOTAZIONE_LABEL,
   toISODate,
@@ -61,38 +63,6 @@ const RESIDUO_CRITICO = 2;
 // badge annidato dentro il bottone), stessa funzione identica del checkout self-service.
 function residuoTextClassName(residuo: number): string {
   return residuo <= RESIDUO_CRITICO ? 'text-rose-600' : 'text-amber-600';
-}
-
-type BloccoOrario = { ora: string; label: string; slots: string[] };
-
-// Stesse identiche funzioni pure di app/cliente/asporto/index.tsx (generaSlotOrario/raggruppaSlotPerOra)
-// — duplicate qui invece di astratte in un modulo condiviso, stesso principio "copia diretta" già
-// seguito per `scrollChipIntoView` tra le pagine asporto (nessuna infrastruttura condivisa in più
-// del necessario per due soli chiamanti).
-function generaSlotOrario(apertura: string, chiusura: string, stepMinuti = 15): string[] {
-  const inizio = parseHHMMToMinutes(apertura);
-  const fine = parseHHMMToMinutes(chiusura);
-  if (inizio === null || fine === null) return [];
-  const slots: string[] = [];
-  for (let minuti = inizio; minuti <= fine; minuti += stepMinuti) {
-    slots.push(minutesToHHMM(minuti));
-  }
-  return slots;
-}
-
-function raggruppaSlotPerOra(slots: string[]): BloccoOrario[] {
-  const blocchi: BloccoOrario[] = [];
-  for (const slot of slots) {
-    const ora = slot.slice(0, 2);
-    const ultimo = blocchi[blocchi.length - 1];
-    if (ultimo && ultimo.ora === ora) {
-      ultimo.slots.push(slot);
-      continue;
-    }
-    const oraFine = String((Number.parseInt(ora, 10) + 1) % 24).padStart(2, '0');
-    blocchi.push({ ora, label: `${ora}:00-${oraFine}:00`, slots: [slot] });
-  }
-  return blocchi;
 }
 
 type FinestraOraria = { apertura: string; chiusura: string };
@@ -136,15 +106,6 @@ function isOraInFinestre(configurazione: ConfigurazioneAsporto, minuti: number):
     if (apertura2 !== null && chiusura2 !== null && minuti >= apertura2 && minuti <= chiusura2) return true;
   }
   return false;
-}
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: unknown } })?.response?.data;
-  if (detail && typeof detail === 'object') {
-    const message = Object.values(detail as Record<string, unknown>).flat().join(' ');
-    if (message) return message;
-  }
-  return fallback;
 }
 
 function DettaglioHeader() {

@@ -1,13 +1,18 @@
+import type { Dispatch, SetStateAction } from 'react';
 import { HStack } from '@/components/ui/hstack';
 import { Button, ButtonIcon, ButtonText } from '@/components/ui/button';
 import { AddIcon, RemoveIcon } from '@/components/ui/icon';
-import { usePiscinaMappaData } from '../../../context/PiscinaMappaDataContext';
 import { clamp, MAX_SCALE, MIN_SCALE, SCALE_STEP } from '../../../utils/piscinaMappa';
 
-// Stesso "look" di EditModeToggle (cerchio indipendente per pulsante), non una pillola unica.
-export function ZoomControls() {
-  const { scale, setScale } = usePiscinaMappaData();
+type ZoomControlsProps = {
+  scale: number;
+  setScale: Dispatch<SetStateAction<number>>;
+};
 
+// `scale`/`setScale` come prop (non lette da usePiscinaMappaData, staff-only) — così è riusabile
+// anche dalla mappa cliente self-service (PiscinaMappaSelettore.tsx), che ha il proprio stato locale.
+// Stesso "look" di EditModeToggle (cerchio indipendente per pulsante), non una pillola unica.
+export function ZoomControls({ scale, setScale }: ZoomControlsProps) {
   return (
     <HStack space="xs" className="items-center">
       <Button

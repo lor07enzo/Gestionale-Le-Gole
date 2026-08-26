@@ -28,6 +28,7 @@ import {
   type CreatePiscinaInventarioPayload,
   type PiscinaInventario,
 } from '../../services/struttura';
+import { extractErrorMessage } from '../../utils/errors';
 import { formatOrarioInput } from '../../utils/piscinaMappa';
 
 type TipoInventario = 'PISCINA' | 'SALA' | 'PADEL';
@@ -94,17 +95,6 @@ const INITIAL_FORM_STATE: FormState = {
   totaleSdraie: '0',
   isActive: false,
 };
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const data = (error as { response?: { data?: unknown } }).response?.data;
-    if (data && typeof data === 'object' && 'detail' in data) {
-      const detail = (data as { detail?: unknown }).detail;
-      if (typeof detail === 'string') return detail;
-    }
-  }
-  return fallback;
-}
 
 function formStateFromItem(item: PiscinaInventario): FormState {
   return {

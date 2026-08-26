@@ -39,21 +39,7 @@ import {
 } from '../../src/services/menu';
 import { formatOrarioInput, formatTime, parseHHMMToMinutes, toISODate } from '../../src/utils/piscinaMappa';
 import { WEEKDAY_LABELS, addMonths, buildMonthGrid, formatMonthLabel, startOfMonth } from '../../src/utils/calendar';
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const data = (error as { response?: { data?: unknown } }).response?.data;
-    if (data && typeof data === 'object') {
-      if ('detail' in data && typeof (data as { detail?: unknown }).detail === 'string') {
-        return (data as { detail: string }).detail;
-      }
-      const values = Object.values(data as Record<string, unknown>).flat();
-      const messages = values.filter((value): value is string => typeof value === 'string');
-      if (messages.length > 0) return messages.join(' ');
-    }
-  }
-  return fallback;
-}
+import { extractErrorMessage } from '../../src/utils/errors';
 
 function AsportoHeader() {
   return (
@@ -468,7 +454,7 @@ function LimiteProdottiOrarioCard() {
 
   const handleChangeLimite = (next: string) => {
     // Solo cifre: un campo numerico puro, non mascherato come gli orari.
-    setLimite(next.replace(/[^0-9]/g, ''));
+    setLimite(next.replace(/\D/g, ''));
     setJustSaved(false);
   };
 

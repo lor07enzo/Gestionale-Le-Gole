@@ -8,21 +8,7 @@ import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonIcon, ButtonSpinner } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { AddIcon, Icon, TrashIcon } from '@/components/ui/icon';
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const data = (error as { response?: { data?: unknown } }).response?.data;
-    if (data && typeof data === 'object') {
-      if ('detail' in data && typeof (data as { detail?: unknown }).detail === 'string') {
-        return (data as { detail: string }).detail;
-      }
-      const values = Object.values(data as Record<string, unknown>).flat();
-      const messages = values.filter((value): value is string => typeof value === 'string');
-      if (messages.length > 0) return messages.join(' ');
-    }
-  }
-  return fallback;
-}
+import { extractErrorMessage } from '../../utils/errors';
 
 export type ListEditorItem = { id: string; nome: string; icona?: string };
 

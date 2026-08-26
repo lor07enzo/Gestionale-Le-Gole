@@ -21,6 +21,7 @@ import {
   SearchIcon,
 } from '@/components/ui/icon';
 import { goBackOr } from '../../../../src/utils/navigation';
+import { extractErrorMessage } from '../../../../src/utils/errors';
 import { createCliente } from '../../../../src/services/clienti';
 import { createPrenotazioneAsporto } from '../../../../src/services/prenotazioni';
 import {
@@ -35,9 +36,10 @@ import {
 import {
   formatDisplayDate,
   formatTime,
-  minutesToHHMM,
+  generaSlotOrario,
   nowHHMM,
   parseHHMMToMinutes,
+  raggruppaSlotPerOra,
   toISODate,
 } from '../../../../src/utils/piscinaMappa';
 import { formatPrezzo } from '../../../../src/utils/prezzi';
@@ -47,8 +49,6 @@ import { formatPrezzo } from '../../../../src/utils/prezzi';
 // sezione 5 di CLAUDE.md): crea anagrafica + ordine già CONFIRMED, senza attesa. A differenza
 // della piscina, qui vive in una pagina dedicata (non un Actionsheet) perché scegliere i prodotti
 // dal catalogo richiede più spazio verticale di un foglio.
-
-type BloccoOrario = { ora: string; label: string; slots: string[] };
 
 // Sotto questo numero di prodotti ancora prenotabili per un orario, mostriamo il conteggio
 // residuo sotto lo slot — stessa soglia/stesso principio delle pagine cliente asporto.
@@ -60,40 +60,14 @@ const SOGLIA_AVVISO_RESIDUO_ORARIO = 5;
 const SEZIONE_TITOLO_CLASS = 'font-bold uppercase tracking-wide text-sky-700';
 const SEZIONE_CARD_CLASS = 'w-full rounded-2xl border border-sky-200 bg-white p-4';
 
-// Stesse identiche funzioni pure delle pagine cliente asporto (app/cliente/asporto/index.tsx,
-// app/cliente/storico/asporto/[id].tsx) — duplicate qui invece di astratte in un modulo condiviso,
-// stesso principio "copia diretta" già seguito per `scrollChipIntoView` tra le pagine cliente.
-// Nessun anticipo minimo qui, a differenza delle due pagine cliente: lo staff ha visibilità
-// diretta sulla cucina (stesso principio per cui bypassa GiornoPienoPiscina/GiornoChiusoAsporto
-// online, sezioni 2/15) — un walk-in può benissimo essere ritirato "adesso", quindi un orario
-// coincidente con l'ora corrente resta selezionabile. Solo gli orari già passati (prima di
-// adesso, non prima di adesso+un margine) sono disabilitati — un ordine per un orario già
-// trascorso oggi non avrebbe comunque senso.
-function generaSlotOrario(apertura: string, chiusura: string, stepMinuti = 15): string[] {
-  const inizio = parseHHMMToMinutes(apertura);
-  const fine = parseHHMMToMinutes(chiusura);
-  if (inizio === null || fine === null) return [];
-  const slots: string[] = [];
-  for (let minuti = inizio; minuti <= fine; minuti += stepMinuti) {
-    slots.push(minutesToHHMM(minuti));
-  }
-  return slots;
-}
-
-function raggruppaSlotPerOra(slots: string[]): BloccoOrario[] {
-  const blocchi: BloccoOrario[] = [];
-  for (const slot of slots) {
-    const ora = slot.slice(0, 2);
-    const ultimo = blocchi.at(-1);
-    if (ultimo?.ora === ora) {
-      ultimo.slots.push(slot);
-      continue;
-    }
-    const oraFine = String((Number.parseInt(ora, 10) + 1) % 24).padStart(2, '0');
-    blocchi.push({ ora, label: `${ora}:00-${oraFine}:00`, slots: [slot] });
-  }
-  return blocchi;
-}
+// `generaSlotOrario`/`raggruppaSlotPerOra`/`BloccoOrario` sono importate da `utils/piscinaMappa.ts`
+// (2026-08-26, SonarQube — duplicazione): nessun anticipo minimo qui, a differenza delle pagine
+// cliente, applicato invece a valle nel filtro `passato`/`disabilitato` sotto — lo staff ha
+// visibilità diretta sulla cucina (stesso principio per cui bypassa GiornoPienoPiscina/
+// GiornoChiusoAsporto online, sezioni 2/15): un walk-in può benissimo essere ritirato "adesso",
+// quindi un orario coincidente con l'ora corrente resta selezionabile. Solo gli orari già passati
+// (prima di adesso, non prima di adesso+un margine) sono disabilitati — un ordine per un orario
+// già trascorso oggi non avrebbe comunque senso.
 
 // Descrizione leggibile di entrambi i turni insieme (pranzo/cena, sezione 15) — stessa forma di
 // `descrizione_orari()` lato backend (menu/models.py, ConfigurazioneAsporto).
@@ -117,15 +91,6 @@ function isOraInFinestre(configurazione: ConfigurazioneAsporto, minuti: number):
     if (apertura2 !== null && chiusura2 !== null && minuti >= apertura2 && minuti <= chiusura2) return true;
   }
   return false;
-}
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: unknown } })?.response?.data;
-  if (detail && typeof detail === 'object') {
-    const message = Object.values(detail as Record<string, unknown>).flat().join(' ');
-    if (message) return message;
-  }
-  return fallback;
 }
 
 // Estratte dai rispettivi JSX (ternari annidati, rilevati da SonarQube — regola "Ternary operators

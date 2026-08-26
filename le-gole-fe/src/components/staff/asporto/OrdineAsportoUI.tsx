@@ -43,6 +43,7 @@ import {
 } from '../../../services/menu';
 import { formatOrarioInput, formatTime, parseHHMMToMinutes, STATO_PRENOTAZIONE_BADGE, STATO_PRENOTAZIONE_LABEL } from '../../../utils/piscinaMappa';
 import { formatPrezzo } from '../../../utils/prezzi';
+import { extractErrorMessage } from '../../../utils/errors';
 
 // Pezzi condivisi tra "Storico Ordini" (app/staff/asporto/ordini.tsx, per giorno) e la scheda
 // cliente (app/staff/clienti/[clienteId].tsx, storico completo su più giorni) — stessa card
@@ -51,14 +52,10 @@ import { formatPrezzo } from '../../../utils/prezzi';
 // quantità, aggiunta/rimozione prodotto, salvataggio isolato per azione) è sostanziosa abbastanza
 // da giustificare un modulo condiviso, a differenza di un piccolo helper.
 
-export function extractErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: unknown } })?.response?.data;
-  if (detail && typeof detail === 'object') {
-    const message = Object.values(detail as Record<string, unknown>).flat().join(' ');
-    if (message) return message;
-  }
-  return fallback;
-}
+// Re-esportata per non rompere i chiamanti (`app/staff/clienti/[clienteId].tsx`,
+// `app/staff/asporto/ordini/[ordineId].tsx`) che la importano già da questo modulo condiviso —
+// l'implementazione vera vive in `utils/errors.ts` dal 2026-08-26 (SonarQube, duplicazione).
+export { extractErrorMessage };
 
 export function calcolaTotale(voci: VoceOrdine[]): number {
   return voci.reduce((sum, voce) => sum + (Number.parseFloat(voce.subtotale) || 0), 0);

@@ -21,7 +21,7 @@ WORKDIR /app
 # Separato dal resto del codice per sfruttare la cache dei layer Docker. Eseguito come root
 # (prima dello USER sotto): site-packages resta sola lettura per appuser.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements.txt
 
 # Copia esplicita per app, non un "COPY . ." ricorsivo su tutto il contesto — va aggiunta una
 # riga se nasce una nuova app di primo livello. Nessun --chown: il codice resta di proprietà di

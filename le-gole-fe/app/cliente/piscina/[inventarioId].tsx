@@ -60,6 +60,7 @@ import {
 } from '../../../src/utils/piscinaMappa';
 import { formatPrezzo } from '../../../src/utils/prezzi';
 import { apriBigliettoPdf } from '../../../src/utils/biglietto';
+import { extractErrorMessage } from '../../../src/utils/errors';
 
 type FormState = {
   nome: string;
@@ -114,15 +115,6 @@ function distribuisciSuPostazioni(totale: number, n: number): number[] {
   const base = Math.floor(totale / n);
   const resto = totale % n;
   return Array.from({ length: n }, (_, i) => base + (i < resto ? 1 : 0));
-}
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: unknown } })?.response?.data;
-  if (detail && typeof detail === 'object') {
-    const message = Object.values(detail as Record<string, unknown>).flat().join(' ');
-    if (message) return message;
-  }
-  return fallback;
 }
 
 function DateNav({

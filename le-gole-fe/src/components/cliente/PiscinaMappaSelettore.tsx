@@ -3,20 +3,17 @@ import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { Text } from '@/components/ui/text';
 import { Spinner } from '@/components/ui/spinner';
-import { Button, ButtonIcon, ButtonText } from '@/components/ui/button';
-import { AddIcon, RemoveIcon } from '@/components/ui/icon';
 import { listPostazioni, type Postazione } from '../../services/struttura';
 import { getPostazioniOccupate } from '../../services/prenotazioni';
 import { PostazioneMarker } from '../staff/piscina-mappa/PostazioneMarker';
+import { ZoomControls } from '../staff/piscina-mappa/ZoomControls';
 import { ZoomPanCanvas } from '../shared/ZoomPanCanvas';
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
-  clamp,
   groupGazeboAttaccati,
   MAX_SCALE,
   MIN_SCALE,
-  SCALE_STEP,
   toISODate,
 } from '../../utils/piscinaMappa';
 
@@ -131,35 +128,7 @@ export function PiscinaMappaSelettore({
     <Box className="w-full gap-2">
       <Box className="relative h-72 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50">
         <Box className="absolute left-2 top-2 z-10">
-          <HStack space="xs" className="items-center">
-            <Button
-              size="icon"
-              variant="outline"
-              className="rounded-full border-2 border-sky-300 bg-white shadow-sm"
-              onPress={() => setScale((s) => clamp(s - SCALE_STEP, MIN_SCALE, MAX_SCALE))}
-              accessibilityLabel="Riduci zoom"
-            >
-              <ButtonIcon as={RemoveIcon} className="text-sky-900" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-9 min-w-12 rounded-full border-2 border-sky-300 bg-white px-2 shadow-sm"
-              onPress={() => setScale(1)}
-              accessibilityLabel="Reimposta lo zoom al 100%"
-            >
-              <ButtonText className="font-bold text-sky-900">{Math.round(scale * 100)}%</ButtonText>
-            </Button>
-            <Button
-              size="icon"
-              variant="outline"
-              className="rounded-full border-2 border-sky-300 bg-white shadow-sm"
-              onPress={() => setScale((s) => clamp(s + SCALE_STEP, MIN_SCALE, MAX_SCALE))}
-              accessibilityLabel="Aumenta zoom"
-            >
-              <ButtonIcon as={AddIcon} className="text-sky-900" />
-            </Button>
-          </HStack>
+          <ZoomControls scale={scale} setScale={setScale} />
         </Box>
         <ZoomPanCanvas
           width={CANVAS_WIDTH}

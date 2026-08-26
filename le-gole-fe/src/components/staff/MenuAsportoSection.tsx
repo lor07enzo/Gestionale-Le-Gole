@@ -53,21 +53,7 @@ import {
   type Prodotto,
 } from '../../services/menu';
 import { CatalogListEditor } from './CatalogListEditor';
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const data = (error as { response?: { data?: unknown } }).response?.data;
-    if (data && typeof data === 'object') {
-      if ('detail' in data && typeof (data as { detail?: unknown }).detail === 'string') {
-        return (data as { detail: string }).detail;
-      }
-      const values = Object.values(data as Record<string, unknown>).flat();
-      const messages = values.filter((value): value is string => typeof value === 'string');
-      if (messages.length > 0) return messages.join(' ');
-    }
-  }
-  return fallback;
-}
+import { extractErrorMessage } from '../../utils/errors';
 
 function formatPrezzo(prezzo: string): string {
   const valore = Number.parseFloat(prezzo);
@@ -750,7 +736,7 @@ export function MenuAsportoSection() {
         if (Date.now() < suppressObserverUntilRef.current) return;
         const visibili = entries.filter((e) => e.isIntersecting);
         if (visibili.length === 0) return;
-        const piuAlta = visibili.reduce((a, b) => (a.boundingClientRect.top <= b.boundingClientRect.top ? a : b));
+        const piuAlta = visibili.reduce((a, b) => (a.boundingClientRect.top <= b.boundingClientRect.top ? a : b), visibili[0]);
         const id = nodeToId.get(piuAlta.target);
         if (id) setActiveCategoriaId(id);
       },

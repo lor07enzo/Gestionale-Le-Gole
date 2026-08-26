@@ -21,13 +21,15 @@ import { useCarrelloAsporto } from '../../../src/context/CarrelloAsportoContext'
 import {
   addDays,
   formatDateDDMMYYYY,
-  minutesToHHMM,
+  generaSlotOrario,
   nowHHMM,
   parseHHMMToMinutes,
   parseISODate,
+  raggruppaSlotPerOra,
   toISODate,
 } from '../../../src/utils/piscinaMappa';
 import { formatPrezzo } from '../../../src/utils/prezzi';
+import { extractErrorMessage } from '../../../src/utils/errors';
 
 // Nome esatto della categoria seminata lato backend (migrazione 0008, idempotente — sempre
 // presente dopo il primo deploy, anche se lo staff non l'ha mai toccata). Un ordine con più di
@@ -103,15 +105,6 @@ function scrollChipIntoView(node: unknown) {
   }
 }
 
-function extractErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: unknown } })?.response?.data;
-  if (detail && typeof detail === 'object') {
-    const message = Object.values(detail as Record<string, unknown>).flat().join(' ');
-    if (message) return message;
-  }
-  return fallback;
-}
-
 // L'asporto non ha un concetto di "giorno di ritiro" scelto dal cliente (sempre oggi, stesso
 // principio di un ordine da asporto reale) — solo l'orario va validato contro
 // ConfigurazioneAsporto, stesso schema del `validateOrario` piscina ma senza il controllo data.
@@ -138,42 +131,6 @@ function validateOrarioRitiro(
     return `Con questo ordine serve un anticipo di almeno ${anticipoMinimoMinuti} minuti rispetto all'ora attuale.`;
   }
   return null;
-}
-
-// Elenco di orari selezionabili ogni `stepMinuti` tra apertura e chiusura (es. 12:00, 12:15,
-// 12:30...) — sostituisce il `TimePickerModal` di `react-native-paper-dates` usato invece dalla
-// piscina (sezione 7): qui il cliente sceglie direttamente da un elenco di orari validi, senza
-// aprire una libreria/un modale esterno. `minuti <= fine` incluso: il backend accetta l'orario di
-// chiusura stesso come valido (`validateOrarioRitiro` sopra confronta con `<=`).
-function generaSlotOrario(apertura: string, chiusura: string, stepMinuti = 15): string[] {
-  const inizio = parseHHMMToMinutes(apertura);
-  const fine = parseHHMMToMinutes(chiusura);
-  if (inizio === null || fine === null) return [];
-  const slots: string[] = [];
-  for (let minuti = inizio; minuti <= fine; minuti += stepMinuti) {
-    slots.push(minutesToHHMM(minuti));
-  }
-  return slots;
-}
-
-type BloccoOrario = { ora: string; label: string; slots: string[] };
-
-// Raggruppa gli slot da 15 minuti per fascia oraria di appartenenza (es. "12:00-13:00" contiene
-// 12:00/12:15/12:30/12:45) — un tap su una fascia espande solo i suoi orari, invece di mostrare
-// fin da subito un'unica griglia lunga con ogni slot tra apertura e chiusura.
-function raggruppaSlotPerOra(slots: string[]): BloccoOrario[] {
-  const blocchi: BloccoOrario[] = [];
-  for (const slot of slots) {
-    const ora = slot.slice(0, 2);
-    const ultimo = blocchi[blocchi.length - 1];
-    if (ultimo && ultimo.ora === ora) {
-      ultimo.slots.push(slot);
-      continue;
-    }
-    const oraFine = String((Number.parseInt(ora, 10) + 1) % 24).padStart(2, '0');
-    blocchi.push({ ora, label: `${ora}:00-${oraFine}:00`, slots: [slot] });
-  }
-  return blocchi;
 }
 
 type FinestraOraria = { apertura: string; chiusura: string };
@@ -510,7 +467,7 @@ export default function ClienteAsportoScreen() {
         if (Date.now() < suppressObserverUntilRef.current) return;
         const visibili = entries.filter((e) => e.isIntersecting);
         if (visibili.length === 0) return;
-        const piuAlta = visibili.reduce((a, b) => (a.boundingClientRect.top <= b.boundingClientRect.top ? a : b));
+        const piuAlta = visibili.reduce((a, b) => (a.boundingClientRect.top <= b.boundingClientRect.top ? a : b), visibili[0]);
         const id = nodeToId.get(piuAlta.target);
         if (id) setActiveCategoriaId(id);
       },

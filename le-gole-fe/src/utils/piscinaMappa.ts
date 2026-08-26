@@ -69,9 +69,8 @@ export function generateGruppoId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  // NOSONAR: pseudo-casuale non crittografico, adatto — `gruppo` non è un segreto.
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.trunc(Math.random() * 16);
+    const r = Math.trunc(Math.random() * 16); // NOSONAR: pseudo-casuale non crittografico, `gruppo` non è un segreto
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
@@ -155,6 +154,41 @@ export function parseHHMMToMinutes(value: string): number | null {
   const m = Number(match[2]);
   if (h > 23 || m > 59) return null;
   return h * 60 + m;
+}
+
+// Elenco "HH:MM" tra apertura e chiusura, ogni `stepMinuti` — usato dai picker orario di ritiro
+// asporto (checkout self-service, riordino, creazione manuale staff). Estratta qui il 2026-08-26
+// (SonarQube, duplicazione) dopo che un terzo chiamante ha reso non più giustificabile la copia
+// diretta in ciascun file (principio già seguito nel progetto solo per due soli chiamanti).
+export function generaSlotOrario(apertura: string, chiusura: string, stepMinuti = 15): string[] {
+  const inizio = parseHHMMToMinutes(apertura);
+  const fine = parseHHMMToMinutes(chiusura);
+  if (inizio === null || fine === null) return [];
+  const slots: string[] = [];
+  for (let minuti = inizio; minuti <= fine; minuti += stepMinuti) {
+    slots.push(minutesToHHMM(minuti));
+  }
+  return slots;
+}
+
+export type BloccoOrario = { ora: string; label: string; slots: string[] };
+
+// Raggruppa gli slot da 15 minuti per fascia oraria di appartenenza (es. "12:00-13:00" contiene
+// 12:00/12:15/12:30/12:45) — un tap su una fascia espande solo i suoi orari, invece di mostrare
+// fin da subito un'unica griglia lunga con ogni slot tra apertura e chiusura.
+export function raggruppaSlotPerOra(slots: string[]): BloccoOrario[] {
+  const blocchi: BloccoOrario[] = [];
+  for (const slot of slots) {
+    const ora = slot.slice(0, 2);
+    const ultimo = blocchi.at(-1);
+    if (ultimo?.ora === ora) {
+      ultimo.slots.push(slot);
+      continue;
+    }
+    const oraFine = String((Number.parseInt(ora, 10) + 1) % 24).padStart(2, '0');
+    blocchi.push({ ora, label: `${ora}:00-${oraFine}:00`, slots: [slot] });
+  }
+  return blocchi;
 }
 
 // Usa l'orario della prenotazione se ancora valido (>= adesso, solo per oggi), altrimenti l'ora
@@ -288,6 +322,10 @@ function bulkStepPercent(tipo: TipoPostazione, orientamento: OrientamentoGriglia
   return (pixelStep / canvasDim) * 100;
 }
 
+// Centro di default (percentuale 0-100): costante condivisa, non un literal nel default del
+// parametro sotto — solo letta (mai mutata) da computeBulkPositions, sicura da riusare tra le chiamate.
+const DEFAULT_BULK_CENTER: { x: number; y: number } = { x: 50, y: 50 };
+
 // Posizioni pos_x/pos_y per `quantita` postazioni create in blocco, centrate e distribuite in
 // colonna o riga. Se il passo naturale farebbe uscire la fila dal canvas, viene ridotto per
 // restare tra il 2% e il 98%.
@@ -295,7 +333,7 @@ export function computeBulkPositions(
   tipo: TipoPostazione,
   quantita: number,
   orientamento: OrientamentoGriglia,
-  center: { x: number; y: number } = { x: 50, y: 50 }
+  center: { x: number; y: number } = DEFAULT_BULK_CENTER
 ): Array<{ pos_x: number; pos_y: number }> {
   if (quantita <= 1) return [{ pos_x: center.x, pos_y: center.y }];
 

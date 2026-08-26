@@ -35,7 +35,7 @@ export function MappaCanvas() {
     <Box className="relative h-105 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50">
       {/* Overlay assoluti: zoom in alto a sinistra, modalità modifica in alto a destra. */}
       <Box className="absolute left-2 top-2 z-10">
-        <ZoomControls />
+        <ZoomControls scale={scale} setScale={setScale} />
       </Box>
       <Box className="absolute right-2 top-2 z-10">
         <EditModeToggle />
