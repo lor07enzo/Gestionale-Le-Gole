@@ -9,8 +9,16 @@ import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { AddIcon, ClockIcon, Icon, LockIcon, PhoneIcon, RemoveIcon } from '@/components/ui/icon';
-import { createVoceOrdine, type Prodotto } from '../../../src/services/menu';
+import {
+  Actionsheet,
+  ActionsheetBackdrop,
+  ActionsheetContent,
+  ActionsheetDragIndicator,
+  ActionsheetDragIndicatorWrapper,
+  ActionsheetScrollView,
+} from '@/components/ui/actionsheet';
+import { AddIcon, ClockIcon, CloseIcon, Icon, LockIcon, PhoneIcon, RemoveIcon, SlidersIcon } from '@/components/ui/icon';
+import { createVoceOrdine, type Allergene, type Categoria, type Prodotto } from '../../../src/services/menu';
 import { createPrenotazioneAsporto, getRicevutaUrl } from '../../../src/services/prenotazioni';
 import { createCliente } from '../../../src/services/clienti';
 import { ClienteFooter } from '../../../src/components/cliente/ClienteFooter';
@@ -310,9 +318,209 @@ function ProdottoRigaCliccabile({
   );
 }
 
+// Filtri lato cliente (2026-08-28), su richiesta esplicita dell'utente ("prendi spunto dalla
+// pagina dei filtri di amazon"): categoria, allergeni, fascia di prezzo — un foglio a fondo
+// pagina (`FiltriSheet`, sotto) con una sezione a chip per ciascun gruppo, un conteggio prodotti
+// per opzione (calcolato una volta sola su tutto il catalogo disponibile, non ricalcolato in base
+// agli altri filtri già attivi — un compromesso deliberato: la versione "dinamica" di Amazon
+// sarebbe più corretta ma anche più costosa da calcolare per un beneficio marginale su un menu di
+// queste dimensioni) e un pulsante finale "Mostra N prodotti", stesso linguaggio del "See results"
+// di Amazon. Le chip attive restano visibili anche a foglio chiuso, in una riga rimovibile sopra
+// il menu (sotto).
+type PrezzoBucketId = 'fino5' | 'da5a10' | 'oltre10';
+type PrezzoBucket = { id: PrezzoBucketId; label: string; test: (prezzo: number) => boolean };
+const PREZZO_BUCKETS: PrezzoBucket[] = [
+  { id: 'fino5', label: 'Fino a €5', test: (prezzo) => prezzo <= 5 },
+  { id: 'da5a10', label: 'Da €5 a €10', test: (prezzo) => prezzo > 5 && prezzo <= 10 },
+  { id: 'oltre10', label: 'Oltre €10', test: (prezzo) => prezzo > 10 },
+];
+
+// Chip di selezione dentro il foglio filtri — stesso linguaggio visivo dei chip categoria già
+// presenti sulla barra di navigazione della pagina, con in più un conteggio prodotti ed una tinta
+// alternativa (amber) per gli allergeni, coerente col colore già usato per i badge allergene nella
+// pagina di dettaglio prodotto.
+function FiltroChip({
+  label,
+  selected,
+  count,
+  onPress,
+  tone = 'sky',
+}: Readonly<{
+  label: string;
+  selected: boolean;
+  count: number;
+  onPress: () => void;
+  tone?: 'sky' | 'amber';
+}>) {
+  const unselectedClass =
+    tone === 'amber' ? 'border-amber-200 bg-amber-50 active:bg-amber-100' : 'border-sky-200 bg-white active:bg-sky-50';
+  const unselectedTextClass = tone === 'amber' ? 'text-amber-800' : 'text-sky-800';
+  const selectedClass = tone === 'amber' ? 'border-amber-600 bg-amber-600' : 'border-sky-600 bg-sky-600';
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`${label}, ${count} ${count === 1 ? 'prodotto' : 'prodotti'}${selected ? ', filtro attivo' : ''}`}
+      className={`rounded-full border-2 px-3.5 py-1.5 ${selected ? selectedClass : unselectedClass}`}
+    >
+      <Text size="xs" className={`font-medium ${selected ? 'text-white' : unselectedTextClass}`}>
+        {selected ? '✓ ' : ''}
+        {label} ({count})
+      </Text>
+    </Pressable>
+  );
+}
+
+// Chip "rimuovibile" della riga riepilogo filtri attivi (sotto il pulsante Filtri, sempre
+// visibile a foglio chiuso quando almeno un filtro è selezionato) — tap equivale a deselezionare
+// lo stesso filtro dal foglio, senza doverlo riaprire.
+function FiltroAttivoChip({ label, onRemove }: Readonly<{ label: string; onRemove: () => void }>) {
+  return (
+    <Pressable
+      onPress={onRemove}
+      accessibilityRole="button"
+      accessibilityLabel={`Rimuovi filtro ${label}`}
+      className="flex-row items-center gap-1 rounded-full border-2 border-sky-600 bg-sky-600 px-3 py-1.5 active:bg-sky-700"
+    >
+      <Text size="xs" className="font-medium text-white">
+        {label}
+      </Text>
+      <Icon as={CloseIcon} size="xs" className="text-white" />
+    </Pressable>
+  );
+}
+
+function FiltriSheet({
+  isOpen,
+  onClose,
+  categorie,
+  allergeni,
+  categoriaCounts,
+  allergeneCounts,
+  prezzoCounts,
+  filtriCategorie,
+  filtriAllergeni,
+  filtriPrezzo,
+  onToggleCategoria,
+  onToggleAllergene,
+  onTogglePrezzo,
+  onClear,
+  risultati,
+}: Readonly<{
+  isOpen: boolean;
+  onClose: () => void;
+  categorie: Categoria[];
+  allergeni: Allergene[];
+  categoriaCounts: Map<string, number>;
+  allergeneCounts: Map<string, number>;
+  prezzoCounts: Map<PrezzoBucketId, number>;
+  filtriCategorie: Set<string>;
+  filtriAllergeni: Set<string>;
+  filtriPrezzo: Set<PrezzoBucketId>;
+  onToggleCategoria: (id: string) => void;
+  onToggleAllergene: (id: string) => void;
+  onTogglePrezzo: (id: PrezzoBucketId) => void;
+  onClear: () => void;
+  risultati: number;
+}>) {
+  const haFiltriAttivi = filtriCategorie.size > 0 || filtriAllergeni.size > 0 || filtriPrezzo.size > 0;
+  return (
+    <Actionsheet isOpen={isOpen} onClose={onClose}>
+      <ActionsheetBackdrop />
+      <ActionsheetContent className="max-h-[85vh]" aria-label="Filtri">
+        <ActionsheetDragIndicatorWrapper>
+          <ActionsheetDragIndicator />
+        </ActionsheetDragIndicatorWrapper>
+        <ActionsheetScrollView className="w-full">
+          <VStack space="lg" className="w-full pb-6">
+            <HStack className="items-center justify-between">
+              <Heading size="md">Filtri</Heading>
+              {haFiltriAttivi ? (
+                <Pressable onPress={onClear} accessibilityRole="button" accessibilityLabel="Cancella tutti i filtri">
+                  <Text size="xs" className="font-semibold text-sky-700">
+                    Cancella tutti
+                  </Text>
+                </Pressable>
+              ) : null}
+            </HStack>
+
+            {categorie.length > 0 ? (
+              <VStack space="xs">
+                <Text size="sm" className="font-semibold text-sky-900">
+                  Categoria
+                </Text>
+                <HStack space="xs" className="flex-wrap">
+                  {categorie.map((categoria) => (
+                    <FiltroChip
+                      key={categoria.id}
+                      label={categoria.nome}
+                      count={categoriaCounts.get(categoria.id) ?? 0}
+                      selected={filtriCategorie.has(categoria.id)}
+                      onPress={() => onToggleCategoria(categoria.id)}
+                    />
+                  ))}
+                </HStack>
+              </VStack>
+            ) : null}
+
+            {allergeni.length > 0 ? (
+              <VStack space="xs">
+                <Text size="sm" className="font-semibold text-sky-900">
+                  Allergeni da evitare
+                </Text>
+                <Text size="2xs" className="text-sky-900/60">
+                  Nascondiamo i piatti che contengono uno o più degli allergeni selezionati.
+                </Text>
+                <HStack space="xs" className="flex-wrap">
+                  {allergeni.map((allergene) => (
+                    <FiltroChip
+                      key={allergene.id}
+                      label={allergene.icona ? `${allergene.icona} ${allergene.nome}` : allergene.nome}
+                      count={allergeneCounts.get(allergene.id) ?? 0}
+                      selected={filtriAllergeni.has(allergene.id)}
+                      onPress={() => onToggleAllergene(allergene.id)}
+                      tone="amber"
+                    />
+                  ))}
+                </HStack>
+              </VStack>
+            ) : null}
+
+            <VStack space="xs">
+              <Text size="sm" className="font-semibold text-sky-900">
+                Fascia di prezzo
+              </Text>
+              <HStack space="xs" className="flex-wrap">
+                {PREZZO_BUCKETS.map((bucket) => (
+                  <FiltroChip
+                    key={bucket.id}
+                    label={bucket.label}
+                    count={prezzoCounts.get(bucket.id) ?? 0}
+                    selected={filtriPrezzo.has(bucket.id)}
+                    onPress={() => onTogglePrezzo(bucket.id)}
+                  />
+                ))}
+              </HStack>
+            </VStack>
+
+            <Button onPress={onClose}>
+              <ButtonText>
+                Mostra {risultati} {risultati === 1 ? 'prodotto' : 'prodotti'}
+              </ButtonText>
+            </Button>
+          </VStack>
+        </ActionsheetScrollView>
+      </ActionsheetContent>
+    </Actionsheet>
+  );
+}
+
 export default function ClienteAsportoScreen() {
   const {
     categorie,
+    allergeni,
+    allergeneById,
     prodottiDisponibili,
     configurazione,
     chiusureFuture,
@@ -382,15 +590,123 @@ export default function ClienteAsportoScreen() {
 
   const bloccoChiusura = useMemo(() => trovaBloccoChiusura(chiusureFuture, new Date()), [chiusureFuture]);
 
+  // Filtri (categoria/allergeni-da-evitare/fascia di prezzo) — stato locale a questa pagina, mai
+  // sollevato nel context condiviso: hanno senso solo mentre si sfoglia il menu, non nella pagina
+  // di dettaglio prodotto.
+  const [isFiltriOpen, setIsFiltriOpen] = useState(false);
+  const [filtriCategorie, setFiltriCategorie] = useState<Set<string>>(new Set());
+  const [filtriAllergeni, setFiltriAllergeni] = useState<Set<string>>(new Set());
+  const [filtriPrezzo, setFiltriPrezzo] = useState<Set<PrezzoBucketId>>(new Set());
+
+  const toggleCategoria = (id: string) => {
+    setFiltriCategorie((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleAllergeneFiltro = (id: string) => {
+    setFiltriAllergeni((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const togglePrezzo = (id: PrezzoBucketId) => {
+    setFiltriPrezzo((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearFiltri = () => {
+    setFiltriCategorie(new Set());
+    setFiltriAllergeni(new Set());
+    setFiltriPrezzo(new Set());
+  };
+
+  // Conteggi per opzione — calcolati una sola volta sull'intero catalogo disponibile (non
+  // ricalcolati in base agli altri filtri già scelti, stesso compromesso motivato sopra al
+  // componente `FiltriSheet`).
+  const categoriaCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const prodotto of prodottiDisponibili) {
+      counts.set(prodotto.categoria, (counts.get(prodotto.categoria) ?? 0) + 1);
+    }
+    return counts;
+  }, [prodottiDisponibili]);
+  const allergeneCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const prodotto of prodottiDisponibili) {
+      for (const allergeneId of prodotto.allergeni) {
+        counts.set(allergeneId, (counts.get(allergeneId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [prodottiDisponibili]);
+  const prezzoCounts = useMemo(() => {
+    const counts = new Map<PrezzoBucketId, number>();
+    for (const bucket of PREZZO_BUCKETS) {
+      const n = prodottiDisponibili.filter((p) => bucket.test(Number.parseFloat(p.prezzo) || 0)).length;
+      counts.set(bucket.id, n);
+    }
+    return counts;
+  }, [prodottiDisponibili]);
+
+  // Un prodotto resta in lista solo se rientra in TUTTI i gruppi di filtro attivi (AND tra
+  // categoria/allergeni/prezzo) — dentro ciascun gruppo, invece, basta una corrispondenza
+  // qualsiasi (OR), stesso comportamento dei filtri Amazon. Per gli allergeni la logica è
+  // volutamente invertita rispetto a categoria/prezzo: qui si SELEZIONA cosa evitare, quindi un
+  // prodotto viene escluso se contiene ANCHE UNO SOLO degli allergeni scelti (mai il contrario —
+  // "mostra solo i prodotti con questo allergene" non avrebbe senso per un cliente allergico).
+  const prodottiFiltrati = useMemo(
+    () =>
+      prodottiDisponibili.filter((prodotto) => {
+        if (filtriCategorie.size > 0 && !filtriCategorie.has(prodotto.categoria)) return false;
+        if (filtriAllergeni.size > 0 && prodotto.allergeni.some((id) => filtriAllergeni.has(id))) return false;
+        if (filtriPrezzo.size > 0) {
+          const prezzo = Number.parseFloat(prodotto.prezzo) || 0;
+          const dentroFasciaScelta = PREZZO_BUCKETS.some((bucket) => filtriPrezzo.has(bucket.id) && bucket.test(prezzo));
+          if (!dentroFasciaScelta) return false;
+        }
+        return true;
+      }),
+    [prodottiDisponibili, filtriCategorie, filtriAllergeni, filtriPrezzo]
+  );
+  const numeroFiltriAttivi = filtriCategorie.size + filtriAllergeni.size + filtriPrezzo.size;
+
+  const categoriaById = useMemo(() => new Map(categorie.map((c) => [c.id, c])), [categorie]);
+  // Riga di chip rimovibili mostrata sopra il menu quando almeno un filtro è attivo — un tap
+  // rimuove quel singolo filtro senza dover riaprire il foglio, stesso pattern "chip riepilogo"
+  // già visto nei filtri Amazon.
+  const chipsFiltriAttivi = useMemo(() => {
+    const chips: { key: string; label: string; onRemove: () => void }[] = [];
+    filtriCategorie.forEach((id) => {
+      chips.push({ key: `cat-${id}`, label: categoriaById.get(id)?.nome ?? id, onRemove: () => toggleCategoria(id) });
+    });
+    filtriAllergeni.forEach((id) => {
+      const nome = allergeneById.get(id)?.nome ?? id;
+      chips.push({ key: `all-${id}`, label: `Senza ${nome}`, onRemove: () => toggleAllergeneFiltro(id) });
+    });
+    filtriPrezzo.forEach((id) => {
+      const bucket = PREZZO_BUCKETS.find((b) => b.id === id);
+      chips.push({ key: `prezzo-${id}`, label: bucket?.label ?? id, onRemove: () => togglePrezzo(id) });
+    });
+    return chips;
+  }, [filtriCategorie, filtriAllergeni, filtriPrezzo, categoriaById, allergeneById]);
+
   const gruppi = useMemo(
     () =>
       categorie
         .map((categoria) => ({
           categoria,
-          items: prodottiDisponibili.filter((p) => p.categoria === categoria.id),
+          items: prodottiFiltrati.filter((p) => p.categoria === categoria.id),
         }))
         .filter((gruppo) => gruppo.items.length > 0),
-    [categorie, prodottiDisponibili]
+    [categorie, prodottiFiltrati]
   );
 
   const quantitaPizze = cartLines
@@ -475,8 +791,13 @@ export default function ClienteAsportoScreen() {
     );
     nodeToId.forEach((_id, node) => observer.observe(node));
 
-    // Categoria iniziale: la prima, finché lo scroll/l'observer non ne segnalano un'altra.
-    setActiveCategoriaId((prev) => prev ?? gruppi[0].categoria.id);
+    // Categoria iniziale: la prima, finché lo scroll/l'observer non ne segnalano un'altra — e
+    // ricalcolata se quella attiva sparisce da `gruppi` (es. filtrata via dal foglio filtri, sopra),
+    // altrimenti resterebbe evidenziato un chip non più presente nella barra.
+    setActiveCategoriaId((prev) => {
+      if (prev && gruppi.some((gruppo) => gruppo.categoria.id === prev)) return prev;
+      return gruppi[0]?.categoria.id ?? null;
+    });
 
     return () => observer.disconnect();
   }, [gruppi]);
@@ -635,6 +956,7 @@ export default function ClienteAsportoScreen() {
   }
 
   return (
+    <>
     <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
       <VStack space="lg" className="w-full">
         <VStack space="xs">
@@ -726,7 +1048,7 @@ export default function ClienteAsportoScreen() {
               </Box>
             ) : null}
 
-            {gruppi.length === 0 ? (
+            {prodottiDisponibili.length === 0 ? (
               <VStack
                 space="sm"
                 className="items-center rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-5 py-8"
@@ -738,11 +1060,30 @@ export default function ClienteAsportoScreen() {
               </VStack>
             ) : (
               <>
-                {/* Barra sticky: navigazione rapida per categoria a sinistra, pillola carrello a
-                    destra quando non vuoto — stesso pattern "food delivery" già introdotto lato staff
-                    (MenuAsportoSection.tsx, sezione 15), qui adattato per la sfoglia pubblica. */}
+                {/* Barra sticky: pulsante Filtri, navigazione rapida per categoria, pillola
+                    carrello a destra quando non vuoto — stesso pattern "food delivery" già
+                    introdotto lato staff (MenuAsportoSection.tsx, sezione 15), qui adattato per la
+                    sfoglia pubblica. Il pulsante Filtri resta sempre qui (mai dentro il ramo
+                    `gruppi.length === 0` sotto): deve restare raggiungibile anche quando i filtri
+                    attivi azzerano i risultati, altrimenti l'utente resterebbe bloccato senza un
+                    modo per rilassarli. */}
                 <Box className="web:sticky web:top-0 z-10 -mx-4 bg-background px-4 py-1 md:-mx-8 md:px-8">
                   <HStack space="sm" className="items-center">
+                    <Pressable
+                      onPress={() => setIsFiltriOpen(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Filtri${numeroFiltriAttivi > 0 ? `, ${numeroFiltriAttivi} attivi` : ''}`}
+                      className="relative h-9 w-9 items-center justify-center rounded-full border-2 border-sky-200 bg-white active:bg-sky-50"
+                    >
+                      <Icon as={SlidersIcon} size="sm" className="text-sky-700" />
+                      {numeroFiltriAttivi > 0 ? (
+                        <Box className="absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded-full border border-white bg-sky-600">
+                          <Text size="2xs" className="font-bold text-white">
+                            {numeroFiltriAttivi}
+                          </Text>
+                        </Box>
+                      ) : null}
+                    </Pressable>
                     {gruppi.length > 1 ? (
                       <ScrollView
                         horizontal
@@ -793,35 +1134,71 @@ export default function ClienteAsportoScreen() {
                   </HStack>
                 </Box>
 
+                {/* Riepilogo filtri attivi — riga scorrevole di chip rimovibili, visibile solo se
+                    almeno un filtro è selezionato; un tap rimuove quel singolo filtro senza dover
+                    riaprire il foglio (sotto). */}
+                {numeroFiltriAttivi > 0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerClassName="items-center gap-2 py-1"
+                  >
+                    {chipsFiltriAttivi.map((chip) => (
+                      <FiltroAttivoChip key={chip.key} label={chip.label} onRemove={chip.onRemove} />
+                    ))}
+                  </ScrollView>
+                ) : null}
+
                 {/* Ogni categoria è UNA card (bordo+sfondo unico), non più una card per prodotto —
                     i prodotti sono righe interne separate da un divisore sottile, stesso principio
-                    delle card categoria del catalogo staff (MenuAsportoSection.tsx). */}
-                <VStack space="md">
-                  {gruppi.map((gruppo) => (
-                    <Box
-                      key={gruppo.categoria.id}
-                      ref={registerCategoriaRef(gruppo.categoria.id)}
-                      className="w-full overflow-hidden rounded-2xl border border-sky-200 bg-white"
-                    >
-                      <Box className="border-b border-sky-100 px-4 py-3">
-                        <Heading size="sm" className="text-sky-900">
-                          {gruppo.categoria.nome}
-                        </Heading>
+                    delle card categoria del catalogo staff (MenuAsportoSection.tsx). Se i filtri
+                    azzerano i risultati, questo blocco mostra un invito a rilassarli invece della
+                    griglia vuota — il resto della pagina (carrello, dati, invio) resta comunque
+                    visibile: un ordine già in carrello non deve sparire solo perché la vista
+                    filtrata in questo momento non mostra più quel prodotto. */}
+                {gruppi.length === 0 ? (
+                  <VStack
+                    space="sm"
+                    className="items-center rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-5 py-8"
+                  >
+                    <Text size="lg">🔎</Text>
+                    <Text size="sm" className="text-center text-muted-foreground">
+                      Nessun prodotto corrisponde ai filtri selezionati.
+                    </Text>
+                    <Pressable onPress={clearFiltri} accessibilityRole="button" accessibilityLabel="Cancella filtri">
+                      <Text size="sm" className="font-semibold text-sky-700">
+                        Cancella filtri
+                      </Text>
+                    </Pressable>
+                  </VStack>
+                ) : (
+                  <VStack space="md">
+                    {gruppi.map((gruppo) => (
+                      <Box
+                        key={gruppo.categoria.id}
+                        ref={registerCategoriaRef(gruppo.categoria.id)}
+                        className="w-full overflow-hidden rounded-2xl border border-sky-200 bg-white"
+                      >
+                        <Box className="border-b border-sky-100 px-4 py-3">
+                          <Heading size="sm" className="text-sky-900">
+                            {gruppo.categoria.nome}
+                          </Heading>
+                        </Box>
+                        <VStack>
+                          {gruppo.items.map((prodotto, index) => (
+                            <ProdottoRigaCliccabile
+                              key={prodotto.id}
+                              prodotto={prodotto}
+                              quantita={quantities[prodotto.id] ?? 0}
+                              setQuantita={setQuantita}
+                              isLast={index === gruppo.items.length - 1}
+                            />
+                          ))}
+                        </VStack>
                       </Box>
-                      <VStack>
-                        {gruppo.items.map((prodotto, index) => (
-                          <ProdottoRigaCliccabile
-                            key={prodotto.id}
-                            prodotto={prodotto}
-                            quantita={quantities[prodotto.id] ?? 0}
-                            setQuantita={setQuantita}
-                            isLast={index === gruppo.items.length - 1}
-                          />
-                        ))}
-                      </VStack>
-                    </Box>
-                  ))}
-                </VStack>
+                    ))}
+                  </VStack>
+                )}
 
                 <Box ref={registerCartRef} className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
                   <VStack space="md">
@@ -1133,5 +1510,23 @@ export default function ClienteAsportoScreen() {
         <ClienteFooter />
       </VStack>
     </ScrollView>
+    <FiltriSheet
+      isOpen={isFiltriOpen}
+      onClose={() => setIsFiltriOpen(false)}
+      categorie={categorie}
+      allergeni={allergeni}
+      categoriaCounts={categoriaCounts}
+      allergeneCounts={allergeneCounts}
+      prezzoCounts={prezzoCounts}
+      filtriCategorie={filtriCategorie}
+      filtriAllergeni={filtriAllergeni}
+      filtriPrezzo={filtriPrezzo}
+      onToggleCategoria={toggleCategoria}
+      onToggleAllergene={toggleAllergeneFiltro}
+      onTogglePrezzo={togglePrezzo}
+      onClear={clearFiltri}
+      risultati={prodottiFiltrati.length}
+    />
+    </>
   );
 }

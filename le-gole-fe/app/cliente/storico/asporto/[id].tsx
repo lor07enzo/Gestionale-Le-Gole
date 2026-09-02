@@ -23,7 +23,9 @@ import {
   getConfigurazioneAsporto,
   getProdottiPrenotatiPerOrario,
   getProssimeChiusureAsporto,
+  listProdotti,
   type ConfigurazioneAsporto,
+  type Prodotto,
   type ProdottiPrenotatiPerOrario,
 } from '../../../../src/services/menu';
 import { apriBigliettoPdf } from '../../../../src/utils/biglietto';
@@ -38,6 +40,7 @@ import {
   STATO_PRENOTAZIONE_BADGE,
   STATO_PRENOTAZIONE_LABEL,
   toISODate,
+  type BloccoOrario,
 } from '../../../../src/utils/piscinaMappa';
 import { formatPrezzo } from '../../../../src/utils/prezzi';
 
@@ -80,7 +83,7 @@ function getFinestraAttiva(configurazione: ConfigurazioneAsporto, nowMinuti: num
       chiusura: formatTime(configurazione.orario_chiusura_2),
     });
   }
-  return finestre.find((f) => parseHHMMToMinutes(f.chiusura)! > nowMinuti) ?? finestre[finestre.length - 1];
+  return finestre.find((f) => parseHHMMToMinutes(f.chiusura)! > nowMinuti) ?? finestre.at(-1)!;
 }
 
 // Descrizione leggibile di entrambi i turni insieme — stessa forma di `descrizione_orari()` lato
@@ -106,6 +109,145 @@ function isOraInFinestre(configurazione: ConfigurazioneAsporto, minuti: number):
     if (apertura2 !== null && chiusura2 !== null && minuti >= apertura2 && minuti <= chiusura2) return true;
   }
   return false;
+}
+
+// Estratte dal JSX del picker orario (ternari annidati, rilevati da SonarQube — regola "Ternary
+// operators should not be nested"/S3358, più i template literal annidati/S4624 dell'accessibility
+// label) in funzioni pure con un solo livello di if/return ciascuna — stesso pattern già
+// introdotto per lo stesso picker in app/staff/asporto/ordini/nuovo.tsx (sezione 15 di CLAUDE.md),
+// qui in tinta emerald invece di sky.
+function fasciaClassName(nonSelezionabile: boolean, isEspansa: boolean, contieneSelezionato: boolean): string {
+  if (nonSelezionabile) return 'border-emerald-100 bg-white opacity-40';
+  if (isEspansa) return 'border-emerald-600 bg-emerald-600';
+  if (contieneSelezionato) return 'border-emerald-600 bg-white';
+  return 'border-emerald-300 bg-white active:bg-emerald-100';
+}
+
+function fasciaTextClassName(nonSelezionabile: boolean, isEspansa: boolean): string {
+  if (nonSelezionabile) return 'text-muted-foreground';
+  if (isEspansa) return 'text-white';
+  return 'text-emerald-900';
+}
+
+function slotClassName(selezionato: boolean, disabilitato: boolean): string {
+  if (selezionato) return 'border-emerald-600 bg-emerald-600';
+  if (disabilitato) return 'border-emerald-100 bg-white opacity-40';
+  return 'border-emerald-300 bg-white active:bg-emerald-100';
+}
+
+function slotTextClassName(selezionato: boolean, disabilitato: boolean): string {
+  if (selezionato) return 'font-bold text-white';
+  if (disabilitato) return 'text-muted-foreground';
+  return 'font-medium text-emerald-900';
+}
+
+function slotAccessibilityLabel(slot: string, esaurito: boolean, mostraResiduo: boolean, residuo: number | null): string {
+  if (esaurito) return `Orario di ritiro ${slot}, esaurito: numero massimo di prodotti raggiunto per questo orario`;
+  if (mostraResiduo) return `Orario di ritiro ${slot}, solo ${residuo} prodotti ancora disponibili per questo orario`;
+  return `Orario di ritiro ${slot}`;
+}
+
+type PickerOrarioRiordinoProps = {
+  blocchi: BloccoOrario[];
+  oraEspansa: string | null;
+  onToggleEspansa: (ora: string) => void;
+  oraSelezionata: string;
+  onSelectOra: (slot: string) => void;
+  isSlotEsaurito: (slot: string) => boolean;
+  residuoSlot: (slot: string) => number | null;
+};
+
+// Intero picker a due livelli (fasce → slot da 15 minuti), estratto dal corpo della schermata
+// principale — oltre a raccogliere i ternari sopra in funzioni pure, l'estrazione in un
+// componente a sé toglie dalla `DettaglioOrdineAsportoScreen` le due `.map()` annidate che ne
+// gonfiavano la complessità cognitiva (SonarQube S3776, "Refactor this function to reduce its
+// Cognitive Complexity from 23 to the 15 allowed") — stesso principio già seguito altrove nel
+// progetto (es. `PiscinaTabContent`/`AsportoTabContent` in app/staff/clienti/[clienteId].tsx,
+// sezione 5 di CLAUDE.md) per lo stesso genere di refactor.
+function PickerOrarioRiordino({
+  blocchi,
+  oraEspansa,
+  onToggleEspansa,
+  oraSelezionata,
+  onSelectOra,
+  isSlotEsaurito,
+  residuoSlot,
+}: Readonly<PickerOrarioRiordinoProps>) {
+  const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
+  const slotsFasciaEspansa = blocchi.find((b) => b.ora === oraEspansa)?.slots ?? [];
+
+  return (
+    <>
+      <HStack space="xs" className="flex-wrap">
+        {blocchi.map((blocco) => {
+          const isEspansa = blocco.ora === oraEspansa;
+          const contieneSelezionato = blocco.slots.includes(oraSelezionata);
+          const nonSelezionabile = blocco.slots.every(
+            (slot) => parseHHMMToMinutes(slot)! < nowMinuti + ANTICIPO_MINUTI_RIORDINO || isSlotEsaurito(slot)
+          );
+          return (
+            <Pressable
+              key={blocco.ora}
+              onPress={() => !nonSelezionabile && onToggleEspansa(blocco.ora)}
+              disabled={nonSelezionabile}
+              accessibilityRole="button"
+              accessibilityLabel={`Fascia oraria ${blocco.label}${nonSelezionabile ? ', non più disponibile' : ''}`}
+              accessibilityState={{ expanded: isEspansa, selected: contieneSelezionato, disabled: nonSelezionabile }}
+              className={`rounded-full border-2 px-3 py-1.5 ${fasciaClassName(nonSelezionabile, isEspansa, contieneSelezionato)}`}
+            >
+              <Text size="xs" className={`font-medium ${fasciaTextClassName(nonSelezionabile, isEspansa)}`}>
+                {contieneSelezionato && !isEspansa ? '✓ ' : ''}
+                {blocco.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </HStack>
+
+      {oraEspansa ? (
+        <HStack space="xs" className="flex-wrap rounded-xl border border-emerald-200 bg-emerald-100/50 p-2">
+          {slotsFasciaEspansa.map((slot) => {
+            const minutiSlot = parseHHMMToMinutes(slot)!;
+            const troppoVicino = minutiSlot < nowMinuti + ANTICIPO_MINUTI_RIORDINO;
+            const esaurito = !troppoVicino && isSlotEsaurito(slot);
+            const disabilitato = troppoVicino || esaurito;
+            const selezionato = oraSelezionata === slot;
+            const residuo = residuoSlot(slot);
+            const mostraResiduo = !disabilitato && residuo !== null && residuo <= SOGLIA_AVVISO_RESIDUO_ORARIO;
+            return (
+              <VStack key={slot} className="items-center">
+                <Pressable
+                  onPress={() => !disabilitato && onSelectOra(slot)}
+                  disabled={disabilitato}
+                  accessibilityRole="button"
+                  accessibilityLabel={slotAccessibilityLabel(slot, esaurito, mostraResiduo, residuo)}
+                  className={`rounded-full border-2 px-3 py-1.5 ${slotClassName(selezionato, disabilitato)}`}
+                >
+                  <Text size="xs" className={slotTextClassName(selezionato, disabilitato)}>
+                    {slot}
+                    {esaurito ? ' · Esaurito' : ''}
+                  </Text>
+                </Pressable>
+                {/* Didascalia FUORI dal bottone, esattamente sotto — stesso gotcha del checkout
+                    self-service (app/cliente/asporto/index.tsx): font ridotto tramite la prop
+                    nativa `style` (fontSize: 9), non una classe Tailwind arbitraria `text-[9px]`
+                    (non applicata da NativeWind/react-native-css su questo target web). */}
+                {mostraResiduo ? (
+                  <Text style={{ fontSize: 9 }} className={`font-semibold ${residuoTextClassName(residuo!)}`}>
+                    {residuo} rimast{residuo === 1 ? 'o' : 'i'}
+                  </Text>
+                ) : null}
+              </VStack>
+            );
+          })}
+        </HStack>
+      ) : (
+        <Text size="2xs" className="text-emerald-900/60">
+          Tocca una fascia oraria per scegliere l'orario esatto.
+        </Text>
+      )}
+    </>
+  );
 }
 
 function DettaglioHeader() {
@@ -138,6 +280,13 @@ export default function DettaglioOrdineAsportoScreen() {
   const [configurazione, setConfigurazione] = useState<ConfigurazioneAsporto | null>(null);
   const [chiusoOggi, setChiusoOggi] = useState(false);
   const [prenotatiPerOrario, setPrenotatiPerOrario] = useState<ProdottiPrenotatiPerOrario>({});
+  // Catalogo completo (anche i prodotti nascosti, ProdottoViewSet non filtra per `disponibile` di
+  // default) — serve solo a scoprire se uno dei prodotti dell'ordine originale è stato nascosto
+  // dallo staff nel frattempo: un riordino self-service (richiesta anonima) verrebbe comunque
+  // rifiutato dal backend per quel prodotto (VoceOrdineSerializer.validate_prodotto(), sezione 1
+  // di CLAUDE.md), quindi qui blocchiamo l'azione in anticipo invece di lasciar fallire il submit
+  // a metà (con una PrenotazioneAsporto già creata ma senza tutte le sue righe).
+  const [prodotti, setProdotti] = useState<Prodotto[]>([]);
 
   const [isReordering, setIsReordering] = useState(false);
   const [oraRiordino, setOraRiordino] = useState('');
@@ -181,6 +330,20 @@ export default function DettaglioOrdineAsportoScreen() {
     return limiteProdottiOrario - prenotati;
   };
 
+  // Nomi (deduplicati) dei prodotti dell'ordine originale non più disponibili — un riordino li
+  // includerebbe comunque tutti (nessuna selezione parziale, sezione 15 di CLAUDE.md), quindi
+  // basta uno solo non più disponibile per bloccare l'intera azione.
+  const nomiProdottiNonDisponibili = useMemo(() => {
+    if (!ordine || prodotti.length === 0) return [];
+    const nomi = new Set<string>();
+    for (const voce of ordine.voci) {
+      const prodotto = prodotti.find((p) => p.id === voce.prodotto);
+      if (!prodotto || !prodotto.disponibile) nomi.add(voce.prodotto_nome);
+    }
+    return Array.from(nomi);
+  }, [ordine, prodotti]);
+  const riordinoBloccatoPerDisponibilita = nomiProdottiNonDisponibili.length > 0;
+
   // Riepilogo del riordino appena completato — quando valorizzato, la pagina mostra la stessa
   // schermata di conferma del checkout self-service (`ConfermaOrdineAsporto`, condivisa con
   // app/cliente/asporto/index.tsx) invece di navigare al dettaglio del nuovo ordine, su richiesta
@@ -208,13 +371,15 @@ export default function DettaglioOrdineAsportoScreen() {
       getConfigurazioneAsporto(),
       getProssimeChiusureAsporto(),
       getProdottiPrenotatiPerOrario(toISODate(new Date())),
+      listProdotti(),
     ])
-      .then(([ordineData, configurazioneData, chiusureData, prenotatiData]) => {
+      .then(([ordineData, configurazioneData, chiusureData, prenotatiData, prodottiData]) => {
         if (cancelled) return;
         setOrdine(ordineData);
         setConfigurazione(configurazioneData);
         setChiusoOggi(chiusureData.includes(toISODate(new Date())));
         setPrenotatiPerOrario(prenotatiData);
+        setProdotti(prodottiData);
       })
       .catch(() => {
         if (!cancelled) setError('Ordine non trovato.');
@@ -251,6 +416,19 @@ export default function DettaglioOrdineAsportoScreen() {
 
   const handleSubmitRiordino = async () => {
     if (!ordine) return;
+    // Backstop: il pulsante "Riordina" è già disabilitato in questo caso (sotto), ma la funzione
+    // ripete comunque il controllo — stesso principio "mai fidarsi solo del disabled lato UI"
+    // seguito ovunque nel progetto. Senza questo controllo, il submit creerebbe comunque la
+    // PrenotazioneAsporto e solo dopo fallirebbe su una VoceOrdine (il backend rifiuta un prodotto
+    // non più disponibile per una richiesta anonima), lasciando un ordine orfano/incompleto.
+    if (riordinoBloccatoPerDisponibilita) {
+      setReorderError(
+        `Non è possibile riordinare: ${nomiProdottiNonDisponibili.join(', ')} non ${
+          nomiProdottiNonDisponibili.length === 1 ? 'è più disponibile' : 'sono più disponibili'
+        }.`
+      );
+      return;
+    }
     const minuti = parseHHMMToMinutes(oraRiordino);
     if (minuti === null) {
       setReorderError('Inserisci un orario di ritiro valido (HH:MM).');
@@ -458,8 +636,8 @@ export default function DettaglioOrdineAsportoScreen() {
         {!isReordering ? (
           <Button
             onPress={() => setIsReordering(true)}
-            disabled={ordine.voci.length === 0 || chiusoOggi}
-            isDisabled={ordine.voci.length === 0 || chiusoOggi}
+            disabled={ordine.voci.length === 0 || chiusoOggi || riordinoBloccatoPerDisponibilita}
+            isDisabled={ordine.voci.length === 0 || chiusoOggi || riordinoBloccatoPerDisponibilita}
           >
             <ButtonIcon as={RepeatIcon} />
             <ButtonText>Riordina questo ordine</ButtonText>
@@ -486,119 +664,22 @@ export default function DettaglioOrdineAsportoScreen() {
                   </Text>
                 ) : null}
 
-                {/* Livello 1 — fasce orarie: stesso identico picker a due livelli del checkout
-                    self-service (app/cliente/asporto/index.tsx), qui in tinta emerald per restare
-                    coerente col riquadro "Riordina" che lo ospita. Una fascia con tutti e 4 gli
+                {/* Picker a due livelli (fasce → slot da 15 minuti), stesso identico picker del
+                    checkout self-service (app/cliente/asporto/index.tsx), qui in tinta emerald
+                    per restare coerente col riquadro "Riordina" che lo ospita — estratto in
+                    `PickerOrarioRiordino` (sopra) per tenere la complessità cognitiva di questa
+                    schermata sotto la soglia di SonarQube (S3776). Una fascia con tutti e 4 gli
                     orari al suo interno troppo vicini all'ora attuale è disabilitata (non solo i
                     singoli slot), stessa regola introdotta lì. */}
-                <HStack space="xs" className="flex-wrap">
-                  {blocchiOrarioRiordino.map((blocco) => {
-                    const isEspansa = blocco.ora === oraEspansaRiordino;
-                    const contieneSelezionato = blocco.slots.includes(oraRiordino);
-                    const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
-                    const tuttiDisabilitati = blocco.slots.every(
-                      (slot) =>
-                        parseHHMMToMinutes(slot)! < nowMinuti + ANTICIPO_MINUTI_RIORDINO || isSlotEsaurito(slot)
-                    );
-                    return (
-                      <Pressable
-                        key={blocco.ora}
-                        onPress={() =>
-                          !tuttiDisabilitati &&
-                          setOraEspansaRiordino((prev) => (prev === blocco.ora ? null : blocco.ora))
-                        }
-                        disabled={tuttiDisabilitati}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Fascia oraria ${blocco.label}${tuttiDisabilitati ? ', non più disponibile' : ''}`}
-                        accessibilityState={{ expanded: isEspansa, selected: contieneSelezionato, disabled: tuttiDisabilitati }}
-                        className={`rounded-full border-2 px-3 py-1.5 ${
-                          tuttiDisabilitati
-                            ? 'border-emerald-100 bg-white opacity-40'
-                            : isEspansa
-                              ? 'border-emerald-600 bg-emerald-600'
-                              : contieneSelezionato
-                                ? 'border-emerald-600 bg-white'
-                                : 'border-emerald-300 bg-white active:bg-emerald-100'
-                        }`}
-                      >
-                        <Text
-                          size="xs"
-                          className={`font-medium ${
-                            tuttiDisabilitati ? 'text-muted-foreground' : isEspansa ? 'text-white' : 'text-emerald-900'
-                          }`}
-                        >
-                          {contieneSelezionato && !isEspansa ? '✓ ' : ''}
-                          {blocco.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </HStack>
-
-                {/* Livello 2 — orari ogni 15 minuti dentro la fascia scelta sopra. */}
-                {oraEspansaRiordino ? (
-                  <HStack space="xs" className="flex-wrap rounded-xl border border-emerald-200 bg-emerald-100/50 p-2">
-                    {(blocchiOrarioRiordino.find((b) => b.ora === oraEspansaRiordino)?.slots ?? []).map((slot) => {
-                      const minutiSlot = parseHHMMToMinutes(slot)!;
-                      const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
-                      const troppoVicino = minutiSlot < nowMinuti + ANTICIPO_MINUTI_RIORDINO;
-                      const esaurito = !troppoVicino && isSlotEsaurito(slot);
-                      const disabilitato = troppoVicino || esaurito;
-                      const selezionato = oraRiordino === slot;
-                      const residuo = residuoSlot(slot);
-                      const mostraResiduo =
-                        !disabilitato && residuo !== null && residuo <= SOGLIA_AVVISO_RESIDUO_ORARIO;
-                      return (
-                        <VStack key={slot} className="items-center">
-                          <Pressable
-                            onPress={() => !disabilitato && setOraRiordino(slot)}
-                            disabled={disabilitato}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Orario di ritiro ${slot}${esaurito ? ', esaurito: numero massimo di prodotti raggiunto per questo orario' : mostraResiduo ? `, solo ${residuo} prodotti ancora disponibili per questo orario` : ''}`}
-                            className={`rounded-full border-2 px-3 py-1.5 ${
-                              selezionato
-                                ? 'border-emerald-600 bg-emerald-600'
-                                : disabilitato
-                                  ? 'border-emerald-100 bg-white opacity-40'
-                                  : 'border-emerald-300 bg-white active:bg-emerald-100'
-                            }`}
-                          >
-                            <Text
-                              size="xs"
-                              className={
-                                selezionato
-                                  ? 'font-bold text-white'
-                                  : disabilitato
-                                    ? 'text-muted-foreground'
-                                    : 'font-medium text-emerald-900'
-                              }
-                            >
-                              {slot}
-                              {esaurito ? ' · Esaurito' : ''}
-                            </Text>
-                          </Pressable>
-                          {/* Didascalia FUORI dal bottone, esattamente sotto — stessa scelta e
-                              stesso gotcha del checkout self-service (app/cliente/asporto/index.tsx):
-                              font ridotto tramite la prop nativa `style` (fontSize: 9), non una
-                              classe Tailwind arbitraria `text-[9px]` (non applicata da
-                              NativeWind/react-native-css su questo target web). */}
-                          {mostraResiduo ? (
-                            <Text
-                              style={{ fontSize: 9 }}
-                              className={`font-semibold ${residuoTextClassName(residuo!)}`}
-                            >
-                              {residuo} rimast{residuo === 1 ? 'o' : 'i'}
-                            </Text>
-                          ) : null}
-                        </VStack>
-                      );
-                    })}
-                  </HStack>
-                ) : (
-                  <Text size="2xs" className="text-emerald-900/60">
-                    Tocca una fascia oraria per scegliere l'orario esatto.
-                  </Text>
-                )}
+                <PickerOrarioRiordino
+                  blocchi={blocchiOrarioRiordino}
+                  oraEspansa={oraEspansaRiordino}
+                  onToggleEspansa={(ora) => setOraEspansaRiordino((prev) => (prev === ora ? null : ora))}
+                  oraSelezionata={oraRiordino}
+                  onSelectOra={setOraRiordino}
+                  isSlotEsaurito={isSlotEsaurito}
+                  residuoSlot={residuoSlot}
+                />
 
                 {configurazione ? (
                   <Text size="2xs" className="text-emerald-900/70">
@@ -632,6 +713,14 @@ export default function DettaglioOrdineAsportoScreen() {
         {chiusoOggi ? (
           <Text size="xs" className="text-center text-destructive">
             Il servizio asporto è chiuso oggi: non è possibile riordinare in questo momento.
+          </Text>
+        ) : null}
+
+        {!chiusoOggi && riordinoBloccatoPerDisponibilita ? (
+          <Text size="xs" className="text-center text-destructive">
+            {nomiProdottiNonDisponibili.length === 1
+              ? `${nomiProdottiNonDisponibili[0]} non è più disponibile: non è possibile riordinare finché non torna disponibile.`
+              : `${nomiProdottiNonDisponibili.join(', ')} non sono più disponibili: non è possibile riordinare finché non tornano disponibili.`}
           </Text>
         ) : null}
 
