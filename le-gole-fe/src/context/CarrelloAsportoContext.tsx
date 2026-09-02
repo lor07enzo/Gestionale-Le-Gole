@@ -1,7 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   getConfigurazioneAsporto,
-  getProdottiPrenotatiPerOrario,
   getProssimeChiusureAsporto,
   listAllergeni,
   listCategorie,
@@ -9,9 +8,9 @@ import {
   type Allergene,
   type Categoria,
   type ConfigurazioneAsporto,
-  type ProdottiPrenotatiPerOrario,
   type Prodotto,
 } from '../services/menu';
+import { getPrenotazioniPerOrario, type PrenotazioniPerOrario } from '../services/prenotazioni';
 import { toISODate } from '../utils/piscinaMappa';
 
 export type CartLine = { prodotto: Prodotto; quantita: number };
@@ -24,11 +23,11 @@ type CarrelloAsportoContextValue = {
   prodottiDisponibili: Prodotto[];
   configurazione: ConfigurazioneAsporto | null;
   chiusureFuture: string[];
-  // Quantità totale di prodotti già prenotati per ciascun orario, oggi (sezione 15) — combinata
-  // con `configurazione.limite_prodotti_orario` per calcolare il residuo per slot; un orario
-  // assente equivale a 0 prenotati. Sempre relativo a oggi: un ordine asporto non ha mai una data
-  // diversa (sezione 7).
-  prenotatiPerOrario: ProdottiPrenotatiPerOrario;
+  // Numero di prenotazioni (ordini distinti) già presenti per ciascun orario, oggi (sezione 15) —
+  // combinata con `configurazione.limite_prenotazioni_orario` per calcolare il residuo per slot;
+  // un orario assente equivale a 0 prenotazioni. Sempre relativo a oggi: un ordine asporto non ha
+  // mai una data diversa (sezione 7).
+  prenotazioniPerOrario: PrenotazioniPerOrario;
   isLoading: boolean;
   loadError: string | null;
   quantities: Record<string, number>;
@@ -52,7 +51,7 @@ export function CarrelloAsportoProvider({ children }: { children: ReactNode }) {
   const [prodotti, setProdotti] = useState<Prodotto[]>([]);
   const [configurazione, setConfigurazione] = useState<ConfigurazioneAsporto | null>(null);
   const [chiusureFuture, setChiusureFuture] = useState<string[]>([]);
-  const [prenotatiPerOrario, setPrenotatiPerOrario] = useState<ProdottiPrenotatiPerOrario>({});
+  const [prenotazioniPerOrario, setPrenotazioniPerOrario] = useState<PrenotazioniPerOrario>({});
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -64,15 +63,15 @@ export function CarrelloAsportoProvider({ children }: { children: ReactNode }) {
       listProdotti(),
       getConfigurazioneAsporto(),
       getProssimeChiusureAsporto(),
-      getProdottiPrenotatiPerOrario(toISODate(new Date())),
+      getPrenotazioniPerOrario(toISODate(new Date())),
     ])
-      .then(([cats, allergeniList, prods, config, chiusure, prenotati]) => {
+      .then(([cats, allergeniList, prods, config, chiusure, prenotazioni]) => {
         setCategorie(cats);
         setAllergeni(allergeniList);
         setProdotti(prods);
         setConfigurazione(config);
         setChiusureFuture(chiusure);
-        setPrenotatiPerOrario(prenotati);
+        setPrenotazioniPerOrario(prenotazioni);
       })
       .catch(() => setLoadError('Impossibile caricare il menu asporto. Riprova più tardi.'))
       .finally(() => setIsLoading(false));
@@ -117,7 +116,7 @@ export function CarrelloAsportoProvider({ children }: { children: ReactNode }) {
       prodottiDisponibili,
       configurazione,
       chiusureFuture,
-      prenotatiPerOrario,
+      prenotazioniPerOrario,
       isLoading,
       loadError,
       quantities,
@@ -135,7 +134,7 @@ export function CarrelloAsportoProvider({ children }: { children: ReactNode }) {
       prodottiDisponibili,
       configurazione,
       chiusureFuture,
-      prenotatiPerOrario,
+      prenotazioniPerOrario,
       isLoading,
       loadError,
       quantities,

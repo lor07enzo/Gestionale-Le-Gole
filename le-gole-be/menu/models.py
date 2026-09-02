@@ -80,15 +80,20 @@ class ConfigurazioneAsporto(models.Model):
     orario_chiusura_2 = models.TimeField(
         null=True, blank=True, verbose_name="Orario di fine disponibilità (secondo turno)"
     )
-    # Numero massimo di prodotti ordinabili complessivamente a un qualunque orario di ritiro —
-    # si applica automaticamente a ogni orario (non un limite scelto per singola fascia), non un
-    # tetto per singolo ordine/cliente: riflette la reale capacità di preparazione della cucina.
-    # `null=True` = nessun limite impostato (default), coerente col resto del progetto dove
-    # "non configurato" è sempre distinguibile da "impostato a un valore" (qui non può essere 0,
-    # a differenza di un prezzo, perché PositiveSmallIntegerField+min_value=1 lo esclude già a
-    # livello di validazione — sotto).
-    limite_prodotti_orario = models.PositiveSmallIntegerField(
-        null=True, blank=True, verbose_name="Limite massimo di prodotti per orario"
+    # Numero massimo di PRENOTAZIONI (ordini distinti, a prescindere da quanti prodotti/quante
+    # unità contengono) accettate a un qualunque orario di ritiro — si applica automaticamente a
+    # ogni orario (non un limite scelto per singola fascia): riflette quanti ordini separati lo
+    # staff può ritirare/consegnare nella stessa finestra, non la quantità di prodotti in essi.
+    # Sostituisce il precedente `limite_prodotti_orario` (2026-08-24, un tetto sulla somma delle
+    # quantità ordinate) — rinominato il 2026-08-28 su richiesta esplicita dell'utente, che ha
+    # semantica diversa: un limite sui prodotti penalizzava un singolo grande ordine allo stesso
+    # modo di tanti piccoli ordini, mentre un limite sulle prenotazioni riflette meglio quante
+    # buste/pacchetti distinti la cucina può preparare in parallelo. `null=True` = nessun limite
+    # impostato (default), coerente col resto del progetto dove "non configurato" è sempre
+    # distinguibile da "impostato a un valore" (qui non può essere 0, a differenza di un prezzo,
+    # perché PositiveSmallIntegerField+min_value=1 lo esclude già a livello di validazione, sotto).
+    limite_prenotazioni_orario = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="Limite massimo di prenotazioni per orario"
     )
 
     updated_at = models.DateTimeField(auto_now=True)

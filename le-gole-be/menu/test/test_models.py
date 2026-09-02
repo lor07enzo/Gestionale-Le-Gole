@@ -95,11 +95,11 @@ class TestConfigurazioneAsportoSingleton:
         assert ConfigurazioneAsporto.objects.count() == 1
         assert config.orario_apertura == datetime.time(11, 0)
 
-    def test_limite_prodotti_orario_nessun_limite_di_default(self):
+    def test_limite_prenotazioni_orario_nessun_limite_di_default(self):
         # Default None = nessun limite di capacità per orario impostato (sezione 15) — distinto
         # da 0, che PositiveSmallIntegerField+min_value=1 lato serializer esclude comunque.
         config = ConfigurazioneAsporto.get_solo()
-        assert config.limite_prodotti_orario is None
+        assert config.limite_prenotazioni_orario is None
 
     def test_get_solo_ritorna_sempre_la_stessa_riga(self):
         prima = ConfigurazioneAsporto.get_solo()

@@ -23,14 +23,16 @@ import {
 import { goBackOr } from '../../../../src/utils/navigation';
 import { extractErrorMessage } from '../../../../src/utils/errors';
 import { createCliente } from '../../../../src/services/clienti';
-import { createPrenotazioneAsporto } from '../../../../src/services/prenotazioni';
+import {
+  createPrenotazioneAsporto,
+  getPrenotazioniPerOrario,
+  type PrenotazioniPerOrario,
+} from '../../../../src/services/prenotazioni';
 import {
   createVoceOrdine,
   getConfigurazioneAsporto,
-  getProdottiPrenotatiPerOrario,
   listProdotti,
   type ConfigurazioneAsporto,
-  type ProdottiPrenotatiPerOrario,
   type Prodotto,
 } from '../../../../src/services/menu';
 import {
@@ -50,9 +52,11 @@ import { formatPrezzo } from '../../../../src/utils/prezzi';
 // della piscina, qui vive in una pagina dedicata (non un Actionsheet) perché scegliere i prodotti
 // dal catalogo richiede più spazio verticale di un foglio.
 
-// Sotto questo numero di prodotti ancora prenotabili per un orario, mostriamo il conteggio
-// residuo sotto lo slot — stessa soglia/stesso principio delle pagine cliente asporto.
-const SOGLIA_AVVISO_RESIDUO_ORARIO = 5;
+// Sotto questo numero di prenotazioni ancora accettabili per un orario, mostriamo il conteggio
+// residuo sotto lo slot — stessa soglia/stesso principio delle pagine cliente asporto (abbassata
+// a 2 il 2026-08-28 insieme al passaggio del limite dai prodotti alle prenotazioni, stesso motivo:
+// numeri molto più piccoli in gioco).
+const SOGLIA_AVVISO_RESIDUO_ORARIO = 2;
 
 // Estratte perché ripetute identiche su 4 sezioni della pagina (rilevato da SonarQube — regola
 // "Define a constant instead of duplicating this literal"): un solo punto da aggiornare se lo
@@ -129,8 +133,10 @@ function slotAccessibilityLabel(
   residuo: number | null
 ): string {
   if (passato) return `Orario di ritiro ${slot}, già passato`;
-  if (esaurito) return `Orario di ritiro ${slot}, esaurito: numero massimo di prodotti raggiunto per questo orario`;
-  if (mostraResiduo) return `Orario di ritiro ${slot}, solo ${residuo} prodotti ancora disponibili per questo orario`;
+  if (esaurito) return `Orario di ritiro ${slot}, esaurito: numero massimo di prenotazioni raggiunto per questo orario`;
+  if (mostraResiduo) {
+    return `Orario di ritiro ${slot}, solo ${residuo} ${residuo === 1 ? 'posto libero' : 'posti liberi'} per questo orario`;
+  }
   return `Orario di ritiro ${slot}`;
 }
 
@@ -239,7 +245,7 @@ export default function NuovoOrdineAsportoScreen() {
   // cliente asporto, nessuna precompilazione: lo staff sceglie sempre esplicitamente uno slot.
   const [oraEspansa, setOraEspansa] = useState<string | null>(null);
   const [configurazione, setConfigurazione] = useState<ConfigurazioneAsporto | null>(null);
-  const [prenotatiPerOrario, setPrenotatiPerOrario] = useState<ProdottiPrenotatiPerOrario>({});
+  const [prenotazioniPerOrario, setPrenotazioniPerOrario] = useState<PrenotazioniPerOrario>({});
 
   const [prodotti, setProdotti] = useState<Prodotto[]>([]);
   const [isLoadingCatalogo, setIsLoadingCatalogo] = useState(true);
@@ -250,11 +256,11 @@ export default function NuovoOrdineAsportoScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    Promise.all([getConfigurazioneAsporto(), listProdotti(), getProdottiPrenotatiPerOrario(toISODate(new Date()))])
-      .then(([config, prodottiList, prenotati]) => {
+    Promise.all([getConfigurazioneAsporto(), listProdotti(), getPrenotazioniPerOrario(toISODate(new Date()))])
+      .then(([config, prodottiList, prenotazioni]) => {
         setConfigurazione(config);
         setProdotti(prodottiList);
-        setPrenotatiPerOrario(prenotati);
+        setPrenotazioniPerOrario(prenotazioni);
       })
       .catch(() => setError("Impossibile caricare l'orario/il catalogo del servizio."))
       .finally(() => setIsLoadingCatalogo(false));
@@ -294,13 +300,13 @@ export default function NuovoOrdineAsportoScreen() {
   );
   const totaleArticoli = useMemo(() => cartLines.reduce((sum, line) => sum + line.quantita, 0), [cartLines]);
 
-  // Limite globale di prodotti per orario (ConfigurazioneAsporto.limite_prodotti_orario, sezione
-  // 15) — vincolato anche per lo staff (a differenza dell'anticipo minimo, che qui non esiste
-  // affatto): riflette la reale capacità di preparazione della cucina, non un gate sul solo
-  // canale online. `richiesti` è il totale di prodotti nell'ordine che si sta componendo, non il
-  // numero di righe distinte.
-  const limiteProdottiOrario = configurazione?.limite_prodotti_orario ?? null;
-  const richiestiOrario = Math.max(totaleArticoli, 1);
+  // Limite globale di PRENOTAZIONI per orario (ConfigurazioneAsporto.limite_prenotazioni_orario,
+  // sezione 15) — vincolato anche per lo staff (a differenza dell'anticipo minimo, che qui non
+  // esiste affatto): riflette quanti ordini distinti la cucina/lo staff può gestire nella stessa
+  // finestra, non un gate sul solo canale online. Il submit crea sempre esattamente UNA
+  // prenotazione, a prescindere da quanti prodotti/righe contiene il carrello che si sta
+  // componendo — basta confrontare quante prenotazioni ci sono già con il limite.
+  const limitePrenotazioniOrario = configurazione?.limite_prenotazioni_orario ?? null;
 
   // Pulsante fluttuante "vai al carrello" (sotto, solo se cartLines non è vuoto) — stesso
   // meccanismo ref+scrollIntoView già usato per `scrollToCarrello`/`cartSectionRef` in
@@ -334,17 +340,16 @@ export default function NuovoOrdineAsportoScreen() {
     return () => observer.disconnect();
   }, []);
   const isSlotEsaurito = (slot: string) => {
-    if (limiteProdottiOrario === null) return false;
-    const prenotati = prenotatiPerOrario[slot] ?? 0;
-    return limiteProdottiOrario - prenotati < richiestiOrario;
+    if (limitePrenotazioniOrario === null) return false;
+    const prenotate = prenotazioniPerOrario[slot] ?? 0;
+    return prenotate >= limitePrenotazioniOrario;
   };
-  // Residuo "grezzo" dello slot (limite meno quanto già prenotato da tutti) — stesso principio
-  // delle pagine cliente: non tiene conto di richiestiOrario, serve solo a mostrare "quanti ne
-  // restano in tutto".
+  // Residuo dello slot (limite meno quante prenotazioni già presenti) — stesso principio delle
+  // pagine cliente.
   const residuoSlot = (slot: string): number | null => {
-    if (limiteProdottiOrario === null) return null;
-    const prenotati = prenotatiPerOrario[slot] ?? 0;
-    return limiteProdottiOrario - prenotati;
+    if (limitePrenotazioniOrario === null) return null;
+    const prenotate = prenotazioniPerOrario[slot] ?? 0;
+    return limitePrenotazioniOrario - prenotate;
   };
 
   const setQuantita = (prodottoId: string, next: number) => {
@@ -580,7 +585,7 @@ export default function NuovoOrdineAsportoScreen() {
                         </Text>
                         {mostraResiduo ? (
                           <Text size="2xs" className={selezionato ? 'text-white/80' : 'font-medium text-amber-700'}>
-                            {residuo} rimast{residuo === 1 ? 'o' : 'i'}
+                            {residuo === 1 ? '1 posto libero' : `${residuo} posti liberi`}
                           </Text>
                         ) : null}
                       </VStack>
@@ -599,11 +604,10 @@ export default function NuovoOrdineAsportoScreen() {
                 L'asporto è attivo {descrizioneOrari(configurazione)}.
               </Text>
             ) : null}
-            {limiteProdottiOrario !== null ? (
+            {limitePrenotazioniOrario !== null ? (
               <VStack space="xs">
                 <Text size="2xs" className="text-muted-foreground">
-                  Ogni orario accetta al massimo {limiteProdottiOrario} prodotti in totale (bevande
-                  e vini sono esclusi).
+                  Ogni orario accetta al massimo {limitePrenotazioniOrario} prenotazioni.
                 </Text>
                 <Text size="2xs" className="text-muted-foreground">
                   Quando restano pochi posti, lo slot lo indica sotto l'orario.

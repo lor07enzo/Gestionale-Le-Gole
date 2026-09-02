@@ -180,40 +180,40 @@ class TestConfigurazioneAsportoSecondoTurno:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-class TestLimiteProdottiOrario:
+class TestLimitePrenotazioniOrario:
     def test_nessun_limite_di_default(self, api_client):
         response = api_client.get(reverse("configurazione-asporto"))
-        assert response.data["limite_prodotti_orario"] is None
+        assert response.data["limite_prenotazioni_orario"] is None
 
     def test_staff_puo_impostare_il_limite(self, auth_client):
         response = auth_client.patch(
-            reverse("configurazione-asporto"), {"limite_prodotti_orario": 15}, format="json"
+            reverse("configurazione-asporto"), {"limite_prenotazioni_orario": 3}, format="json"
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["limite_prodotti_orario"] == 15
+        assert response.data["limite_prenotazioni_orario"] == 3
 
         response = auth_client.get(reverse("configurazione-asporto"))
-        assert response.data["limite_prodotti_orario"] == 15
+        assert response.data["limite_prenotazioni_orario"] == 3
 
     def test_staff_puo_rimuovere_il_limite_impostandolo_a_null(self, auth_client):
-        auth_client.patch(reverse("configurazione-asporto"), {"limite_prodotti_orario": 15}, format="json")
+        auth_client.patch(reverse("configurazione-asporto"), {"limite_prenotazioni_orario": 3}, format="json")
 
         response = auth_client.patch(
-            reverse("configurazione-asporto"), {"limite_prodotti_orario": None}, format="json"
+            reverse("configurazione-asporto"), {"limite_prenotazioni_orario": None}, format="json"
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["limite_prodotti_orario"] is None
+        assert response.data["limite_prenotazioni_orario"] is None
 
     def test_rifiuta_un_limite_a_zero(self, auth_client):
         response = auth_client.patch(
-            reverse("configurazione-asporto"), {"limite_prodotti_orario": 0}, format="json"
+            reverse("configurazione-asporto"), {"limite_prenotazioni_orario": 0}, format="json"
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "limite_prodotti_orario" in response.data
+        assert "limite_prenotazioni_orario" in response.data
 
     def test_anonimo_non_puo_impostare_il_limite(self, api_client):
         response = api_client.patch(
-            reverse("configurazione-asporto"), {"limite_prodotti_orario": 15}, format="json"
+            reverse("configurazione-asporto"), {"limite_prenotazioni_orario": 3}, format="json"
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

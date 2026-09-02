@@ -1,6 +1,4 @@
-import datetime
-
-from django.db.models import ProtectedError, Sum
+from django.db.models import ProtectedError
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -135,11 +133,8 @@ class VoceOrdineViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         # 'create' è pubblica per il flusso self-service (stesso pattern di
-        # OccupazionePostazioneViewSet.create per la piscina); 'prenotati_per_orario' è pubblica
-        # per lo stesso motivo di 'disponibilita' altrove nel progetto — un aiuto per la UI dei
-        # picker orario, non l'unico punto in cui il limite di capacità viene fatto rispettare
-        # (VoceOrdineSerializer.validate() resta l'ultima parola).
-        if self.action in ('create', 'prenotati_per_orario'):
+        # OccupazionePostazioneViewSet.create per la piscina).
+        if self.action == 'create':
             return [AllowAny()]
         return super().get_permissions()
 
@@ -148,34 +143,3 @@ class VoceOrdineViewSet(viewsets.ModelViewSet):
         # corrente del prodotto, mai fidandosi di un valore inviato dal client.
         prodotto = serializer.validated_data['prodotto']
         serializer.save(prezzo_unitario=prodotto.prezzo)
-
-    @action(detail=False, methods=['get'], url_path='prenotati-per-orario')
-    def prenotati_per_orario(self, request):
-        """
-        GET /api/v1/menu/voci-ordine/prenotati-per-orario/?data=YYYY-MM-DD — pubblica.
-        Risposta: {"12:15": 10, "13:00": 3, ...} — quantità totale di prodotti già prenotati per
-        ciascun orario in quella data (VoceOrdine di prenotazioni non CANCELLED). Usata insieme al
-        limite globale ConfigurazioneAsporto.limite_prodotti_orario per calcolare lato client il
-        residuo per ciascuno slot — solo gli orari con almeno una VoceOrdine compaiono, un orario
-        assente equivale a 0 prenotati.
-        """
-        data_str = request.query_params.get('data')
-        if not data_str:
-            return Response(
-                {"detail": "Il parametro 'data' è obbligatorio."}, status=status.HTTP_400_BAD_REQUEST
-            )
-        try:
-            data = datetime.date.fromisoformat(data_str)
-        except ValueError:
-            return Response(
-                {"detail": "Formato data non valido, atteso YYYY-MM-DD."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        righe = (
-            VoceOrdine.objects.filter(prenotazione__data=data)
-            .exclude(prenotazione__stato='CANCELLED')
-            .values('prenotazione__ora')
-            .annotate(totale=Sum('quantita'))
-        )
-        return Response({riga['prenotazione__ora'].strftime('%H:%M'): riga['totale'] for riga in righe})

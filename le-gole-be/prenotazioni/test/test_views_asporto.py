@@ -221,3 +221,53 @@ class TestRecenti:
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 1
+
+
+class TestPrenotazioniPerOrario:
+    # Sostituisce (2026-08-28) il precedente `menu.VoceOrdineViewSet.prenotati_per_orario`: conta
+    # le prenotazioni (ordini distinti), non la somma delle quantità dei prodotti in esse — nessun
+    # riferimento a `menu.VoceOrdine` qui, coerente con l'invariante "prenotazioni/test/ privo di
+    # qualunque riferimento a menu" (i test che toccano `ConfigurazioneAsporto.limite_prenotazioni_orario`
+    # vivono invece in menu/test/test_views_prenotazione_asporto_orario.py, per lo stesso motivo).
+    def test_e_pubblica(self, api_client):
+        response = api_client.get(reverse("prenotazione-asporto-prenotazioni-per-orario"), {"data": "2026-12-25"})
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_richiede_il_parametro_data(self, api_client):
+        response = api_client.get(reverse("prenotazione-asporto-prenotazioni-per-orario"))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_rifiuta_data_malformata(self, api_client):
+        response = api_client.get(
+            reverse("prenotazione-asporto-prenotazioni-per-orario"), {"data": "non-una-data"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_orario_senza_prenotazioni_non_compare(self, api_client):
+        response = api_client.get(reverse("prenotazione-asporto-prenotazioni-per-orario"), {"data": "2026-12-25"})
+        assert response.data == {}
+
+    def test_conta_le_prenotazioni_per_orario(self, api_client):
+        PrenotazioneAsportoFactory(data="2026-12-25", ora="12:15", stato="CONFIRMED")
+        PrenotazioneAsportoFactory(data="2026-12-25", ora="12:15", stato="PENDING")
+        PrenotazioneAsportoFactory(data="2026-12-25", ora="13:00", stato="CONFIRMED")
+
+        response = api_client.get(reverse("prenotazione-asporto-prenotazioni-per-orario"), {"data": "2026-12-25"})
+
+        assert response.data == {"12:15": 2, "13:00": 1}
+
+    def test_esclude_le_prenotazioni_cancellate(self, api_client):
+        PrenotazioneAsportoFactory(data="2026-12-25", ora="12:15", stato="CANCELLED")
+
+        response = api_client.get(reverse("prenotazione-asporto-prenotazioni-per-orario"), {"data": "2026-12-25"})
+
+        assert response.data == {}
+
+    def test_conteggio_isolato_per_data(self, api_client):
+        PrenotazioneAsportoFactory(data="2026-12-25", ora="12:15", stato="CONFIRMED")
+        PrenotazioneAsportoFactory(data="2026-12-26", ora="12:15", stato="CONFIRMED")
+        PrenotazioneAsportoFactory(data="2026-12-26", ora="12:15", stato="CONFIRMED")
+
+        response = api_client.get(reverse("prenotazione-asporto-prenotazioni-per-orario"), {"data": "2026-12-25"})
+
+        assert response.data == {"12:15": 1}

@@ -134,6 +134,32 @@ class PrenotazioneAsportoSerializer(serializers.ModelSerializer):
                     "ora": f"Il servizio asporto è attivo {configurazione.descrizione_orari()}."
                 })
 
+            # Limite di capacità per orario di ritiro (ConfigurazioneAsporto.limite_prenotazioni_orario,
+            # 2026-08-28 — sostituisce il precedente limite sui prodotti, sezione 15 di CLAUDE.md):
+            # un unico valore globale, applicato automaticamente a *qualunque* orario, che conta il
+            # numero di PRENOTAZIONI (ordini distinti) già confermate/in attesa per quella data+ora,
+            # non la somma delle quantità in esse. Vincolato per chiunque, staff incluso, stesso
+            # principio dell'orario apertura/chiusura appena sopra — riflette quanti ordini separati
+            # la cucina/lo staff può gestire nella stessa finestra, non un gate solo sul self-service.
+            limite_prenotazioni = configurazione.limite_prenotazioni_orario
+            if limite_prenotazioni is not None:
+                qs = PrenotazioneAsporto.objects.filter(
+                    data=data_richiesta, ora=ora_richiesta
+                ).exclude(stato='CANCELLED')
+                if instance is not None:
+                    # Su un update che non cambia data/ora, l'istanza corrente va esclusa dal
+                    # proprio stesso conteggio — altrimenti bloccherebbe un PATCH che non tocca
+                    # affatto l'orario non appena il limite fosse già "raggiunto" da lei stessa.
+                    qs = qs.exclude(pk=instance.pk)
+                gia_prenotate = qs.count()
+                if gia_prenotate >= limite_prenotazioni:
+                    raise serializers.ValidationError({
+                        "ora": (
+                            f"Limite raggiunto per l'orario {ora_richiesta.strftime('%H:%M')}: "
+                            f"massimo {limite_prenotazioni} prenotazioni."
+                        )
+                    })
+
         return data
 
 

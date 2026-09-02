@@ -15,18 +15,18 @@ import { ConfermaOrdineAsporto, type RigaRiepilogoOrdineAsporto } from '../../..
 import {
   createPrenotazioneAsporto,
   getDettaglioPubblicoAsporto,
+  getPrenotazioniPerOrario,
   getRicevutaUrl,
   type PrenotazioneAsportoDettaglio,
+  type PrenotazioniPerOrario,
 } from '../../../../src/services/prenotazioni';
 import {
   createVoceOrdine,
   getConfigurazioneAsporto,
-  getProdottiPrenotatiPerOrario,
   getProssimeChiusureAsporto,
   listProdotti,
   type ConfigurazioneAsporto,
   type Prodotto,
-  type ProdottiPrenotatiPerOrario,
 } from '../../../../src/services/menu';
 import { apriBigliettoPdf } from '../../../../src/utils/biglietto';
 import { extractErrorMessage } from '../../../../src/utils/errors';
@@ -55,15 +55,18 @@ import { formatPrezzo } from '../../../../src/utils/prezzi';
 // non porta la categoria del prodotto), quindi nessuna variante "estesa" a 30 minuti: un solo
 // anticipo fisso, sufficiente perché il riordino è comunque sempre per oggi.
 const ANTICIPO_MINUTI_RIORDINO = 15;
-// Sotto questo numero di prodotti ancora prenotabili per un orario, mostriamo il conteggio
-// residuo sotto lo slot — stessa soglia/stesso principio del checkout self-service.
-const SOGLIA_AVVISO_RESIDUO_ORARIO = 5;
+// Sotto questo numero di prenotazioni ancora accettabili per un orario, mostriamo il conteggio
+// residuo sotto lo slot — stessa soglia/stesso principio del checkout self-service (abbassata a
+// 2 il 2026-08-28, insieme a RESIDUO_CRITICO, quando il limite è passato dal contare i prodotti
+// al contare le prenotazioni: numeri molto più piccoli, per cui la vecchia soglia di 5 avrebbe
+// reso il conteggio quasi sempre visibile).
+const SOGLIA_AVVISO_RESIDUO_ORARIO = 2;
 // Sotto questa ulteriore soglia il testo passa da ambra a rosa — stessa scala e stessa soglia del
 // checkout self-service (app/cliente/asporto/index.tsx), duplicata identica qui.
-const RESIDUO_CRITICO = 2;
+const RESIDUO_CRITICO = 1;
 
-// Colore del testo "N rimasti" — sta FUORI dal bottone dello slot (didascalia sotto, non più un
-// badge annidato dentro il bottone), stessa funzione identica del checkout self-service.
+// Colore del testo "N posti liberi" — sta FUORI dal bottone dello slot (didascalia sotto, non
+// più un badge annidato dentro il bottone), stessa funzione identica del checkout self-service.
 function residuoTextClassName(residuo: number): string {
   return residuo <= RESIDUO_CRITICO ? 'text-rose-600' : 'text-amber-600';
 }
@@ -142,8 +145,10 @@ function slotTextClassName(selezionato: boolean, disabilitato: boolean): string 
 }
 
 function slotAccessibilityLabel(slot: string, esaurito: boolean, mostraResiduo: boolean, residuo: number | null): string {
-  if (esaurito) return `Orario di ritiro ${slot}, esaurito: numero massimo di prodotti raggiunto per questo orario`;
-  if (mostraResiduo) return `Orario di ritiro ${slot}, solo ${residuo} prodotti ancora disponibili per questo orario`;
+  if (esaurito) return `Orario di ritiro ${slot}, esaurito: numero massimo di prenotazioni raggiunto per questo orario`;
+  if (mostraResiduo) {
+    return `Orario di ritiro ${slot}, solo ${residuo} ${residuo === 1 ? 'posto libero' : 'posti liberi'} per questo orario`;
+  }
   return `Orario di ritiro ${slot}`;
 }
 
@@ -234,7 +239,7 @@ function PickerOrarioRiordino({
                     (non applicata da NativeWind/react-native-css su questo target web). */}
                 {mostraResiduo ? (
                   <Text style={{ fontSize: 9 }} className={`font-semibold ${residuoTextClassName(residuo!)}`}>
-                    {residuo} rimast{residuo === 1 ? 'o' : 'i'}
+                    {residuo === 1 ? '1 posto libero' : `${residuo} posti liberi`}
                   </Text>
                 ) : null}
               </VStack>
@@ -279,7 +284,7 @@ export default function DettaglioOrdineAsportoScreen() {
 
   const [configurazione, setConfigurazione] = useState<ConfigurazioneAsporto | null>(null);
   const [chiusoOggi, setChiusoOggi] = useState(false);
-  const [prenotatiPerOrario, setPrenotatiPerOrario] = useState<ProdottiPrenotatiPerOrario>({});
+  const [prenotazioniPerOrario, setPrenotazioniPerOrario] = useState<PrenotazioniPerOrario>({});
   // Catalogo completo (anche i prodotti nascosti, ProdottoViewSet non filtra per `disponibile` di
   // default) — serve solo a scoprire se uno dei prodotti dell'ordine originale è stato nascosto
   // dallo staff nel frattempo: un riordino self-service (richiesta anonima) verrebbe comunque
@@ -308,26 +313,22 @@ export default function DettaglioOrdineAsportoScreen() {
   );
 
   // Stesso principio del checkout self-service (app/cliente/asporto/index.tsx): limite globale
-  // di prodotti per orario (ConfigurazioneAsporto.limite_prodotti_orario, sezione 15), confrontato
-  // con la quantità totale di prodotti che il riordino ricreerebbe — sempre la stessa dell'ordine
-  // originale, nessun carrello da poter cambiare qui.
-  const limiteProdottiOrario = configurazione?.limite_prodotti_orario ?? null;
-  const richiestiRiordino = Math.max(
-    ordine?.voci.reduce((sum, voce) => sum + voce.quantita, 0) ?? 0,
-    1
-  );
+  // di PRENOTAZIONI per orario (ConfigurazioneAsporto.limite_prenotazioni_orario, sezione 15). Il
+  // riordino, come il checkout, crea sempre esattamente UNA prenotazione a prescindere da quante
+  // righe prodotto contenga l'ordine originale — basta confrontare quante prenotazioni ci sono
+  // già con il limite, nessun bisogno di sapere "quanti prodotti" ricreerebbe.
+  const limitePrenotazioniOrario = configurazione?.limite_prenotazioni_orario ?? null;
   const isSlotEsaurito = (slot: string) => {
-    if (limiteProdottiOrario === null) return false;
-    const prenotati = prenotatiPerOrario[slot] ?? 0;
-    return limiteProdottiOrario - prenotati < richiestiRiordino;
+    if (limitePrenotazioniOrario === null) return false;
+    const prenotate = prenotazioniPerOrario[slot] ?? 0;
+    return prenotate >= limitePrenotazioniOrario;
   };
-  // Residuo "grezzo" dello slot (limite meno quanto già prenotato da tutti) — stesso principio
-  // del checkout self-service: non tiene conto di richiestiRiordino, serve solo a mostrare
-  // "quanti ne restano in tutto".
+  // Residuo dello slot (limite meno quante prenotazioni già presenti) — stesso principio del
+  // checkout self-service.
   const residuoSlot = (slot: string): number | null => {
-    if (limiteProdottiOrario === null) return null;
-    const prenotati = prenotatiPerOrario[slot] ?? 0;
-    return limiteProdottiOrario - prenotati;
+    if (limitePrenotazioniOrario === null) return null;
+    const prenotate = prenotazioniPerOrario[slot] ?? 0;
+    return limitePrenotazioniOrario - prenotate;
   };
 
   // Nomi (deduplicati) dei prodotti dell'ordine originale non più disponibili — un riordino li
@@ -370,15 +371,15 @@ export default function DettaglioOrdineAsportoScreen() {
       getDettaglioPubblicoAsporto(id),
       getConfigurazioneAsporto(),
       getProssimeChiusureAsporto(),
-      getProdottiPrenotatiPerOrario(toISODate(new Date())),
+      getPrenotazioniPerOrario(toISODate(new Date())),
       listProdotti(),
     ])
-      .then(([ordineData, configurazioneData, chiusureData, prenotatiData, prodottiData]) => {
+      .then(([ordineData, configurazioneData, chiusureData, prenotazioniData, prodottiData]) => {
         if (cancelled) return;
         setOrdine(ordineData);
         setConfigurazione(configurazioneData);
         setChiusoOggi(chiusureData.includes(toISODate(new Date())));
-        setPrenotatiPerOrario(prenotatiData);
+        setPrenotazioniPerOrario(prenotazioniData);
         setProdotti(prodottiData);
       })
       .catch(() => {
@@ -686,10 +687,10 @@ export default function DettaglioOrdineAsportoScreen() {
                     Servizio attivo {descrizioneOrari(configurazione)}.
                   </Text>
                 ) : null}
-                {limiteProdottiOrario !== null ? (
+                {limitePrenotazioniOrario !== null ? (
                   <Text size="2xs" className="text-emerald-900/70">
-                    Ogni orario ha un numero massimo di prodotti prenotabili (bevande e vini
-                    esclusi): se ne restano pochi te lo segnaliamo sotto l'orario.
+                    Ogni orario accetta solo un numero massimo di prenotazioni: se ne restano
+                    poche te lo segnaliamo sotto l'orario.
                   </Text>
                 ) : null}
               </VStack>

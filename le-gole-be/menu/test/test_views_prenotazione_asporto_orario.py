@@ -167,3 +167,110 @@ class TestValidazioneGiornoChiuso:
         response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
 
         assert response.status_code == status.HTTP_201_CREATED
+
+
+class TestLimitePrenotazioniOrario:
+    # ConfigurazioneAsporto.limite_prenotazioni_orario (2026-08-28, sostituisce il precedente
+    # limite sui prodotti — sezione 15 di CLAUDE.md) — un unico valore globale, applicato
+    # automaticamente a *qualunque* orario (non scelto per singola fascia), che conta il numero
+    # di prenotazioni (non la somma delle quantità in esse) già presenti per quella data+ora.
+    # Vincolato per chiunque, staff incluso — stesso principio dell'orario apertura/chiusura
+    # sopra, a differenza di GiornoChiusoAsporto che bypassa solo lo staff.
+    def _imposta_limite(self, limite):
+        configurazione = ConfigurazioneAsporto.get_solo()
+        configurazione.limite_prenotazioni_orario = limite
+        configurazione.save()
+
+    def test_nessun_limite_configurato_nessuna_restrizione(self, api_client):
+        for _ in range(5):
+            PrenotazioneAsportoFactory(data="2026-08-20", ora="12:15")
+        cliente = ClienteFactory()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:15"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_accetta_esattamente_al_limite(self, api_client):
+        self._imposta_limite(3)
+        for _ in range(2):
+            PrenotazioneAsportoFactory(data="2026-08-20", ora="12:15")
+        cliente = ClienteFactory()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:15"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_rifiuta_se_supera_il_limite_anonimo(self, api_client):
+        self._imposta_limite(3)
+        for _ in range(3):
+            PrenotazioneAsportoFactory(data="2026-08-20", ora="12:15")
+        cliente = ClienteFactory()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:15"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "ora" in response.data
+
+    def test_rifiuta_se_supera_il_limite_anche_per_lo_staff(self, auth_client):
+        self._imposta_limite(3)
+        for _ in range(3):
+            PrenotazioneAsportoFactory(data="2026-08-20", ora="12:15")
+        cliente = ClienteFactory()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:15"}
+
+        response = auth_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "ora" in response.data
+
+    def test_prenotazioni_cancellate_non_contano_nel_limite(self, api_client):
+        self._imposta_limite(1)
+        PrenotazioneAsportoFactory(data="2026-08-20", ora="12:15", stato="CANCELLED")
+        cliente = ClienteFactory()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:15"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_lo_stesso_limite_globale_si_applica_a_ogni_orario_indipendentemente(self, api_client):
+        # Il limite è unico e globale, ma il conteggio "già prenotato" resta scoped per
+        # orario+data: esaurire le 12:15 non deve toccare il residuo delle 12:00.
+        self._imposta_limite(1)
+        PrenotazioneAsportoFactory(data="2026-08-20", ora="12:15")
+        cliente = ClienteFactory()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:00"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_patch_esclude_la_prenotazione_stessa_dal_conteggio(self, auth_client):
+        self._imposta_limite(1)
+        prenotazione = PrenotazioneAsportoFactory(data="2026-08-20", ora="12:15")
+
+        # Un PATCH che non cambia l'orario non deve fallire solo perché la prenotazione stessa
+        # "riempie" il limite — va esclusa dal proprio stesso conteggio, altrimenti nessun ordine
+        # a un orario già al limite sarebbe più modificabile, nemmeno su un campo non correlato.
+        response = auth_client.patch(
+            reverse("prenotazione-asporto-detail", args=[prenotazione.pk]),
+            {"note": "senza cipolla"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_patch_che_sposta_verso_un_orario_gia_pieno_viene_rifiutato(self, auth_client):
+        self._imposta_limite(1)
+        PrenotazioneAsportoFactory(data="2026-08-20", ora="13:00")
+        prenotazione = PrenotazioneAsportoFactory(data="2026-08-20", ora="12:15")
+
+        response = auth_client.patch(
+            reverse("prenotazione-asporto-detail", args=[prenotazione.pk]),
+            {"ora": "13:00"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "ora" in response.data

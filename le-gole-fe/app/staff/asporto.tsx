@@ -420,16 +420,20 @@ function OrarioDisponibilitaCard() {
   );
 }
 
-// Numero massimo di prodotti ordinabili complessivamente a un qualunque orario di ritiro — un
-// UNICO valore globale (`ConfigurazioneAsporto.limite_prodotti_orario`), applicato automaticamente
-// a ogni orario: lo staff imposta solo la quantità, non deve scegliere l'ora (su richiesta
-// esplicita dell'utente, che ha corretto una prima versione per-orario proprio per questo). Se un
-// cliente ne ordina 10 e un altro ne vuole altri 6 sullo stesso orario con un limite di 15, il
-// secondo vede quell'orario come "non più disponibile" (sezioni 7/15 dei picker orario
-// cliente/staff) — riflette quanti piatti la cucina riesce davvero a preparare in una fascia, non
-// un tetto per singolo ordine/cliente. Stesso pattern "campo + Salva/Annulla" di
-// `OrarioDisponibilitaCard` sopra, entrambe leggono/scrivono la stessa riga singleton.
-function LimiteProdottiOrarioCard() {
+// Numero massimo di PRENOTAZIONI (ordini distinti, a prescindere da quanti prodotti contengono)
+// accettate a un qualunque orario di ritiro — un UNICO valore globale
+// (`ConfigurazioneAsporto.limite_prenotazioni_orario`), applicato automaticamente a ogni orario:
+// lo staff imposta solo la quantità, non deve scegliere l'ora (su richiesta esplicita
+// dell'utente, che ha corretto una prima versione per-orario proprio per questo). Rinominato da
+// "Limite prodotti per orario" il 2026-08-28, su ulteriore richiesta esplicita dell'utente: non
+// conta più la somma delle quantità ordinate, ma quanti ordini distinti la cucina/lo staff può
+// gestire nella stessa finestra — un singolo grande ordine e tanti piccoli ordini pesano ora allo
+// stesso modo (1 prenotazione), non più in proporzione a quanti prodotti contengono. Se ci sono
+// già 2 prenotazioni per un orario con limite 3 e ne arriva una terza, quell'orario diventa "non
+// più disponibile" per un quarto cliente (sezioni 7/15 dei picker orario cliente/staff). Stesso
+// pattern "campo + Salva/Annulla" di `OrarioDisponibilitaCard` sopra, entrambe leggono/scrivono
+// la stessa riga singleton.
+function LimitePrenotazioniOrarioCard() {
   const [limite, setLimite] = useState('');
   // Ultimo valore confermato dal backend (null = nessun limite) — il confronto con `limite`
   // decide se c'è davvero qualcosa da salvare, stesso principio di `isDirty` sopra.
@@ -442,8 +446,8 @@ function LimiteProdottiOrarioCard() {
   useEffect(() => {
     getConfigurazioneAsporto()
       .then((config: ConfigurazioneAsporto) => {
-        setSavedLimite(config.limite_prodotti_orario);
-        setLimite(config.limite_prodotti_orario != null ? String(config.limite_prodotti_orario) : '');
+        setSavedLimite(config.limite_prenotazioni_orario);
+        setLimite(config.limite_prenotazioni_orario != null ? String(config.limite_prenotazioni_orario) : '');
       })
       .catch(() => setError('Impossibile caricare il limite.'))
       .finally(() => setIsLoading(false));
@@ -473,9 +477,9 @@ function LimiteProdottiOrarioCard() {
     setError(null);
     setIsSaving(true);
     try {
-      const updated = await updateConfigurazioneAsporto({ limite_prodotti_orario: limiteNumero });
-      setSavedLimite(updated.limite_prodotti_orario);
-      setLimite(updated.limite_prodotti_orario != null ? String(updated.limite_prodotti_orario) : '');
+      const updated = await updateConfigurazioneAsporto({ limite_prenotazioni_orario: limiteNumero });
+      setSavedLimite(updated.limite_prenotazioni_orario);
+      setLimite(updated.limite_prenotazioni_orario != null ? String(updated.limite_prenotazioni_orario) : '');
       setJustSaved(true);
     } catch (err) {
       setError(extractErrorMessage(err, 'Impossibile salvare il limite.'));
@@ -488,12 +492,12 @@ function LimiteProdottiOrarioCard() {
     <VStack space="sm" className="w-full rounded-2xl border border-sky-200 bg-white p-4">
       <HStack space="xs" className="items-center">
         <Icon as={AlertCircleIcon} size="sm" className="text-sky-700" />
-        <Heading size="sm">Limite prodotti per orario</Heading>
+        <Heading size="sm">Limite prenotazioni per orario</Heading>
       </HStack>
       <Text size="xs" className="text-muted-foreground">
-        Numero massimo di prodotti ordinabili complessivamente a ciascun orario di ritiro — si
-        applica automaticamente a tutti gli orari, non solo a uno specifico. Lascia vuoto per
-        nessun limite. Bevande e vini non vengono conteggiati in questo limite.
+        Numero massimo di prenotazioni accettate a
+        ciascun orario di ritiro — si applica automaticamente a tutti gli orari, non solo a uno
+        specifico. Lascia vuoto per nessun limite.
       </Text>
 
       {isLoading ? (
@@ -504,7 +508,7 @@ function LimiteProdottiOrarioCard() {
         <>
           <VStack space="xs" className="max-w-40">
             <Text size="sm" className="font-medium">
-              Max prodotti
+              Max prenotazioni
             </Text>
             <Input>
               <InputField
@@ -765,7 +769,7 @@ export default function AsportoScreen() {
         <NuovoOrdineLinkCard />
         <StoricoOrdiniLinkCard />
         <OrarioDisponibilitaCard />
-        <LimiteProdottiOrarioCard />
+        <LimitePrenotazioniOrarioCard />
         <GiorniChiusuraAsportoCard />
         <Box className="h-px w-full bg-sky-200" />
         <MenuAsportoSection />

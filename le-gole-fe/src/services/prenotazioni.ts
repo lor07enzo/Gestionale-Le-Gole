@@ -298,6 +298,25 @@ export function listPrenotazioniAsportoRecenti(limit = 50): Promise<Prenotazione
     .then((response) => response.data);
 }
 
+// Risposta pubblica di GET /prenotazioni/asporto/prenotazioni-per-orario/ — numero di
+// prenotazioni (ordini distinti, non CANCELLED) per ciascun orario in una data (es.
+// `{"12:15": 2}`), solo gli orari con almeno una prenotazione compaiono. Combinata lato client
+// con `ConfigurazioneAsporto.limite_prenotazioni_orario` per calcolare il residuo per ogni slot
+// dei picker orario. Sostituisce (2026-08-28) la precedente `ProdottiPrenotatiPerOrario`
+// (services/menu.ts, rimossa), che contava la somma delle quantità dei prodotti anziché gli
+// ordini stessi.
+export type PrenotazioniPerOrario = Record<string, number>;
+
+// GET /v1/prenotazioni/asporto/prenotazioni-per-orario/?data=YYYY-MM-DD — pubblico. Usata dai
+// picker orario (checkout self-service, riordino, creazione manuale staff) per disabilitare in
+// anticipo uno slot già al completo, prima ancora del submit — il backend
+// (PrenotazioneAsportoSerializer.validate()) resta comunque l'ultima parola.
+export function getPrenotazioniPerOrario(data: string): Promise<PrenotazioniPerOrario> {
+  return api
+    .get<PrenotazioniPerOrario>(`${PRENOTAZIONI_ASPORTO_PATH}prenotazioni_per_orario/`, { params: { data } })
+    .then((response) => response.data);
+}
+
 // POST /v1/prenotazioni/asporto/ — pubblico (self-service): stato/creata_da_staff forzati
 // lato backend per una richiesta anonima, a prescindere da cosa viene inviato qui.
 export function createPrenotazioneAsporto(

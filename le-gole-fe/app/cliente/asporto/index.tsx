@@ -47,18 +47,23 @@ const PIZZA_CATEGORIA_NOME = 'Pizze';
 const SOGLIA_PIZZE_ANTICIPO_ESTESO = 10;
 const ANTICIPO_MINUTI_STANDARD = 15;
 const ANTICIPO_MINUTI_ESTESO = 30;
-// Sotto questo numero di prodotti ancora prenotabili per un orario (limite globale meno quanto
-// già prenotato, sezione 1/15 di CLAUDE.md), mostriamo il conteggio residuo sotto lo slot — un
-// preavviso prima che l'orario diventi "Esaurito" del tutto, non solo quel messaggio finale.
-const SOGLIA_AVVISO_RESIDUO_ORARIO = 5;
+// Sotto questo numero di prenotazioni ancora accettabili per un orario (limite globale meno
+// quante già presenti, sezione 1/15 di CLAUDE.md), mostriamo il conteggio residuo sotto lo slot —
+// un preavviso prima che l'orario diventi "Esaurito" del tutto, non solo quel messaggio finale.
+// Abbassata a 2 (2026-08-28, su richiesta esplicita dell'utente — "deve comparire quando c'è
+// ancora posto per due prenotati"): da quando il limite conta prenotazioni e non più prodotti, i
+// numeri in gioco sono molto più piccoli (tipicamente una manciata per orario), quindi la vecchia
+// soglia di 5 avrebbe reso il conteggio quasi sempre visibile, vanificando l'idea di un preavviso
+// solo quando la scarsità è reale.
+const SOGLIA_AVVISO_RESIDUO_ORARIO = 2;
 // Sotto questa ulteriore soglia (più stringente della precedente) il testo passa da ambra a rosa
 // — stessa scala verde/ambra/rosa già usata altrove nel progetto per la disponibilità residua
-// (es. DisponibilitaCards, piscina) applicata qui al residuo per singolo orario.
-const RESIDUO_CRITICO = 2;
+// (es. DisponibilitaCards, piscina) applicata qui al residuo per singola prenotazione per orario.
+const RESIDUO_CRITICO = 1;
 
-// Colore del testo "N rimasti" — sta FUORI dal bottone dello slot (didascalia sotto, non più un
-// badge annidato dentro il bottone stesso): non deve più adattarsi allo sfondo pieno del bottone
-// selezionato, quindi un solo colore per fascia, nessun ramo "selezionato".
+// Colore del testo "N posti liberi" — sta FUORI dal bottone dello slot (didascalia sotto, non più
+// un badge annidato dentro il bottone stesso): non deve più adattarsi allo sfondo pieno del
+// bottone selezionato, quindi un solo colore per fascia, nessun ramo "selezionato".
 function residuoTextClassName(residuo: number): string {
   return residuo <= RESIDUO_CRITICO ? 'text-rose-600' : 'text-amber-600';
 }
@@ -524,7 +529,7 @@ export default function ClienteAsportoScreen() {
     prodottiDisponibili,
     configurazione,
     chiusureFuture,
-    prenotatiPerOrario,
+    prenotazioniPerOrario,
     isLoading,
     loadError,
     quantities,
@@ -566,26 +571,25 @@ export default function ClienteAsportoScreen() {
   );
   const blocchiOrario = useMemo(() => raggruppaSlotPerOra(slotsOrario), [slotsOrario]);
 
-  // Limite globale di prodotti per orario (ConfigurazioneAsporto.limite_prodotti_orario, sezione
-  // 15) — si applica automaticamente a *qualunque* orario, non scelto per singola fascia. Se non
-  // impostato (null), nessuno slot risulta mai esaurito. `richiesti` è il totale di prodotti nel
-  // carrello (non il numero di prodotti distinti): un ordine con 10 pizze pesa 10 su un limite
-  // espresso in "prodotti", non 1. `Math.max(..., 1)` copre il caso limite di uno slot già del
-  // tutto esaurito toccato prima ancora di aver aggiunto qualcosa al carrello.
-  const limiteProdottiOrario = configurazione?.limite_prodotti_orario ?? null;
-  const richiestiOrario = Math.max(totaleArticoli, 1);
+  // Limite globale di PRENOTAZIONI per orario (ConfigurazioneAsporto.limite_prenotazioni_orario,
+  // sezione 15) — si applica automaticamente a *qualunque* orario, non scelto per singola fascia.
+  // Se non impostato (null), nessuno slot risulta mai esaurito. A differenza del precedente
+  // limite sui prodotti (2026-08-28, rinominato su richiesta esplicita dell'utente), qui non
+  // serve più sapere "quanti prodotti" comporterebbe l'ordine: inviare il checkout crea sempre
+  // esattamente UNA prenotazione, a prescindere da quanti piatti/quante unità contiene il
+  // carrello — basta confrontare il numero di prenotazioni già presenti con il limite.
+  const limitePrenotazioniOrario = configurazione?.limite_prenotazioni_orario ?? null;
   const isSlotEsaurito = (slot: string) => {
-    if (limiteProdottiOrario === null) return false;
-    const prenotati = prenotatiPerOrario[slot] ?? 0;
-    return limiteProdottiOrario - prenotati < richiestiOrario;
+    if (limitePrenotazioniOrario === null) return false;
+    const prenotate = prenotazioniPerOrario[slot] ?? 0;
+    return prenotate >= limitePrenotazioniOrario;
   };
-  // Residuo "grezzo" dello slot (limite meno quanto già prenotato da tutti, non solo da questo
-  // carrello) — a differenza di isSlotEsaurito, non tiene conto di richiestiOrario: serve solo a
-  // mostrare "quanti ne restano in tutto", non se il carrello attuale ci sta.
+  // Residuo dello slot (limite meno quante prenotazioni già presenti) — quante prenotazioni in
+  // più quell'orario può ancora accettare, non legato al carrello di questo cliente.
   const residuoSlot = (slot: string): number | null => {
-    if (limiteProdottiOrario === null) return null;
-    const prenotati = prenotatiPerOrario[slot] ?? 0;
-    return limiteProdottiOrario - prenotati;
+    if (limitePrenotazioniOrario === null) return null;
+    const prenotate = prenotazioniPerOrario[slot] ?? 0;
+    return limitePrenotazioniOrario - prenotate;
   };
 
   const bloccoChiusura = useMemo(() => trovaBloccoChiusura(chiusureFuture, new Date()), [chiusureFuture]);
@@ -1410,7 +1414,7 @@ export default function ClienteAsportoScreen() {
                                 onPress={() => !disabilitato && setField('orario')(slot)}
                                 disabled={disabilitato}
                                 accessibilityRole="button"
-                                accessibilityLabel={`Orario di ritiro ${slot}${esaurito ? ', esaurito: numero massimo di prodotti raggiunto per questo orario' : mostraResiduo ? `, solo ${residuo} prodotti ancora disponibili per questo orario` : ''}`}
+                                accessibilityLabel={`Orario di ritiro ${slot}${esaurito ? ', esaurito: numero massimo di prenotazioni raggiunto per questo orario' : mostraResiduo ? `, solo ${residuo} ${residuo === 1 ? 'posto libero' : 'posti liberi'} per questo orario` : ''}`}
                                 className={`rounded-full border-2 px-3 py-1.5 ${
                                   selezionato
                                     ? 'border-sky-600 bg-sky-600'
@@ -1451,7 +1455,7 @@ export default function ClienteAsportoScreen() {
                                   style={{ fontSize: 9 }}
                                   className={`font-semibold ${residuoTextClassName(residuo!)}`}
                                 >
-                                  {residuo} rimast{residuo === 1 ? 'o' : 'i'}
+                                  {residuo === 1 ? '1 posto libero' : `${residuo} posti liberi`}
                                 </Text>
                               ) : null}
                             </VStack>
@@ -1466,9 +1470,9 @@ export default function ClienteAsportoScreen() {
                     <Text size="2xs" className="text-sky-900/60">
                       Servizio: {descrizioneOrari(configurazione)}.
                     </Text>
-                    {limiteProdottiOrario !== null ? (
+                    {limitePrenotazioniOrario !== null ? (
                       <Text size="2xs" className="text-sky-900/60">
-                        Alcuni orari hanno un numero limitato di prodotti disponibili.
+                        Alcuni orari accettano solo un numero limitato di prenotazioni.
                       </Text>
                     ) : null}
                     {quantitaPizze > SOGLIA_PIZZE_ANTICIPO_ESTESO ? (

@@ -336,6 +336,36 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def prenotazioni_per_orario(self, request):
+        """
+        GET /api/v1/prenotazioni/asporto/prenotazioni_per_orario/?data=YYYY-MM-DD — pubblica.
+        Risposta: {"12:15": 2, "13:00": 1, ...} — numero di PRENOTAZIONI (ordini distinti, non
+        CANCELLED) già presenti per ciascun orario in quella data — sostituisce (2026-08-28) il
+        precedente `menu.VoceOrdineViewSet.prenotati_per_orario`, che sommava le quantità dei
+        prodotti anziché contare gli ordini. Usata insieme a
+        ConfigurazioneAsporto.limite_prenotazioni_orario per calcolare lato client il residuo per
+        ciascuno slot — solo gli orari con almeno una prenotazione compaiono, un orario assente
+        equivale a 0. Stesso pattern pubblico di 'disponibilita' altrove nel progetto: un aiuto
+        per la UI dei picker orario, non l'unico punto in cui il limite viene fatto rispettare
+        (PrenotazioneAsportoSerializer.validate() resta l'ultima parola).
+        """
+        data_str = request.query_params.get('data')
+        if not data_str:
+            return Response({"detail": "Il parametro 'data' è obbligatorio."}, status=400)
+        try:
+            data_richiesta = datetime.strptime(data_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({"detail": "Formato data non valido, atteso YYYY-MM-DD."}, status=400)
+
+        righe = (
+            PrenotazioneAsporto.objects.filter(data=data_richiesta)
+            .exclude(stato='CANCELLED')
+            .values('ora')
+            .annotate(totale=Count('id'))
+        )
+        return Response({riga['ora'].strftime('%H:%M'): riga['totale'] for riga in righe})
+
 
 class OccupazionePostazioneViewSet(viewsets.ModelViewSet):
     """
