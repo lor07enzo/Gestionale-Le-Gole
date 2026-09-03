@@ -43,6 +43,7 @@ import {
 } from '../../../src/services/prenotazioni';
 import { createCliente } from '../../../src/services/clienti';
 import { ClienteFooter } from '../../../src/components/cliente/ClienteFooter';
+import { ConfermaPrenotazionePiscina } from '../../../src/components/cliente/ConfermaPrenotazionePiscina';
 import { BackButton } from '../../../src/components/cliente/BackButton';
 import { CalendarPicker } from '../../../src/components/shared/CalendarPicker';
 import { DisponibilitaCards, type DisponibilitaCardItem } from '../../../src/components/shared/DisponibilitaCards';
@@ -509,41 +510,15 @@ export default function ClientePiscinaBookingScreen() {
 
   if (prenotazioneInviata) {
     return (
-      <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
-        <VStack space="lg" className="w-full items-center">
-          <Box className="w-full max-w-md items-center rounded-3xl border border-emerald-200 bg-emerald-50 p-8">
-            <Text size="3xl">✅</Text>
-            <Heading size="lg" className="mt-2 text-center text-emerald-900">
-              Prenotazione confermata!
-            </Heading>
-            <Text size="sm" className="mt-2 text-center text-emerald-800">
-              La tua prenotazione per {inventario.nome} del{' '}
-              {formatDisplayDate(selectedDate)} alle {form.orario} è confermata. Ti contatteremo
-              al numero indicato solo in caso di necessità.
-            </Text>
-          </Box>
-
-          <Box className="w-full max-w-md rounded-2xl border border-sky-200 bg-sky-100 p-5">
-            <Text size="sm" className="text-center text-sky-900">
-              🎫 Scarica il biglietto e mostralo in biglietteria: riporta il riepilogo della tua
-              prenotazione, già confermata.
-            </Text>
-            <Button className="mt-3" onPress={handleScaricaBiglietto} disabled={isDownloadingBiglietto}>
-              {isDownloadingBiglietto ? <ButtonSpinner /> : <ButtonText>Scarica biglietto (PDF)</ButtonText>}
-            </Button>
-            {error ? (
-              <Text size="xs" className="mt-2 text-center text-destructive">
-                {error}
-              </Text>
-            ) : null}
-          </Box>
-
-          <Button variant="outline" className="border-2 border-sky-300 bg-white" onPress={() => router.replace('/cliente')}>
-            <ButtonText>Torna alla home</ButtonText>
-          </Button>
-          <ClienteFooter />
-        </VStack>
-      </ScrollView>
+      <ConfermaPrenotazionePiscina
+        nomeInventario={inventario.nome}
+        dataLabel={formatDisplayDate(selectedDate)}
+        orario={form.orario}
+        isDownloading={isDownloadingBiglietto}
+        onScaricaBiglietto={handleScaricaBiglietto}
+        onTornaHome={() => router.replace('/cliente')}
+        downloadError={error}
+      />
     );
   }
 

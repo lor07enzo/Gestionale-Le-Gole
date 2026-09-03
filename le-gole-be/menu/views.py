@@ -91,6 +91,15 @@ class ProdottoViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly]
     filterset_fields = ['categoria', 'disponibile']
 
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            return Response(
+                {"detail": "Impossibile eliminare questo prodotto: esistono ordini collegati ad esso. Puoi nasconderlo dal menu invece di eliminarlo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
 
 class GiornoChiusoAsportoViewSet(viewsets.ModelViewSet):
     """

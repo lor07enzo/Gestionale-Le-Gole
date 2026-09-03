@@ -172,6 +172,20 @@ class TestProdottoPermessi:
         assert set(response.data["allergeni"]) == {glutine.pk, lattosio.pk}
 
 
+class TestProdottoEliminazione:
+    def test_eliminabile_se_senza_ordini_collegati(self, auth_client, prodotto):
+        response = auth_client.delete(reverse("prodotto-detail", args=[prodotto.pk]))
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_bloccata_se_esiste_una_voce_ordine_collegata(self, auth_client, prodotto):
+        VoceOrdineFactory(prodotto=prodotto)
+
+        response = auth_client.delete(reverse("prodotto-detail", args=[prodotto.pk]))
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "detail" in response.data
+
+
 class TestProdottoFiltri:
     def test_filtra_per_categoria(self, api_client):
         panini = CategoriaFactory(nome="Panini")
