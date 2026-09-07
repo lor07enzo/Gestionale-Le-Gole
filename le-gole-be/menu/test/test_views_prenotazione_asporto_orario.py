@@ -169,6 +169,42 @@ class TestValidazioneGiornoChiuso:
         assert response.status_code == status.HTTP_201_CREATED
 
 
+class TestValidazioneServizioAttivo:
+    # ConfigurazioneAsporto.attivo (2026-09-05) — interruttore del solo canale online, stesso
+    # identico principio/bypass di GiornoChiusoAsporto sopra: blocca solo il self-service
+    # anonimo, mai lo staff.
+    def test_ordine_anonimo_rifiutato_a_servizio_disattivato(self, api_client):
+        cliente = ClienteFactory()
+        configurazione = ConfigurazioneAsporto.get_solo()
+        configurazione.attivo = False
+        configurazione.save()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:00"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_staff_puo_comunque_registrare_un_ordine_a_servizio_disattivato(self, auth_client):
+        cliente = ClienteFactory()
+        configurazione = ConfigurazioneAsporto.get_solo()
+        configurazione.attivo = False
+        configurazione.save()
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:00"}
+
+        response = auth_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_ordine_anonimo_accettato_a_servizio_attivo(self, api_client):
+        cliente = ClienteFactory()
+        ConfigurazioneAsporto.get_solo()  # attivo=True di default
+        payload = {"cliente_id": str(cliente.pk), "data": "2026-08-20", "ora": "12:00"}
+
+        response = api_client.post(reverse("prenotazione-asporto-list"), payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+
 class TestLimitePrenotazioniOrario:
     # ConfigurazioneAsporto.limite_prenotazioni_orario (2026-08-28, sostituisce il precedente
     # limite sui prodotti — sezione 15 di CLAUDE.md) — un unico valore globale, applicato

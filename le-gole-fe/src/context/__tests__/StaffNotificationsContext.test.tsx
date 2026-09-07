@@ -3,18 +3,53 @@ import { StaffNotificationsProvider, useStaffNotifications } from '../StaffNotif
 import { getNotificheLetteIds, saveNotificheLetteIds } from '../../utils/storage';
 import type { PrenotazioneAsporto, PrenotazionePiscina } from '../../services/prenotazioni';
 
-// Mock completo del servizio: evita di eseguire services/api.ts (axios reale).
+// Mock completo dei servizi: evita di eseguire services/api.ts (axios reale).
 jest.mock('../../services/prenotazioni', () => ({
   listPrenotazioniRecenti: jest.fn(),
   listPrenotazioniAsportoRecenti: jest.fn(),
 }));
 
+jest.mock('../../services/padel', () => ({
+  listPrenotazioniPadelRecenti: jest.fn(),
+}));
+
 import { listPrenotazioniAsportoRecenti, listPrenotazioniRecenti } from '../../services/prenotazioni';
+import { listPrenotazioniPadelRecenti } from '../../services/padel';
+import type { PrenotazionePadel } from '../../services/padel';
 
 const mockListRecenti = listPrenotazioniRecenti as jest.MockedFunction<typeof listPrenotazioniRecenti>;
 const mockListAsportoRecenti = listPrenotazioniAsportoRecenti as jest.MockedFunction<
   typeof listPrenotazioniAsportoRecenti
 >;
+const mockListPadelRecenti = listPrenotazioniPadelRecenti as jest.MockedFunction<
+  typeof listPrenotazioniPadelRecenti
+>;
+
+function buildPrenotazionePadel(overrides: Partial<PrenotazionePadel> = {}): PrenotazionePadel {
+  return {
+    id: 'padel-default',
+    cliente_id: 'cliente-3',
+    cliente_nome: 'Giulia Verdi',
+    cliente_telefono: '3332222222',
+    note: '',
+    data: '2026-08-10',
+    ora: '18:00:00',
+    stato: 'CONFIRMED',
+    partecipanti: 4,
+    palline_noleggiate: false,
+    durata_minuti: 90,
+    prezzo_partita: '30.00',
+    prezzo_palline: '5.00',
+    creata_da_staff: false,
+    totale: '30.00',
+    orario_fine: '19:30:00',
+    racchette_totali: 0,
+    noleggi: [],
+    created_at: '2026-08-10T09:00:00.000Z',
+    updated_at: '2026-08-10T09:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function buildPrenotazione(overrides: Partial<PrenotazionePiscina> = {}): PrenotazionePiscina {
   return {
@@ -65,9 +100,12 @@ beforeEach(() => {
   localStorage.clear();
   mockListRecenti.mockReset();
   mockListAsportoRecenti.mockReset();
-  // Default: nessun ordine asporto — la maggior parte dei test riguarda solo la piscina, evita
-  // di doverlo ripetere ovunque; i test dedicati all'asporto lo sovrascrivono esplicitamente.
+  mockListPadelRecenti.mockReset();
+  // Default: nessun ordine asporto e nessuna partita padel — la maggior parte dei test riguarda
+  // solo la piscina, evita di doverlo ripetere ovunque; i test dedicati alle altre categorie li
+  // sovrascrivono esplicitamente.
   mockListAsportoRecenti.mockResolvedValue([]);
+  mockListPadelRecenti.mockResolvedValue([]);
 });
 
 describe('StaffNotificationsProvider', () => {
@@ -208,9 +246,10 @@ describe('StaffNotificationsProvider', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('imposta un errore globale solo se entrambe le categorie falliscono', async () => {
+  it('imposta un errore globale solo se tutte le categorie falliscono', async () => {
     mockListRecenti.mockRejectedValue(new Error('network error'));
     mockListAsportoRecenti.mockRejectedValue(new Error('network error'));
+    mockListPadelRecenti.mockRejectedValue(new Error('network error'));
 
     const { result } = await renderHook(() => useStaffNotifications(), {
       wrapper: StaffNotificationsProvider,
@@ -219,5 +258,36 @@ describe('StaffNotificationsProvider', () => {
 
     expect(result.current.notifiche).toEqual([]);
     expect(result.current.error).toMatch(/Impossibile controllare/);
+  });
+
+  it('unisce anche le partite padel, ordinate per data di creazione', async () => {
+    mockListRecenti.mockResolvedValue([
+      buildPrenotazione({ id: 'p-vecchia', created_at: '2026-08-10T08:00:00.000Z' }),
+    ]);
+    mockListPadelRecenti.mockResolvedValue([
+      buildPrenotazionePadel({ id: 'padel-nuova', created_at: '2026-08-10T10:00:00.000Z' }),
+    ]);
+
+    const { result } = await renderHook(() => useStaffNotifications(), {
+      wrapper: StaffNotificationsProvider,
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.notifiche.map((n) => n.prenotazione.id)).toEqual(['padel-nuova', 'p-vecchia']);
+    expect(result.current.notifiche[0].categoria).toBe('PADEL');
+    expect(result.current.unreadCount).toBe(2);
+  });
+
+  it('un fallimento del solo padel non azzera le altre categorie', async () => {
+    mockListRecenti.mockResolvedValue([buildPrenotazione({ id: 'p-1' })]);
+    mockListPadelRecenti.mockRejectedValue(new Error('network error'));
+
+    const { result } = await renderHook(() => useStaffNotifications(), {
+      wrapper: StaffNotificationsProvider,
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.notifiche).toHaveLength(1);
+    expect(result.current.error).toBeNull();
   });
 });

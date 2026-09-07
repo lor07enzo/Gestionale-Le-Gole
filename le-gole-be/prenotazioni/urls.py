@@ -3,6 +3,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     PrenotazionePiscinaViewSet,
     PrenotazioneAsportoViewSet,
+    PrenotazionePadelViewSet,
+    NoleggioRacchettaViewSet,
     OccupazionePostazioneViewSet,
     GiornoPienoPiscinaViewSet,
 )
@@ -10,6 +12,8 @@ from .views import (
 router = DefaultRouter()
 router.register(r'piscina', PrenotazionePiscinaViewSet, basename='prenotazione-piscina')
 router.register(r'asporto', PrenotazioneAsportoViewSet, basename='prenotazione-asporto')
+router.register(r'padel', PrenotazionePadelViewSet, basename='prenotazione-padel')
+router.register(r'noleggi-racchetta', NoleggioRacchettaViewSet, basename='noleggio-racchetta')
 router.register(r'occupazioni-postazione', OccupazionePostazioneViewSet, basename='occupazione-postazione')
 router.register(r'giorni-pieni', GiornoPienoPiscinaViewSet, basename='giorno-pieno-piscina')
 

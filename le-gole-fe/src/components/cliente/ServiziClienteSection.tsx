@@ -7,7 +7,8 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { listPiscinaInventari } from '../../services/struttura';
-import { listProdotti } from '../../services/menu';
+import { getConfigurazioneAsporto, listProdotti } from '../../services/menu';
+import { getConfigurazionePadel } from '../../services/padel';
 
 type ServizioCliente = {
   key: string;
@@ -20,7 +21,11 @@ type ServizioCliente = {
   route?: Href;
 };
 
-function buildServizi(isPiscinaDisponibile: boolean, isAsportoDisponibile: boolean): ServizioCliente[] {
+function buildServizi(
+  isPiscinaDisponibile: boolean,
+  isAsportoDisponibile: boolean,
+  isPadelDisponibile: boolean
+): ServizioCliente[] {
   return [
     {
       key: 'PISCINA',
@@ -58,9 +63,10 @@ function buildServizi(isPiscinaDisponibile: boolean, isAsportoDisponibile: boole
       icon: '🎾',
       label: 'Padel',
       descrizione: 'Prenotazione campo da padel',
-      disponibile: false,
-      badgeLabel: 'In arrivo',
-      messaggioNonDisponibile: "Il campo da padel sarà disponibile a breve in quest'area.",
+      disponibile: isPadelDisponibile,
+      badgeLabel: 'Non disponibile',
+      messaggioNonDisponibile: 'Il campo da padel non è al momento prenotabile online.',
+      route: '/cliente/padel',
     },
   ];
 }
@@ -83,13 +89,13 @@ function ServizioCard({ servizio }: Readonly<{ servizio: ServizioCliente }>) {
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={`${servizio.label}${servizio.disponibile ? '' : ' (non disponibile)'}`}
-      className="w-full md:flex-1"
+      className="h-full w-full active:opacity-90"
     >
       <Box
         className={
           servizio.disponibile
-            ? 'w-full rounded-2xl border border-sky-200 bg-sky-100 p-5'
-            : 'w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5'
+            ? 'h-full w-full rounded-2xl border border-sky-200 bg-sky-100 p-5'
+            : 'h-full w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5'
         }
       >
         <HStack space="sm" className="items-center">
@@ -150,23 +156,34 @@ function ServizioCard({ servizio }: Readonly<{ servizio: ServizioCliente }>) {
 export function ServiziClienteSection() {
   const [isPiscinaDisponibile, setIsPiscinaDisponibile] = useState(false);
   const [isAsportoDisponibile, setIsAsportoDisponibile] = useState(false);
+  const [isPadelDisponibile, setIsPadelDisponibile] = useState(false);
 
   useEffect(() => {
     listPiscinaInventari()
       .then((items) => setIsPiscinaDisponibile(items.some((item) => item.isActive)))
       .catch(() => setIsPiscinaDisponibile(false));
-    listProdotti()
-      .then((items) => setIsAsportoDisponibile(items.some((item) => item.disponibile)))
+    Promise.all([listProdotti(), getConfigurazioneAsporto()])
+      .then(([prodotti, config]) => setIsAsportoDisponibile(config.attivo && prodotti.some((item) => item.disponibile)))
       .catch(() => setIsAsportoDisponibile(false));
+    getConfigurazionePadel()
+      .then((config) => setIsPadelDisponibile(config.attivo))
+      .catch(() => setIsPadelDisponibile(false));
   }, []);
 
-  const servizi = buildServizi(isPiscinaDisponibile, isAsportoDisponibile);
+  const servizi = buildServizi(isPiscinaDisponibile, isAsportoDisponibile, isPadelDisponibile);
 
   return (
-    <VStack space="md" className="w-full md:flex-row md:flex-wrap">
+    // Griglia 1 colonna su telefono, 2 da tablet in su. Prima era `md:flex-row md:flex-wrap` con
+    // `md:flex-1` su ogni card: con `flex-basis: 0%` tutte e quattro finivano su un'unica riga da
+    // ~180px l'una, illeggibili. Cella con padding + contenitore a margine negativo, stesso schema
+    // della dashboard staff (sezione 5) — con `space`/`gap` + `md:w-1/2` la somma supererebbe il
+    // 100% e ogni card tornerebbe su una riga sua.
+    <Box className="-m-2 w-full flex-row flex-wrap">
       {servizi.map((servizio) => (
-        <ServizioCard key={servizio.key} servizio={servizio} />
+        <Box key={servizio.key} className="w-full p-2 md:w-1/2">
+          <ServizioCard servizio={servizio} />
+        </Box>
       ))}
-    </VStack>
+    </Box>
   );
 }

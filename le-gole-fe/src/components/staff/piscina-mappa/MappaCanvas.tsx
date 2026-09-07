@@ -32,7 +32,7 @@ export function MappaCanvas() {
   const gazeboGroupById = useMemo(() => groupGazeboAttaccati(postazioni), [postazioni]);
 
   return (
-    <Box className="relative h-105 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50">
+    <Box className="relative h-105 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50 md:h-125 lg:h-150">
       {/* Overlay assoluti: zoom in alto a sinistra, modalità modifica in alto a destra. */}
       <Box className="absolute left-2 top-2 z-10">
         <ZoomControls scale={scale} setScale={setScale} />

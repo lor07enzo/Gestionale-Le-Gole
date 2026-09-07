@@ -8,13 +8,18 @@ export function ActionToolbar() {
 
   return (
     <HStack space="sm" className="flex-wrap">
-      <Button size="sm" onPress={openAddPostazioneSheet} disabled={isPastDate} className={isPastDate ? 'opacity-40' : undefined}>
+      <Button
+        size="default"
+        className={`min-h-11 ${isPastDate ? 'opacity-40' : ''}`}
+        onPress={openAddPostazioneSheet}
+        disabled={isPastDate}
+      >
         <ButtonText>+ Aggiungi postazione</ButtonText>
       </Button>
       <Button
-        size="sm"
+        size="default"
         variant="outline"
-        className={`rounded-full border-2 border-emerald-400 bg-emerald-50 shadow-sm active:bg-emerald-100 ${isPastDate ? 'opacity-40' : ''}`}
+        className={`min-h-11 rounded-full border-2 border-emerald-400 bg-emerald-50 shadow-sm active:bg-emerald-100 ${isPastDate ? 'opacity-40' : ''}`}
         onPress={openNewClienteSheet}
         disabled={isPastDate}
       >

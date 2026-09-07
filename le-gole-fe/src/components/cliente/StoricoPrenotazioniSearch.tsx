@@ -8,6 +8,7 @@ import { Input, InputField, InputIcon, InputSlot } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { PhoneIcon } from '@/components/ui/icon';
 import { getStoricoAsportoPerTelefono, getStoricoPiscinaPerTelefono } from '../../services/prenotazioni';
+import { getStoricoPadelPerTelefono } from '../../services/padel';
 
 // Piccola sezione di ricerca sulla landing "Area Cliente" (app/cliente/index.tsx) — nessun login
 // cliente esiste in questo progetto (sezione 3/7 di CLAUDE.md), quindi il numero di telefono è
@@ -38,11 +39,12 @@ export function StoricoPrenotazioniSearch() {
     setError(null);
     setIsSearching(true);
     try {
-      const [piscina, asporto] = await Promise.all([
+      const [piscina, asporto, padel] = await Promise.all([
         getStoricoPiscinaPerTelefono(valore),
         getStoricoAsportoPerTelefono(valore),
+        getStoricoPadelPerTelefono(valore),
       ]);
-      if (piscina.length === 0 && asporto.length === 0) {
+      if (piscina.length === 0 && asporto.length === 0 && padel.length === 0) {
         setError(
           'Nessuna prenotazione trovata per questo numero di telefono. Verifica di aver digitato lo stesso numero usato al momento della prenotazione.'
         );
@@ -64,7 +66,7 @@ export function StoricoPrenotazioniSearch() {
       </HStack>
       <Text size="xs" className="text-sky-900/70">
         Inserisci il numero di telefono usato al momento della prenotazione per consultare il tuo
-        storico (piscina e asporto).
+        storico (piscina, asporto e padel).
       </Text>
 
       <HStack space="sm" className="items-start">

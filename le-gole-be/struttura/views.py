@@ -6,9 +6,22 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
-from .models import PiscinaInventario, Postazione
-from .serializers import PiscinaInventarioSerializer, PostazioneSerializer
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.views import APIView
+from .models import (
+    ConfigurazionePadel,
+    GiornoChiusoPadel,
+    PiscinaInventario,
+    Postazione,
+    RacchettaPadel,
+)
+from .serializers import (
+    ConfigurazionePadelSerializer,
+    GiornoChiusoPadelSerializer,
+    PiscinaInventarioSerializer,
+    PostazioneSerializer,
+    RacchettaPadelSerializer,
+)
 
 # Import "verticale" da prenotazioni (app transazionale): non crea un ciclo perché
 # prenotazioni.models importa da struttura.models, non da struttura.views.
@@ -141,3 +154,82 @@ class PostazioneViewSet(viewsets.ModelViewSet):
                 item['pos_x'], item['pos_y'] = pos
 
         return Response(payload)
+
+class ConfigurazionePadelView(APIView):
+    """
+    Configurazione singleton del servizio padel (attivazione, orari, durata, prezzi, partecipanti
+    massimi). Non un ModelViewSet: non esiste alcun concetto di lista/creazione/eliminazione per
+    questa risorsa, solo lettura e aggiornamento dell'unica riga condivisa — stesso identico
+    pattern di menu.ConfigurazioneAsportoView. Lettura pubblica (il flusso self-service deve poter
+    mostrare orari, durata e prezzi senza autenticarsi), scrittura riservata allo staff.
+    """
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get(self, request):
+        serializer = ConfigurazionePadelSerializer(ConfigurazionePadel.get_solo())
+        return Response(serializer.data)
+
+    def patch(self, request):
+        config = ConfigurazionePadel.get_solo()
+        serializer = ConfigurazionePadelSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class GiornoChiusoPadelViewSet(viewsets.ModelViewSet):
+    """
+    Giorni in cui il campo da padel è chiuso per l'intera giornata, gestiti dallo staff da un
+    calendario (crea per marcare, elimina per riaprire — nessun update: un giorno o è chiuso o non
+    lo è). 'prossime' è l'unica azione pubblica, di sola lettura, usata dal flusso self-service
+    per marcare in anticipo le date non prenotabili sul calendario — stesso identico pattern di
+    menu.GiornoChiusoAsportoViewSet.
+    """
+    queryset = GiornoChiusoPadel.objects.all()
+    serializer_class = GiornoChiusoPadelSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action == 'prossime':
+            return [AllowAny()]
+        return super().get_permissions()
+
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def prossime(self, request):
+        """
+        Date di chiusura da oggi in poi (oggi incluso), ordinate crescenti — pubblico.
+        GET /api/v1/struttura/giorni-chiusi-padel/prossime/
+        Risposta: ["2026-09-10", "2026-09-11"]
+        """
+        oggi = timezone.localdate()
+        date_chiuse = GiornoChiusoPadel.objects.filter(data__gte=oggi).values_list('data', flat=True)
+        return Response([d.isoformat() for d in date_chiuse])
+
+
+class RacchettaPadelViewSet(viewsets.ModelViewSet):
+    """
+    Catalogo delle racchette noleggiabili, gestito dallo staff. Lettura pubblica (il cliente deve
+    poter scegliere marca e vedere la tariffa senza autenticarsi), scrittura riservata allo staff
+    — stesso identico pattern di menu.ProdottoViewSet. Filtrabile per `disponibile`.
+    """
+    queryset = RacchettaPadel.objects.all()
+    serializer_class = RacchettaPadelSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    filterset_fields = ['disponibile']
+
+    def destroy(self, request, *args, **kwargs):
+        # NoleggioRacchetta.racchetta è PROTECT: senza questa gestione esplicita, eliminare una
+        # racchetta già noleggiata solleverebbe un ProtectedError propagato da DRF come 500
+        # grezzo — stesso identico fix già applicato a ProdottoViewSet/CategoriaViewSet.
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            return Response(
+                {
+                    "detail": (
+                        "Impossibile eliminare questa racchetta: esistono prenotazioni collegate "
+                        "ad essa. Puoi toglierla dal noleggio invece di eliminarla."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )

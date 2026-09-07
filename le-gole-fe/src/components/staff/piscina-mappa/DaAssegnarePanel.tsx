@@ -16,8 +16,8 @@ export function DaAssegnarePanel() {
   const { setIsClientListOpen } = usePiscinaSheets();
 
   return (
-    <VStack space="xs">
-      <HStack className="items-center justify-between">
+    <VStack space="sm" className="w-full rounded-2xl border border-sky-100 bg-white p-3 shadow-sm">
+      <HStack space="xs" className="flex-wrap items-center justify-between">
         <Heading size="sm">Da assegnare</Heading>
         <Button
           size="sm"

@@ -92,51 +92,57 @@ export default function ClientePiscinaScreen() {
           </VStack>
         ) : null}
 
-        <VStack space="md" className="w-full">
+        {/* Griglia 1 colonna su telefono, 2 da tablet in su: una card a piena larghezza su uno
+            schermo largo lascia la griglia prezzi sparpagliata su una riga lunghissima. Stesso
+            schema cella+margine negativo del resto dell'app. */}
+        <Box className="-m-2 w-full flex-row flex-wrap">
           {piscine.map((piscina) => (
-            <Pressable
-              key={piscina.id}
-              onPress={() => router.push(`/cliente/piscina/${piscina.id}` as Href)}
-              accessibilityRole="button"
-              accessibilityLabel={`Piscina ${piscina.nome} — tocca per prenotare`}
-              className="active:opacity-80"
-            >
-              <Box className="w-full overflow-hidden rounded-2xl border-2 border-sky-300 bg-sky-100 shadow-sm">
-                <VStack space="sm" className="p-5">
-                  <HStack space="sm" className="items-center">
-                    <Box className="h-12 w-12 items-center justify-center rounded-full bg-white/70">
-                      <Text size="xl">🏊</Text>
-                    </Box>
-                    <VStack className="flex-1">
-                      <Heading size="md">{piscina.nome}</Heading>
-                      {piscina.descrizione ? (
-                        <Text size="xs" className="text-sky-900/70" isTruncated>
-                          {piscina.descrizione}
+            <Box key={piscina.id} className="w-full p-2 md:w-1/2">
+              <Pressable
+                onPress={() => router.push(`/cliente/piscina/${piscina.id}` as Href)}
+                accessibilityRole="button"
+                accessibilityLabel={`Piscina ${piscina.nome} — tocca per prenotare`}
+                className="h-full active:opacity-80"
+              >
+                {/* `justify-between` + `flex-1` sul corpo: in una riga di card di altezza diversa
+                    (descrizioni/prezzi differenti) la barra CTA resta comunque allineata in fondo. */}
+                <Box className="h-full w-full justify-between overflow-hidden rounded-2xl border-2 border-sky-300 bg-sky-100 shadow-sm">
+                  <VStack space="sm" className="p-5">
+                    <HStack space="sm" className="items-center">
+                      <Box className="h-12 w-12 items-center justify-center rounded-full bg-white/70">
+                        <Text size="xl">🏊</Text>
+                      </Box>
+                      <VStack className="flex-1">
+                        <Heading size="md">{piscina.nome}</Heading>
+                        {piscina.descrizione ? (
+                          <Text size="xs" className="text-sky-900/70" isTruncated>
+                            {piscina.descrizione}
+                          </Text>
+                        ) : null}
+                        <Text size="xs" className="text-sky-900/70">
+                          {piscina.orario_apertura.slice(0, 5)} - {piscina.orario_chiusura.slice(0, 5)}
                         </Text>
-                      ) : null}
-                      <Text size="xs" className="text-sky-900/70">
-                        {piscina.orario_apertura.slice(0, 5)} - {piscina.orario_chiusura.slice(0, 5)}
-                      </Text>
-                    </VStack>
+                      </VStack>
+                    </HStack>
+
+                    <PrezziGrid piscina={piscina} />
+                  </VStack>
+
+                  {/* Barra CTA evidenziata: senza, la card non dava alcun indizio di essere
+                      cliccabile oltre al cursore del mouse su web (assente su touch) — stesso
+                      principio già usato per "Gestisci mappa postazioni →" lato staff
+                      (PiscinaInventarioSection.tsx) e per il chevron di NotificaCard. */}
+                  <HStack className="items-center justify-between bg-sky-500/20 px-5 py-3">
+                    <Text size="sm" className="font-semibold text-sky-800">
+                      Prenota ora
+                    </Text>
+                    <Icon as={ChevronRightIcon} size="md" className="text-sky-700" />
                   </HStack>
-
-                  <PrezziGrid piscina={piscina} />
-                </VStack>
-
-                {/* Barra CTA evidenziata: senza, la card non dava alcun indizio di essere
-                    cliccabile oltre al cursore del mouse su web (assente su touch) — stesso
-                    principio già usato per "Gestisci mappa postazioni →" lato staff
-                    (PiscinaInventarioSection.tsx) e per il chevron di NotificaCard. */}
-                <HStack className="items-center justify-between bg-sky-500/20 px-5 py-3">
-                  <Text size="sm" className="font-semibold text-sky-800">
-                    Prenota ora
-                  </Text>
-                  <Icon as={ChevronRightIcon} size="md" className="text-sky-700" />
-                </HStack>
-              </Box>
-            </Pressable>
+                </Box>
+              </Pressable>
+            </Box>
           ))}
-        </VStack>
+        </Box>
 
         <BackButton fallbackHref="/cliente" />
 

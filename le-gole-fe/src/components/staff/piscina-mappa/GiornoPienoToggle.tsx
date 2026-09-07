@@ -63,7 +63,7 @@ export function GiornoPienoToggle() {
     <Button
       size="sm"
       variant="outline"
-      className="self-start border-2 border-sky-300 bg-white shadow-sm"
+      className="self-start border-2 border-sky-300 bg-white shadow-sm md:self-center"
       onPress={toggleGiornoPieno}
       disabled={isTogglingGiornoPieno}
     >

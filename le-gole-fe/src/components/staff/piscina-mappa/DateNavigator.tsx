@@ -33,15 +33,15 @@ export function DateNavigator() {
   return (
     <>
       <HStack
-        space="sm"
-        className="items-center justify-between rounded-2xl border border-sky-100 bg-white p-2.5 shadow-sm"
+        space="md"
+        className="items-center justify-between rounded-2xl border border-sky-100 bg-white p-2.5 shadow-sm md:self-center md:min-w-80 md:px-10 md:py-3 lg:min-w-96 lg:px-16 lg:py-5"
       >
         <Pressable
           accessibilityLabel="Giorno precedente"
           onPress={() => setSelectedDate((d) => addDays(d, -1))}
-          className="h-10 w-10 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50"
+          className="h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50 md:h-12 md:w-12 lg:h-14 lg:w-14"
         >
-          <Icon as={ChevronLeftIcon} size="md" className="text-sky-900" />
+          <Icon as={ChevronLeftIcon} size="lg" className="text-sky-900" />
         </Pressable>
 
         <VStack className="items-center">
@@ -50,8 +50,8 @@ export function DateNavigator() {
             onPress={() => setIsCalendarOpen(true)}
           >
             <HStack space="xs" className="items-center">
-              <Icon as={CalendarDaysIcon} size="sm" className="text-sky-700" />
-              <Text size="md" className="font-bold capitalize text-sky-900">
+              <Icon as={CalendarDaysIcon} size="md" className="text-sky-700" />
+              <Text size="md" className="font-bold capitalize text-sky-900 md:text-lg lg:text-2xl">
                 {isToday ? 'Oggi' : formatDisplayDate(selectedDate)}
               </Text>
             </HStack>
@@ -60,9 +60,9 @@ export function DateNavigator() {
             <Pressable
               accessibilityLabel="Torna a oggi"
               onPress={() => setSelectedDate(new Date())}
-              className="mt-1.5 items-center rounded-full bg-sky-600 px-3 py-1"
+              className="mt-1.5 items-center rounded-full bg-sky-600 px-3 py-1 lg:px-4 lg:py-1.5"
             >
-              <Text size="2xs" className="font-bold text-white">
+              <Text size="2xs" className="font-bold text-white lg:text-sm">
                 Torna a oggi
               </Text>
             </Pressable>
@@ -72,9 +72,9 @@ export function DateNavigator() {
         <Pressable
           accessibilityLabel="Giorno successivo"
           onPress={() => setSelectedDate((d) => addDays(d, 1))}
-          className="h-10 w-10 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50"
+          className="h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50 md:h-12 md:w-12 lg:h-14 lg:w-14"
         >
-          <Icon as={ChevronRightIcon} size="md" className="text-sky-900" />
+          <Icon as={ChevronRightIcon} size="lg" className="text-sky-900" />
         </Pressable>
       </HStack>
 

@@ -51,7 +51,7 @@ export function ClienteFooter() {
   const anno = new Date().getFullYear();
 
   return (
-    <Box className="-mx-4 -mb-6 mt-2 bg-[#332a18] p-6 md:-mx-8 md:-mb-10 md:p-8">
+    <Box className="-mb-6 mt-2 bg-[#332a18] p-6 md:-mb-10 md:p-8 native:-mx-4 web:relative web:left-1/2 web:w-screen web:-translate-x-1/2">
       <VStack space="lg" className="w-full">
         <VStack space="lg" className="w-full md:flex-row md:items-start md:justify-between">
           <VStack space="xs" className="md:max-w-[40%]">

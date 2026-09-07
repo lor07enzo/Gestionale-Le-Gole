@@ -44,6 +44,7 @@ import {
   type VoceOrdine,
 } from '../../../services/menu';
 import {
+  formatDateDDMMYYYY,
   formatOrarioInput,
   formatTime,
   generaSlotOrario,
@@ -651,6 +652,7 @@ export function OrdineRow({
   onConfirm,
   showTelefono = true,
   showActions = true,
+  showData = false,
 }: Readonly<{
   ordine: PrenotazioneAsporto;
   voci: VoceOrdine[];
@@ -670,6 +672,11 @@ export function OrdineRow({
   // rumore ripetuto riga dopo riga. Mostrato di default ovunque un ordine possa davvero avere
   // un'azione da compiere (es. "Storico Ordini", un solo giorno alla volta).
   showActions?: boolean;
+  // Aggiunge la data di ritiro accanto all'orario — non serve in "Storico Ordini" (un solo giorno
+  // alla volta, sezione 15), ma è l'unica informazione mancante nella scheda cliente (sezione 5),
+  // il cui storico copre giorni diversi (stesso motivo per cui `PrenotazioneRow`/
+  // `PrenotazionePadelCard` mostrano già data+ora insieme).
+  showData?: boolean;
 }>) {
   const totale = calcolaTotale(voci);
   const azionabile = editable && ordine.stato !== 'CANCELLED';
@@ -685,7 +692,8 @@ export function OrdineRow({
             <HStack space="xs" className="items-center">
               <Icon as={ClockIcon} size="2xs" className="text-sky-600" />
               <Text size="xs" className="text-sky-900/70">
-                Ritiro {formatTime(ordine.ora) || '—'}
+                Ritiro {showData ? `${formatDateDDMMYYYY(ordine.data)} · ` : ''}
+                {formatTime(ordine.ora) || '—'}
               </Text>
             </HStack>
             {showTelefono ? (

@@ -78,3 +78,71 @@ def calcola_disponibilita(inventario, data, exclude_id=None):
         'lettino': inventario.totale_lettini - occupati['lettino'],
         'sdraia': inventario.totale_sdraie - occupati['sdraia'],
     }
+
+
+def _minuti_da_mezzanotte(ora):
+    return ora.hour * 60 + ora.minute
+
+
+def intervalli_padel_occupati(data, exclude_id=None):
+    """
+    [(inizio_minuti, fine_minuti)] delle partite già prenotate in una data — esclude le CANCELLED
+    e, in caso di update, la prenotazione stessa (altrimenti si bloccherebbe da sola su un PATCH
+    che non tocca affatto l'orario, stesso accorgimento di calcola_disponibilita()).
+
+    Confronto per *intervallo* e non per uguaglianza dell'orario di inizio: ogni prenotazione
+    porta con sé il proprio snapshot di durata (PrenotazionePadel.durata_minuti), quindi partite
+    create prima di un cambio di durata possono sovrapporsi alla nuova griglia di slot senza
+    condividere lo stesso orario di inizio.
+    """
+    from .models import PrenotazionePadel
+
+    prenotazioni_attive = PrenotazionePadel.objects.filter(data=data).exclude(stato='CANCELLED')
+    if exclude_id:
+        prenotazioni_attive = prenotazioni_attive.exclude(id=exclude_id)
+
+    intervalli = []
+    for ora, durata in prenotazioni_attive.values_list('ora', 'durata_minuti'):
+        inizio = _minuti_da_mezzanotte(ora)
+        intervalli.append((inizio, inizio + durata))
+    return intervalli
+
+
+def slot_padel_libero(data, ora, durata_minuti, exclude_id=None):
+    """
+    True se una partita che inizia a `ora` e dura `durata_minuti` non si sovrappone ad alcuna
+    prenotazione già presente in quella data. La struttura ha un solo campo, quindi "sovrapposta"
+    equivale a "non prenotabile".
+
+    La durata è un parametro esplicito, non letta dalla configurazione: su un update va usato lo
+    snapshot della prenotazione stessa (PrenotazionePadel.durata_minuti), che può differire dalla
+    durata configurata oggi.
+    """
+    inizio = _minuti_da_mezzanotte(ora)
+    fine = inizio + durata_minuti
+    return all(
+        fine <= occupato_inizio or inizio >= occupato_fine
+        for occupato_inizio, occupato_fine in intervalli_padel_occupati(data, exclude_id=exclude_id)
+    )
+
+
+def calcola_disponibilita_padel(configurazione, data, exclude_id=None):
+    """
+    Stato di ciascuno slot della griglia per una data: [{'ora': 'HH:MM', 'disponibile': bool}].
+    Condivisa tra PrenotazionePadelSerializer.validate() e l'azione pubblica 'disponibilita',
+    per non duplicare la logica di sovrapposizione in due punti che potrebbero divergere —
+    stesso principio di calcola_disponibilita() per la piscina.
+    """
+    occupati = intervalli_padel_occupati(data, exclude_id=exclude_id)
+    durata = configurazione.durata_partita_minuti
+
+    slots = []
+    for ora in configurazione.slot_disponibili():
+        inizio = _minuti_da_mezzanotte(ora)
+        fine = inizio + durata
+        libero = all(
+            fine <= occupato_inizio or inizio >= occupato_fine
+            for occupato_inizio, occupato_fine in occupati
+        )
+        slots.append({'ora': ora.strftime('%H:%M'), 'disponibile': libero})
+    return slots

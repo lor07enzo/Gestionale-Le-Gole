@@ -50,7 +50,17 @@ export default function ClienteLayout() {
           }}
           settings={{ icon: renderPaperIcon }}
         >
-          <Slot />
+          {/* Contenitore centrato (2026-09-04): l'Area Cliente non ne aveva alcuno, quindi su
+              tablet e desktop ogni pagina si stirava per l'intera larghezza dello schermo — righe
+              di testo lunghissime e card enormi. `max-w-5xl` (1024px) invece del `max-w-6xl` dello
+              staff: qui il contenuto è più editoriale (hero, avvisi, form) e regge peggio righe
+              molto lunghe, ma resta comunque abbastanza largo per le due colonne del flusso di
+              prenotazione piscina (app/cliente/piscina/[inventarioId].tsx). */}
+          <Box className="flex-1 bg-background">
+            <Box className="mx-auto w-full max-w-5xl flex-1">
+              <Slot />
+            </Box>
+          </Box>
         </Paper.PaperProvider>
       ) : (
         <Box className="flex-1 items-center justify-center bg-background">

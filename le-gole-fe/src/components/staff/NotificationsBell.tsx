@@ -17,13 +17,13 @@ import {
   ActionsheetScrollView,
 } from '@/components/ui/actionsheet';
 import { useStaffNotifications } from '../../context/StaffNotificationsContext';
-import type { Notifica, NotificaAsporto, NotificaPiscina } from '../../context/StaffNotificationsContext';
+import type { Notifica } from '../../context/StaffNotificationsContext';
 import { formatDateDDMMYYYY, formatRelativeTime, formatTime } from '../../utils/piscinaMappa';
 import { formatPrezzo } from '../../utils/prezzi';
 import type { PrenotazionePiscina } from '../../services/prenotazioni';
 
-// Piscina e Asporto hanno entrambe dati reali ora; Sala/Padel non hanno ancora un modello/API
-// backend, ma i filtri esistono già in UI (badge "in arrivo" nel messaggio sotto).
+// Piscina, Asporto e Padel hanno dati reali; Sala non ha ancora un modello/API backend, ma il
+// filtro esiste già in UI (badge "in arrivo" nel messaggio sotto).
 type Categoria = 'TUTTI' | 'PISCINA' | 'ASPORTO' | 'RISTORANTE' | 'PADEL';
 
 const CATEGORIE: Array<{ key: Categoria; label: string; icon: string; disponibile: boolean }> = [
@@ -31,7 +31,7 @@ const CATEGORIE: Array<{ key: Categoria; label: string; icon: string; disponibil
   { key: 'PISCINA', label: 'Piscina', icon: '🏊', disponibile: true },
   { key: 'ASPORTO', label: 'Asporto', icon: '🥡', disponibile: true },
   { key: 'RISTORANTE', label: 'Sala', icon: '🍽️', disponibile: false },
-  { key: 'PADEL', label: 'Padel', icon: '🎾', disponibile: false },
+  { key: 'PADEL', label: 'Padel', icon: '🎾', disponibile: true },
 ];
 
 // Iniziali per l'avatar della card notifica — "Mario Rossi" -> "MR", "Mario" -> "MA".
@@ -137,6 +137,52 @@ function formatIngressiChip(p: PrenotazionePiscina): string | null {
   return parti.length > 0 ? parti.join(' ') : null;
 }
 
+// Chip che identifica il servizio di provenienza della notifica.
+function ChipCategoria({ notifica }: Readonly<{ notifica: Notifica }>) {
+  if (notifica.categoria === 'PISCINA') {
+    return <InfoChip tone="emerald">🏊 {notifica.prenotazione.inventario_nome}</InfoChip>;
+  }
+  if (notifica.categoria === 'ASPORTO') {
+    return <InfoChip tone="emerald">🥡 Asporto</InfoChip>;
+  }
+  return <InfoChip tone="emerald">🎾 Padel</InfoChip>;
+}
+
+// Cosa è stato prenotato, nella forma utile a quel servizio: risorse per la piscina, totale per
+// l'asporto, giocatori e totale per il padel.
+function ChipsRiepilogo({ notifica }: Readonly<{ notifica: Notifica }>) {
+  if (notifica.categoria === 'PISCINA') {
+    const ingressi = formatIngressiChip(notifica.prenotazione);
+    return (
+      <>
+        {ingressi ? <InfoChip tone="sky">{ingressi}</InfoChip> : null}
+        {risorseFisichePrenotate(notifica.prenotazione).map((r) => (
+          <InfoChip key={r.icon} tone="sky">
+            {r.icon} {r.count}
+          </InfoChip>
+        ))}
+      </>
+    );
+  }
+
+  if (notifica.categoria === 'ASPORTO') {
+    return <InfoChip tone="sky">🧾 €{formatPrezzo(notifica.prenotazione.totale)}</InfoChip>;
+  }
+
+  return (
+    <>
+      <InfoChip tone="sky">👥 {notifica.prenotazione.partecipanti}</InfoChip>
+      <InfoChip tone="sky">🧾 €{formatPrezzo(notifica.prenotazione.totale)}</InfoChip>
+    </>
+  );
+}
+
+const DESTINAZIONE_LABEL: Record<Notifica['categoria'], string> = {
+  PISCINA: 'Vai alla mappa piscina per la prenotazione',
+  ASPORTO: "Vai al dettaglio dell'ordine",
+  PADEL: 'Vai al dettaglio della partita',
+};
+
 // Una volta segnata come letta la notifica esce dalla lista: ogni card qui è sempre "non letta".
 // `onOpen` porta alla mappa piscina (con la data della prenotazione) per la piscina, alla pagina
 // di dettaglio ordine per l'asporto (sezione 15, `app/staff/asporto/ordini/[ordineId].tsx`) —
@@ -152,7 +198,6 @@ function NotificaCard({
   onOpen?: () => void;
 }>) {
   const { prenotazione } = notifica;
-  const isPiscina = notifica.categoria === 'PISCINA';
 
   // Ridotta a due sole righe di corpo (più la nota, se presente) — prima erano sette blocchi
   // impilati (nome/ora, chip data-categoria, riga telefono a parte, divisore, etichetta
@@ -181,31 +226,14 @@ function NotificaCard({
           <InfoChip icon={<Icon as={ClockIcon} size="2xs" className="text-sky-700" />} tone="sky">
             {formatDateDDMMYYYY(prenotazione.data)} · {formatTime(prenotazione.ora)}
           </InfoChip>
-          {isPiscina ? (
-            <InfoChip tone="emerald">🏊 {notifica.prenotazione.inventario_nome}</InfoChip>
-          ) : (
-            <InfoChip tone="emerald">🥡 Asporto</InfoChip>
-          )}
+          <ChipCategoria notifica={notifica} />
           <HStack space="xs" className="items-center">
             <Icon as={PhoneIcon} size="2xs" className="text-sky-900/40" />
             <Text size="2xs" className="text-muted-foreground">
               {prenotazione.cliente_telefono}
             </Text>
           </HStack>
-          {isPiscina ? (
-            <>
-              {formatIngressiChip(notifica.prenotazione) ? (
-                <InfoChip tone="sky">{formatIngressiChip(notifica.prenotazione)}</InfoChip>
-              ) : null}
-              {risorseFisichePrenotate(notifica.prenotazione).map((r) => (
-                <InfoChip key={r.icon} tone="sky">
-                  {r.icon} {r.count}
-                </InfoChip>
-              ))}
-            </>
-          ) : (
-            <InfoChip tone="sky">🧾 €{formatPrezzo(notifica.prenotazione.totale)}</InfoChip>
-          )}
+          <ChipsRiepilogo notifica={notifica} />
         </HStack>
 
         {prenotazione.note ? (
@@ -229,11 +257,7 @@ function NotificaCard({
             <Pressable
               onPress={onOpen}
               accessibilityRole="button"
-              accessibilityLabel={
-                isPiscina
-                  ? `Vai alla mappa piscina per la prenotazione di ${prenotazione.cliente_nome}`
-                  : `Vai al dettaglio dell'ordine di ${prenotazione.cliente_nome}`
-              }
+              accessibilityLabel={`${DESTINAZIONE_LABEL[notifica.categoria]} di ${prenotazione.cliente_nome}`}
               className="-m-1 flex-1 flex-row items-start gap-2 rounded-xl p-1 active:bg-sky-100/70"
             >
               {corpo}
@@ -299,19 +323,22 @@ export function NotificationsBell() {
     return counts;
   }, [notifiche, isRead]);
 
-  const handleOpenPrenotazione = (n: NotificaPiscina) => {
-    markAsRead(n.prenotazione.id);
-    setIsOpen(false);
-    router.push(`/staff/piscina/${n.prenotazione.inventario}?data=${n.prenotazione.data}` as Href);
+  // Ogni categoria porta al punto dove la prenotazione si gestisce davvero: la piscina alla mappa
+  // del giorno prenotato, asporto e padel alla rispettiva pagina di dettaglio.
+  const destinazione = (n: Notifica): Href => {
+    if (n.categoria === 'PISCINA') {
+      return `/staff/piscina/${n.prenotazione.inventario}?data=${n.prenotazione.data}` as Href;
+    }
+    if (n.categoria === 'ASPORTO') {
+      return `/staff/asporto/ordini/${n.prenotazione.id}` as Href;
+    }
+    return `/staff/padel/prenotazioni/${n.prenotazione.id}` as Href;
   };
 
-  // Ora che esiste una pagina di dettaglio ordine dedicata (sezione 15), anche le notifiche
-  // asporto sono cliccabili — stesso identico principio della piscina: leggere la notifica e
-  // portare direttamente al punto dove gestirla.
-  const handleOpenOrdine = (n: NotificaAsporto) => {
+  const handleOpen = (n: Notifica) => {
     markAsRead(n.prenotazione.id);
     setIsOpen(false);
-    router.push(`/staff/asporto/ordini/${n.prenotazione.id}` as Href);
+    router.push(destinazione(n));
   };
 
   return (
@@ -392,9 +419,7 @@ export function NotificationsBell() {
                       key={n.prenotazione.id}
                       notifica={n}
                       onDismiss={() => markAsRead(n.prenotazione.id)}
-                      onOpen={
-                        n.categoria === 'PISCINA' ? () => handleOpenPrenotazione(n) : () => handleOpenOrdine(n)
-                      }
+                      onOpen={() => handleOpen(n)}
                     />
                   ))}
                 </>

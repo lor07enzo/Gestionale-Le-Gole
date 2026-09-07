@@ -36,12 +36,16 @@ import {
   type PrenotazioneAsporto,
   type PrenotazionePiscina,
 } from '../../../src/services/prenotazioni';
+import {
+  listPrenotazioniPadelByCliente,
+  updatePrenotazionePadel,
+  type PrenotazionePadel,
+} from '../../../src/services/padel';
 import { getPiscinaInventario, type PiscinaInventario } from '../../../src/services/struttura';
 import { listVociOrdine, type VoceOrdine } from '../../../src/services/menu';
 import { goBackOr } from '../../../src/utils/navigation';
 import {
   formatDateDDMMYYYY,
-  formatIngressiSummary,
   formatOrarioInput,
   formatTime,
   STATO_PRENOTAZIONE_BADGE,
@@ -56,6 +60,8 @@ import {
   extractErrorMessage,
   OrdineRow,
 } from '../../../src/components/staff/asporto/OrdineAsportoUI';
+import { PrenotazionePadelCard } from '../../../src/components/staff/padel/PrenotazionePadelCard';
+import { EditPrenotazionePadelSheet } from '../../../src/components/staff/padel/EditPrenotazionePadelSheet';
 
 function ClienteDetailHeader({ nome }: Readonly<{ nome: string | undefined }>) {
   return (
@@ -70,7 +76,7 @@ function ClienteDetailHeader({ nome }: Readonly<{ nome: string | undefined }>) {
       <VStack className="flex-1">
         <Heading size="xl">{nome ?? 'Scheda cliente'}</Heading>
         <Text size="sm" className="text-muted-foreground">
-          Anagrafica, storico piscina e asporto
+          Anagrafica, storico piscina, asporto e padel
         </Text>
       </VStack>
     </HStack>
@@ -87,6 +93,13 @@ function isPrenotazionePassata(p: PrenotazionePiscina): boolean {
 // che mostra un solo giorno alla volta.
 function isOrdineAsportoPassato(o: PrenotazioneAsporto): boolean {
   return o.data < toISODate(new Date());
+}
+
+// Stesso identico principio, per una partita padel — la data della partita, non una data
+// selezionata: lo storico qui copre giorni diversi, a differenza dell'elenco giorno-per-giorno di
+// `app/staff/padel/prenotazioni.tsx`.
+function isPrenotazionePadelPassata(p: PrenotazionePadel): boolean {
+  return p.data < toISODate(new Date());
 }
 
 function PrenotazioneRow({
@@ -134,7 +147,10 @@ function PrenotazioneRow({
 
         <Box className="rounded-xl bg-sky-50 px-3 py-2">
           <Text size="xs" className="text-sky-900/80">
-            {formatIngressiSummary(p)}{' '}
+            {p.ingressi > 0 ? `🎟️ ${p.ingressi} ` : ''}
+            {p.ingressi_ridotti > 0 ? `🌇 ${p.ingressi_ridotti} ` : ''}
+            {p.ingressi_bambini > 0 ? `🧒 ${p.ingressi_bambini} ` : ''}
+            {p.ingressi_gratuiti > 0 ? `🆓 ${p.ingressi_gratuiti} ` : ''}
             {p.ombrellone > 0 ? `⛱️ ${p.ombrellone} ` : ''}
             {p.gazebo > 0 ? `⛺ ${p.gazebo} ` : ''}
             {p.lettino > 0 ? `🛏️ ${p.lettino} ` : ''}
@@ -199,8 +215,10 @@ function EmptyState({ icon, text }: Readonly<{ icon: string; text: string }>) {
 }
 
 // Pulsante a pillola statistica, usato sia per mostrare un conteggio a colpo d'occhio sia come
-// selettore di tab (piscina/asporto) — unisce le due funzioni invece di un riepilogo testuale
-// separato da un segmented control muto, per non far leggere due volte la stessa informazione.
+// selettore di tab (piscina/asporto/padel/sala) — unisce le due funzioni invece di un riepilogo
+// testuale separato da un segmented control muto, per non far leggere due volte la stessa
+// informazione. `w-full` (non più `flex-1`): la card vive dentro una cella di griglia responsive
+// (sotto), non più direttamente in un'unica riga flessibile.
 function TabStatCard({
   icona,
   etichetta,
@@ -208,6 +226,7 @@ function TabStatCard({
   sottotitolo,
   isActive,
   onPress,
+  disponibile = true,
 }: Readonly<{
   icona: string;
   etichetta: string;
@@ -215,13 +234,37 @@ function TabStatCard({
   sottotitolo: string;
   isActive: boolean;
   onPress: () => void;
+  // Categorie senza backend (Sala) restano comunque toccabili (mostrano il loro placeholder "in
+  // arrivo"), ma con lo stesso trattamento visivo attenuato/tratteggiato già usato altrove nel
+  // progetto per un servizio non ancora sviluppato (es. `CategoriaTabs`/`ServizioCard`).
+  disponibile?: boolean;
 }>) {
+  if (!disponibile) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Mostra ${etichetta} (in arrivo)`}
+        className={`w-full rounded-2xl border-2 border-dashed p-3.5 ${
+          isActive ? 'border-slate-300 bg-slate-100' : 'border-slate-200 bg-slate-50 active:bg-slate-100'
+        }`}
+      >
+        <Text size="xs" className="font-semibold text-slate-400">
+          {icona} {etichetta}
+        </Text>
+        <Text size="2xs" className="mt-1 font-bold text-slate-400">
+          In arrivo
+        </Text>
+      </Pressable>
+    );
+  }
+
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Mostra storico ${etichetta}`}
-      className={`flex-1 rounded-2xl border-2 p-3.5 ${
+      className={`w-full rounded-2xl border-2 p-3.5 ${
         isActive ? 'border-sky-600 bg-sky-600' : 'border-sky-100 bg-white active:bg-sky-50'
       }`}
     >
@@ -235,6 +278,19 @@ function TabStatCard({
         {sottotitolo}
       </Text>
     </Pressable>
+  );
+}
+
+// Placeholder per una categoria senza backend (Sala) — stesso identico linguaggio/wording già
+// usato dal pannello notifiche staff (`NotificationsBell.tsx`, `CATEGORIE`) per lo stesso caso.
+function SalaPlaceholder() {
+  return (
+    <VStack space="sm" className="items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8">
+      <Text size="lg">🍽️</Text>
+      <Text size="sm" className="text-center text-muted-foreground">
+        Lo storico Sala sarà disponibile quando questo servizio verrà sviluppato.
+      </Text>
+    </VStack>
   );
 }
 
@@ -377,6 +433,7 @@ function AsportoTabContent({
               onCancel={onCancel}
               onConfirm={onConfirm}
               showTelefono={false}
+              showData
             />
           ))
         )}
@@ -410,6 +467,103 @@ function AsportoTabContent({
                   onConfirm={onConfirm}
                   showTelefono={false}
                   showActions={false}
+                  showData
+                />
+              ))}
+            </VStack>
+          ) : null}
+        </VStack>
+      ) : null}
+    </VStack>
+  );
+}
+
+// Stesso identico principio di `PiscinaTabContent`/`AsportoTabContent` sopra, per il tab padel —
+// più semplice delle altre due: `noleggi` è già annidata in ogni `PrenotazionePadel` dal backend,
+// nessun fetch eager separato per riga (a differenza delle `VoceOrdine` dell'asporto).
+function PadelTabContent({
+  prenotazioniPadel,
+  prenotazioniPadelProssime,
+  prenotazioniPadelStoriche,
+  storicoOpen,
+  onToggleStorico,
+  onEdit,
+  onCancel,
+  onConfirm,
+  cancellingId,
+  confirmingId,
+}: Readonly<{
+  prenotazioniPadel: PrenotazionePadel[];
+  prenotazioniPadelProssime: PrenotazionePadel[];
+  prenotazioniPadelStoriche: PrenotazionePadel[];
+  storicoOpen: boolean;
+  onToggleStorico: () => void;
+  onEdit: (p: PrenotazionePadel) => void;
+  onCancel: (p: PrenotazionePadel) => void;
+  onConfirm: (p: PrenotazionePadel) => void;
+  cancellingId: string | null;
+  confirmingId: string | null;
+}>) {
+  if (prenotazioniPadel.length === 0) {
+    return (
+      <VStack space="md" className="w-full">
+        <EmptyState icon="🎾" text="Nessuna prenotazione padel registrata per questo cliente." />
+      </VStack>
+    );
+  }
+  return (
+    <VStack space="md" className="w-full">
+      <VStack space="sm" className="w-full">
+        <Heading size="sm">📅 In programma</Heading>
+        {prenotazioniPadelProssime.length === 0 ? (
+          <Text size="sm" className="text-muted-foreground">
+            Nessuna partita in programma.
+          </Text>
+        ) : (
+          prenotazioniPadelProssime.map((p) => (
+            <PrenotazionePadelCard
+              key={p.id}
+              prenotazione={p}
+              noleggi={p.noleggi}
+              editable={!isPrenotazionePadelPassata(p)}
+              isCancelling={cancellingId === p.id}
+              isConfirming={confirmingId === p.id}
+              onEdit={() => onEdit(p)}
+              onCancel={() => onCancel(p)}
+              onConfirm={() => onConfirm(p)}
+              showTelefono={false}
+              showBigliettoButton={false}
+            />
+          ))
+        )}
+      </VStack>
+
+      {prenotazioniPadelStoriche.length > 0 ? (
+        <VStack space="sm" className="w-full">
+          <Pressable
+            onPress={onToggleStorico}
+            accessibilityLabel={`${storicoOpen ? 'Nascondi' : 'Mostra'} storico partite padel`}
+          >
+            <HStack className="items-center justify-between rounded-xl border border-sky-100 bg-white px-4 py-3">
+              <Text size="sm" className="font-semibold text-sky-900">
+                🕘 Storico ({prenotazioniPadelStoriche.length})
+              </Text>
+              <Icon as={storicoOpen ? ChevronUpIcon : ChevronDownIcon} size="sm" className="text-sky-600" />
+            </HStack>
+          </Pressable>
+          {storicoOpen ? (
+            <VStack space="sm">
+              {prenotazioniPadelStoriche.map((p) => (
+                <PrenotazionePadelCard
+                  key={p.id}
+                  prenotazione={p}
+                  noleggi={p.noleggi}
+                  editable={false}
+                  onEdit={() => onEdit(p)}
+                  onCancel={() => onCancel(p)}
+                  onConfirm={() => onConfirm(p)}
+                  showTelefono={false}
+                  showBigliettoButton={false}
                 />
               ))}
             </VStack>
@@ -705,15 +859,24 @@ export default function ClienteDetailScreen() {
   const [cancellingOrdineId, setCancellingOrdineId] = useState<string | null>(null);
   const [confirmingOrdineId, setConfirmingOrdineId] = useState<string | null>(null);
 
-  // Un tab alla volta invece di due lunghe liste sempre entrambe in vista — la pagina era
-  // segnalata come "poco intuitiva" perché piscina e asporto scorrevano una dopo l'altra senza
-  // alcuna gerarchia: ora le due card statistiche sotto fungono anche da selettore. Ogni sezione
-  // è a sua volta divisa in "In programma" (oggi/futuro, non cancellata — ciò che allo staff serve
+  // Storico partite padel — stesso trattamento di piscina/asporto sopra, ma senza fetch eager
+  // separato: `noleggi` arriva già annidata in ogni `PrenotazionePadel` (sezione 16 di CLAUDE.md).
+  const [prenotazioniPadel, setPrenotazioniPadel] = useState<PrenotazionePadel[]>([]);
+  const [editingPrenotazionePadel, setEditingPrenotazionePadel] = useState<PrenotazionePadel | null>(null);
+  const [cancellingPadelId, setCancellingPadelId] = useState<string | null>(null);
+  const [confirmingPadelId, setConfirmingPadelId] = useState<string | null>(null);
+
+  // Un tab alla volta invece di più lunghe liste sempre tutte in vista — la pagina era segnalata
+  // come "poco intuitiva" perché piscina e asporto scorrevano una dopo l'altra senza alcuna
+  // gerarchia: ora le card statistiche sotto fungono anche da selettore. Ogni sezione è a sua
+  // volta divisa in "In programma" (oggi/futuro, non cancellata — ciò che allo staff serve
   // davvero) e "Storico" (passato o cancellato, mai azionabile), quest'ultima ripiegata di default
-  // per non affollare la pagina con card intere fatte solo di pulsanti disabilitati.
-  const [activeTab, setActiveTab] = useState<'PISCINA' | 'ASPORTO'>('PISCINA');
+  // per non affollare la pagina con card intere fatte solo di pulsanti disabilitati. "Sala" non ha
+  // ancora un backend (sezione 1) — resta comunque selezionabile, mostra solo un placeholder.
+  const [activeTab, setActiveTab] = useState<'PISCINA' | 'ASPORTO' | 'PADEL' | 'SALA'>('PISCINA');
   const [piscinaStoricoOpen, setPiscinaStoricoOpen] = useState(false);
   const [asportoStoricoOpen, setAsportoStoricoOpen] = useState(false);
+  const [padelStoricoOpen, setPadelStoricoOpen] = useState(false);
 
   useEffect(() => {
     if (!clienteId) return;
@@ -726,8 +889,9 @@ export default function ClienteDetailScreen() {
       getCliente(clienteId),
       listPrenotazioniPiscinaByCliente(clienteId),
       listPrenotazioniAsportoByCliente(clienteId),
+      listPrenotazioniPadelByCliente(clienteId),
     ])
-      .then(async ([clienteData, prenotazioniData, ordiniData]) => {
+      .then(async ([clienteData, prenotazioniData, ordiniData, padelData]) => {
         if (cancelled) return;
         setCliente(clienteData);
         // Storico più recente per primo: confronto lessicografico su "YYYY-MM-DD"/"HH:MM:SS",
@@ -743,6 +907,12 @@ export default function ClienteDetailScreen() {
           return b.ora.localeCompare(a.ora);
         });
         setOrdiniAsporto(ordiniOrdinati);
+        setPrenotazioniPadel(
+          [...padelData].sort((a, b) => {
+            if (a.data !== b.data) return b.data.localeCompare(a.data);
+            return b.ora.localeCompare(a.ora);
+          })
+        );
         const entries = await Promise.all(
           ordiniOrdinati.map((o) => listVociOrdine({ prenotazione: o.id }).then((voci) => [o.id, voci] as const))
         );
@@ -873,6 +1043,68 @@ export default function ClienteDetailScreen() {
     ]);
   };
 
+  // Stesso identico principio di `openEditOrdine` sopra, per una partita padel.
+  const openEditPadel = (p: PrenotazionePadel) => {
+    if (isPrenotazionePadelPassata(p) || p.stato === 'CANCELLED') return;
+    setEditingPrenotazionePadel(p);
+  };
+
+  const handlePadelSaved = (updated: PrenotazionePadel) => {
+    setPrenotazioniPadel((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    setEditingPrenotazionePadel(null);
+  };
+
+  const handleConfirmPadel = async (p: PrenotazionePadel) => {
+    if (isPrenotazionePadelPassata(p)) return;
+    setConfirmingPadelId(p.id);
+    try {
+      const updated = await updatePrenotazionePadel(p.id, { stato: 'CONFIRMED' });
+      setPrenotazioniPadel((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      const message = extractErrorMessage(err, 'Impossibile confermare la partita. Riprova.');
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Errore', message);
+      }
+    } finally {
+      setConfirmingPadelId(null);
+    }
+  };
+
+  const handleCancelPadel = (p: PrenotazionePadel) => {
+    if (isPrenotazionePadelPassata(p) || p.stato === 'CANCELLED') return;
+    const message = `La partita del ${formatDateDDMMYYYY(p.data)} verrà annullata. Resterà comunque visibile qui come cancellata.`;
+
+    const doCancel = async () => {
+      setCancellingPadelId(p.id);
+      try {
+        const updated = await updatePrenotazionePadel(p.id, { stato: 'CANCELLED' });
+        setPrenotazioniPadel((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      } catch (err) {
+        const message2 = extractErrorMessage(err, 'Impossibile annullare la partita. Riprova.');
+        if (Platform.OS === 'web') {
+          window.alert(message2);
+        } else {
+          Alert.alert('Errore', message2);
+        }
+      } finally {
+        setCancellingPadelId(null);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        doCancel();
+      }
+      return;
+    }
+    Alert.alert('Annullare partita?', message, [
+      { text: 'No', style: 'cancel' },
+      { text: 'Annulla partita', style: 'destructive', onPress: doCancel },
+    ]);
+  };
+
   // "In programma" = oggi/futuro e non cancellata: l'unico sottoinsieme davvero azionabile.
   // "Storico" = tutto il resto (passata, oppure cancellata a prescindere dalla data) — mai
   // azionabile, coerente con `PrenotazioneRow`/`OrdineRow` che nascondono comunque i pulsanti per
@@ -906,12 +1138,76 @@ export default function ClienteDetailScreen() {
     [ordiniAsporto, oggiISO]
   );
 
+  const prenotazioniPadelProssime = useMemo(
+    () =>
+      prenotazioniPadel
+        .filter((p) => p.stato !== 'CANCELLED' && p.data >= oggiISO)
+        .sort((a, b) => (a.data !== b.data ? a.data.localeCompare(b.data) : a.ora.localeCompare(b.ora))),
+    [prenotazioniPadel, oggiISO]
+  );
+  const prenotazioniPadelStoriche = useMemo(
+    () => prenotazioniPadel.filter((p) => p.stato === 'CANCELLED' || p.data < oggiISO),
+    [prenotazioniPadel, oggiISO]
+  );
+
   if (!clienteId || isLoading) {
     return (
       <Box className="flex-1 items-center justify-center bg-background">
         <Spinner size="large" />
       </Box>
     );
+  }
+
+  // Calcolato dopo il guard di caricamento, non con un ternario a tre rami annidato nel JSX —
+  // stesso principio anti-nested-ternary (S3358) già seguito altrove nel progetto: con tre tab un
+  // `a ? x : b ? y : z` reintrodurrebbe esattamente il problema già risolto per due.
+  let activeTabContent: React.ReactNode;
+  if (activeTab === 'PISCINA') {
+    activeTabContent = (
+      <PiscinaTabContent
+        prenotazioni={prenotazioni}
+        prenotazioniProssime={prenotazioniProssime}
+        prenotazioniStoriche={prenotazioniStoriche}
+        storicoOpen={piscinaStoricoOpen}
+        onToggleStorico={() => setPiscinaStoricoOpen((v) => !v)}
+        onEdit={openEdit}
+        onCancel={handleCancel}
+        cancellingId={cancellingId}
+      />
+    );
+  } else if (activeTab === 'ASPORTO') {
+    activeTabContent = (
+      <AsportoTabContent
+        ordiniAsporto={ordiniAsporto}
+        ordiniProssimi={ordiniProssimi}
+        ordiniStorici={ordiniStorici}
+        vociByOrdine={vociByOrdine}
+        storicoOpen={asportoStoricoOpen}
+        onToggleStorico={() => setAsportoStoricoOpen((v) => !v)}
+        onEdit={openEditOrdine}
+        onCancel={handleCancelOrdine}
+        onConfirm={handleConfirmOrdine}
+        cancellingOrdineId={cancellingOrdineId}
+        confirmingOrdineId={confirmingOrdineId}
+      />
+    );
+  } else if (activeTab === 'PADEL') {
+    activeTabContent = (
+      <PadelTabContent
+        prenotazioniPadel={prenotazioniPadel}
+        prenotazioniPadelProssime={prenotazioniPadelProssime}
+        prenotazioniPadelStoriche={prenotazioniPadelStoriche}
+        storicoOpen={padelStoricoOpen}
+        onToggleStorico={() => setPadelStoricoOpen((v) => !v)}
+        onEdit={openEditPadel}
+        onCancel={handleCancelPadel}
+        onConfirm={handleConfirmPadel}
+        cancellingId={cancellingPadelId}
+        confirmingId={confirmingPadelId}
+      />
+    );
+  } else {
+    activeTabContent = <SalaPlaceholder />;
   }
 
   return (
@@ -958,51 +1254,59 @@ export default function ClienteDetailScreen() {
           </Pressable>
         ) : null}
 
-        <HStack space="sm" className="w-full">
-          <TabStatCard
-            icona="🏊"
-            etichetta="Piscina"
-            totale={prenotazioni.length}
-            sottotitolo={prenotazioniProssime.length > 0 ? `${prenotazioniProssime.length} in programma` : 'Nessuna in programma'}
-            isActive={activeTab === 'PISCINA'}
-            onPress={() => setActiveTab('PISCINA')}
-          />
-          <TabStatCard
-            icona="🥡"
-            etichetta="Asporto"
-            totale={ordiniAsporto.length}
-            sottotitolo={ordiniProssimi.length > 0 ? `${ordiniProssimi.length} in programma` : 'Nessuna in programma'}
-            isActive={activeTab === 'ASPORTO'}
-            onPress={() => setActiveTab('ASPORTO')}
-          />
-        </HStack>
+        {/* Griglia 2×2 su telefono, una sola riga da 4 da `md:` in su — con 4 tab una singola
+            `HStack` sempre in riga (schema di prima, pensato per 2-3 card) stringeva troppo ogni
+            card su schermi stretti. Stesso schema "cella con padding + contenitore a margine
+            negativo" già usato altrove nel progetto (dashboard staff, sezione 5). */}
+        <Box className="-m-1.5 w-full flex-row flex-wrap">
+          <Box className="w-1/2 p-1.5 md:w-1/4">
+            <TabStatCard
+              icona="🏊"
+              etichetta="Piscina"
+              totale={prenotazioni.length}
+              sottotitolo={prenotazioniProssime.length > 0 ? `${prenotazioniProssime.length} in programma` : 'Nessuna in programma'}
+              isActive={activeTab === 'PISCINA'}
+              onPress={() => setActiveTab('PISCINA')}
+            />
+          </Box>
+          <Box className="w-1/2 p-1.5 md:w-1/4">
+            <TabStatCard
+              icona="🥡"
+              etichetta="Asporto"
+              totale={ordiniAsporto.length}
+              sottotitolo={ordiniProssimi.length > 0 ? `${ordiniProssimi.length} in programma` : 'Nessuna in programma'}
+              isActive={activeTab === 'ASPORTO'}
+              onPress={() => setActiveTab('ASPORTO')}
+            />
+          </Box>
+          <Box className="w-1/2 p-1.5 md:w-1/4">
+            <TabStatCard
+              icona="🎾"
+              etichetta="Padel"
+              totale={prenotazioniPadel.length}
+              sottotitolo={
+                prenotazioniPadelProssime.length > 0
+                  ? `${prenotazioniPadelProssime.length} in programma`
+                  : 'Nessuna in programma'
+              }
+              isActive={activeTab === 'PADEL'}
+              onPress={() => setActiveTab('PADEL')}
+            />
+          </Box>
+          <Box className="w-1/2 p-1.5 md:w-1/4">
+            <TabStatCard
+              icona="🍽️"
+              etichetta="Sala"
+              totale={0}
+              sottotitolo=""
+              isActive={activeTab === 'SALA'}
+              onPress={() => setActiveTab('SALA')}
+              disponibile={false}
+            />
+          </Box>
+        </Box>
 
-        {activeTab === 'PISCINA' ? (
-          <PiscinaTabContent
-            prenotazioni={prenotazioni}
-            prenotazioniProssime={prenotazioniProssime}
-            prenotazioniStoriche={prenotazioniStoriche}
-            storicoOpen={piscinaStoricoOpen}
-            onToggleStorico={() => setPiscinaStoricoOpen((v) => !v)}
-            onEdit={openEdit}
-            onCancel={handleCancel}
-            cancellingId={cancellingId}
-          />
-        ) : (
-          <AsportoTabContent
-            ordiniAsporto={ordiniAsporto}
-            ordiniProssimi={ordiniProssimi}
-            ordiniStorici={ordiniStorici}
-            vociByOrdine={vociByOrdine}
-            storicoOpen={asportoStoricoOpen}
-            onToggleStorico={() => setAsportoStoricoOpen((v) => !v)}
-            onEdit={openEditOrdine}
-            onCancel={handleCancelOrdine}
-            onConfirm={handleConfirmOrdine}
-            cancellingOrdineId={cancellingOrdineId}
-            confirmingOrdineId={confirmingOrdineId}
-          />
-        )}
+        {activeTabContent}
       </VStack>
 
       <EditStoricoSheet
@@ -1017,6 +1321,12 @@ export default function ClienteDetailScreen() {
         onClose={() => setEditingOrdine(null)}
         onSaved={handleOrdineSaved}
         onVociChange={handleVociChange}
+      />
+
+      <EditPrenotazionePadelSheet
+        prenotazione={editingPrenotazionePadel}
+        onClose={() => setEditingPrenotazionePadel(null)}
+        onSaved={handlePadelSaved}
       />
     </ScrollView>
   );

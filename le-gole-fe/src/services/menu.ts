@@ -56,6 +56,10 @@ export type ImmagineProdottoFile = {
 
 export type ConfigurazioneAsporto = {
   id: string;
+  // Interruttore del solo canale online (stesso principio di ConfigurazionePadel.attivo): a
+  // false il self-service pubblico non può più creare ordini, lo staff può comunque registrarne
+  // uno manuale — bypass identico a GiornoChiusoAsporto.
+  attivo: boolean;
   // "HH:MM:SS" (formato backend).
   orario_apertura: string;
   orario_chiusura: string;
@@ -76,7 +80,12 @@ export type ConfigurazioneAsporto = {
 export type UpdateConfigurazioneAsportoPayload = Partial<
   Pick<
     ConfigurazioneAsporto,
-    'orario_apertura' | 'orario_chiusura' | 'orario_apertura_2' | 'orario_chiusura_2' | 'limite_prenotazioni_orario'
+    | 'attivo'
+    | 'orario_apertura'
+    | 'orario_chiusura'
+    | 'orario_apertura_2'
+    | 'orario_chiusura_2'
+    | 'limite_prenotazioni_orario'
   >
 >;
 

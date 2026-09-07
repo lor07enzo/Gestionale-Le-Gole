@@ -10,15 +10,24 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 import weasyprint
 
-from struttura.models import PiscinaInventario
-from .models import PrenotazionePiscina, PrenotazioneAsporto, OccupazionePostazione, GiornoPienoPiscina
+from struttura.models import ConfigurazionePadel, GiornoChiusoPadel, PiscinaInventario
+from .models import (
+    PrenotazionePiscina,
+    PrenotazioneAsporto,
+    PrenotazionePadel,
+    NoleggioRacchetta,
+    OccupazionePostazione,
+    GiornoPienoPiscina,
+)
 from .serializers import (
     PrenotazionePiscinaSerializer,
     PrenotazioneAsportoSerializer,
+    PrenotazionePadelSerializer,
+    NoleggioRacchettaSerializer,
     OccupazionePostazioneSerializer,
     GiornoPienoPiscinaSerializer,
 )
-from .utils import calcola_disponibilita
+from .utils import calcola_disponibilita, calcola_disponibilita_padel
 
 class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
     """
@@ -365,6 +374,186 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
             .annotate(totale=Count('id'))
         )
         return Response({riga['ora'].strftime('%H:%M'): riga['totale'] for riga in righe})
+
+
+class PrenotazionePadelViewSet(viewsets.ModelViewSet):
+    """
+    CRUD Prenotazioni Padel. Stesso pattern di permessi degli altri due servizi: 'create' pubblica
+    per il flusso self-service Area Cliente, tutto il resto riservato allo staff (le prenotazioni
+    contengono nome/telefono/note dei clienti).
+
+    Durata e prezzi non arrivano mai dal client: sono uno snapshot della configurazione corrente
+    copiato in perform_create() (vedi PrenotazionePadel).
+    """
+    queryset = PrenotazionePadel.objects.all()
+    serializer_class = PrenotazionePadelSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['data', 'stato', 'cliente_id']
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        # Snapshot di durata/prezzi dalla configurazione corrente: sono read_only nel serializer,
+        # quindi vanno impostati qui — mai fidandosi di valori inviati dal client su un endpoint
+        # pubblico (stesso principio di VoceOrdineViewSet.perform_create per prezzo_unitario).
+        configurazione = ConfigurazionePadel.get_solo()
+        snapshot = {
+            'durata_minuti': configurazione.durata_partita_minuti,
+            'prezzo_partita': configurazione.prezzo_partita,
+            'prezzo_palline': configurazione.prezzo_noleggio_palline,
+        }
+
+        # Stato e creata_da_staff forzati in base all'autenticazione, mai dal payload — stesso
+        # principio di PrenotazionePiscinaViewSet/PrenotazioneAsportoViewSet.
+        request = self.request
+        is_richiesta_pubblica = not (request.user and request.user.is_authenticated)
+        if is_richiesta_pubblica:
+            serializer.save(stato='CONFIRMED', creata_da_staff=False, **snapshot)
+        else:
+            serializer.save(creata_da_staff=True, **snapshot)
+
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def disponibilita(self, request):
+        """
+        Stato del servizio e degli slot per una data — pubblico, nessun dato personale: solo gli
+        orari e se sono liberi, mai chi li ha prenotati (stesso principio di
+        OccupazionePostazioneViewSet.occupate per la piscina).
+        GET /api/v1/prenotazioni/padel/disponibilita/?data=YYYY-MM-DD
+        """
+        data_str = request.query_params.get('data')
+        if not data_str:
+            return Response({"detail": "Il parametro 'data' è obbligatorio."}, status=400)
+        try:
+            data_richiesta = datetime.strptime(data_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({"detail": "Formato data non valido, atteso YYYY-MM-DD."}, status=400)
+
+        configurazione = ConfigurazionePadel.get_solo()
+        chiuso = GiornoChiusoPadel.objects.filter(data=data_richiesta).exists()
+
+        return Response({
+            'attivo': configurazione.attivo,
+            'chiuso': chiuso,
+            'durata_minuti': configurazione.durata_partita_minuti,
+            'max_partecipanti': configurazione.max_partecipanti,
+            'prezzo_partita': str(configurazione.prezzo_partita),
+            'prezzo_noleggio_palline': str(configurazione.prezzo_noleggio_palline),
+            # Se il servizio è disattivato o il giorno è chiuso nessuno slot è prenotabile: lo
+            # dichiariamo qui invece di lasciare che il frontend proponga orari che il serializer
+            # rifiuterebbe comunque al submit.
+            'slots': [] if (not configurazione.attivo or chiuso)
+            else calcola_disponibilita_padel(configurazione, data_richiesta),
+        })
+
+    @action(detail=True, methods=['get'], permission_classes=[AllowAny])
+    def scarica_biglietto(self, request, pk=None):
+        """
+        Genera e scarica il biglietto PDF della partita. Pubblico, stesso identico principio di
+        PrenotazionePiscinaViewSet.scarica_biglietto: l'UUID v4 della prenotazione funge da segreto.
+        GET /api/v1/prenotazioni/padel/{id}/scarica_biglietto/
+        """
+        prenotazione = self.get_object()
+
+        if prenotazione.stato == 'CANCELLED':
+            return Response(
+                {"detail": "Il biglietto non è disponibile per le prenotazioni cancellate."},
+                status=400,
+            )
+
+        context = {
+            'prenotazione': prenotazione,
+            'cliente': prenotazione.cliente_id,
+            # select_related sulla racchetta: senza, il template genererebbe una query per riga.
+            'noleggi': prenotazione.noleggi.select_related('racchetta').all(),
+            'totale': prenotazione.totale,
+        }
+
+        html_string = render_to_string('biglietto_padel.html', context)
+        pdf = weasyprint.HTML(string=html_string).write_pdf()
+
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="padel_{prenotazione.id}.pdf"'
+        return response
+
+    @action(detail=True, methods=['get'], permission_classes=[AllowAny])
+    def dettaglio_pubblico(self, request, pk=None):
+        """
+        Dettaglio completo di una singola prenotazione, pubblico — stesso identico principio degli
+        omonimi di piscina e asporto: l'UUID funge da segreto, nessuna restrizione sullo stato
+        (consultare una prenotazione cancellata resta lecito, è solo il PDF a non avere senso).
+        GET /api/v1/prenotazioni/padel/{id}/dettaglio_pubblico/
+        """
+        return Response(self.get_serializer(self.get_object()).data)
+
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def storico_telefono(self, request):
+        """
+        Storico completo (tutti gli stati) delle prenotazioni padel per un numero di telefono
+        esatto — pubblico, stesso identico principio/pattern degli omonimi di piscina e asporto
+        (match esatto, mai icontains, per non trasformarlo in una ricerca libera sull'anagrafica).
+        GET /api/v1/prenotazioni/padel/storico_telefono/?telefono=...
+        """
+        telefono = request.query_params.get('telefono', '').strip()
+        if not telefono:
+            return Response({"detail": "Parametro 'telefono' obbligatorio."}, status=400)
+
+        queryset = (
+            PrenotazionePadel.objects.filter(cliente_id__telefono=telefono)
+            .select_related('cliente_id')
+            .prefetch_related('noleggi__racchetta')
+            .order_by('-data', '-ora')
+        )
+        return Response(self.get_serializer(queryset, many=True).data)
+
+    @action(detail=False, methods=['get'])
+    def recenti(self, request):
+        """
+        Le prenotazioni padel più recenti per data di creazione, per il tab "Padel" del pannello
+        notifiche staff (sezione 11) — stessa forma/scopo degli omonimi di piscina e asporto:
+        esclude le CANCELLED e quelle registrate dallo staff stesso.
+        GET /api/v1/prenotazioni/padel/recenti/?limit=50
+        """
+        try:
+            limit = min(int(request.query_params.get('limit', 50)), 200)
+        except ValueError:
+            limit = 50
+
+        queryset = (
+            PrenotazionePadel.objects.exclude(stato='CANCELLED')
+            .filter(creata_da_staff=False)
+            .select_related('cliente_id')
+            .prefetch_related('noleggi__racchetta')
+            .order_by('-created_at')[:limit]
+        )
+        return Response(self.get_serializer(queryset, many=True).data)
+
+
+class NoleggioRacchettaViewSet(viewsets.ModelViewSet):
+    """
+    Righe di noleggio racchette di una partita (marca + quantità). Endpoint separato da
+    PrenotazionePadel, stesso pattern con cui menu.VoceOrdine è separata da PrenotazioneAsporto:
+    il cliente self-service crea prima la prenotazione, poi una riga per ogni marca scelta.
+    `create` è pubblica, il resto riservato allo staff. Filtrabile per `prenotazione`/`racchetta`.
+    """
+    queryset = NoleggioRacchetta.objects.all()
+    serializer_class = NoleggioRacchettaSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['prenotazione', 'racchetta']
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        # prezzo_unitario è read-only nel serializer: va sempre impostato qui dal prezzo corrente
+        # a catalogo, mai fidandosi di un valore inviato dal client (stesso identico principio di
+        # menu.VoceOrdineViewSet.perform_create).
+        racchetta = serializer.validated_data['racchetta']
+        serializer.save(prezzo_unitario=racchetta.prezzo_noleggio)
 
 
 class OccupazionePostazioneViewSet(viewsets.ModelViewSet):

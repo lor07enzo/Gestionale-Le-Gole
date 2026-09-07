@@ -20,7 +20,7 @@ class ConfigurazioneAsportoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ConfigurazioneAsporto
         fields = [
-            'id', 'orario_apertura', 'orario_chiusura',
+            'id', 'attivo', 'orario_apertura', 'orario_chiusura',
             'orario_apertura_2', 'orario_chiusura_2',
             'limite_prenotazioni_orario', 'updated_at',
         ]

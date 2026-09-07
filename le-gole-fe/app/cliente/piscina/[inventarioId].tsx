@@ -240,20 +240,20 @@ function RisorsaField({
         <Button
           size="icon"
           variant="outline"
-          className="h-9 w-9 rounded-full border-2 border-sky-300 bg-white"
+          className="h-11 w-11 rounded-full border-2 border-sky-300 bg-white md:h-12 md:w-12"
           onPress={() => onChangeText(String(Math.max(0, quantita - 1)))}
           disabled={quantita <= 0}
           accessibilityLabel={`Diminuisci ${label}`}
         >
           <ButtonIcon as={RemoveIcon} className="text-sky-900" />
         </Button>
-        <Text size="md" className="w-6 text-center font-bold text-sky-900">
+        <Text size="md" className="w-8 text-center font-bold text-sky-900">
           {quantita}
         </Text>
         <Button
           size="icon"
           variant="outline"
-          className="h-9 w-9 rounded-full border-2 border-sky-300 bg-white"
+          className="h-11 w-11 rounded-full border-2 border-sky-300 bg-white md:h-12 md:w-12"
           onPress={() => onChangeText(String(quantita + 1))}
           disabled={maxRaggiunto}
           accessibilityLabel={`Aumenta ${label}`}
@@ -553,237 +553,249 @@ export default function ClientePiscinaBookingScreen() {
           </Box>
         ) : (
           <>
-            <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
-              <Heading size="sm">I tuoi dati</Heading>
+            {/* Due colonne da tablet landscape in su (lg, >= 1024px): a sinistra i dati e le
+                quantità, a destra la mappa delle postazioni. Prima erano impilate, quindi per
+                scegliere l'ombrellone si perdeva di vista quanti ingressi/lettini si era appena
+                indicato — e viceversa. Sotto quella soglia (telefono e tablet in portrait, dove
+                una mappa da ~370px sarebbe inservibile) resta l'impilamento di sempre, nello
+                stesso ordine. */}
+            <Box className="w-full gap-4 lg:flex-row lg:items-start">
+              <VStack space="lg" className="w-full lg:flex-1">
+                <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
+                  <Heading size="sm">I tuoi dati</Heading>
 
-              <VStack space="xs">
-                <HStack space="xs" className="items-center">
-                  <Text size="sm">👤</Text>
-                  <Text size="sm" className="font-medium">
-                    Nome e cognome
-                  </Text>
-                  <Text size="xs" className="text-destructive">
-                    *
-                  </Text>
-                </HStack>
-                <Input>
-                  <InputField placeholder="Es. Mario Rossi" value={form.nome} onChangeText={setField('nome')} />
-                </Input>
-              </VStack>
+                  <VStack space="xs">
+                    <HStack space="xs" className="items-center">
+                      <Text size="sm">👤</Text>
+                      <Text size="sm" className="font-medium">
+                        Nome e cognome
+                      </Text>
+                      <Text size="xs" className="text-destructive">
+                        *
+                      </Text>
+                    </HStack>
+                    <Input>
+                      <InputField placeholder="Es. Mario Rossi" value={form.nome} onChangeText={setField('nome')} />
+                    </Input>
+                  </VStack>
 
-              <VStack space="xs">
-                <HStack space="xs" className="items-center">
-                  <Icon as={PhoneIcon} size="sm" className="text-sky-700" />
-                  <Text size="sm" className="font-medium">
-                    Telefono
-                  </Text>
-                  <Text size="xs" className="text-destructive">
-                    *
-                  </Text>
-                </HStack>
-                <Input>
-                  <InputField
-                    keyboardType="phone-pad"
-                    placeholder="Es. 333 1234567"
-                    value={form.telefono}
-                    onChangeText={setField('telefono')}
-                  />
-                </Input>
-                <Text size="2xs" className="text-sky-900/60">
-                  📌 Usa sempre lo stesso numero: ti aiuta a ritrovare prenotazioni e preferenze.
-                </Text>
-              </VStack>
-
-              <VStack space="xs">
-                <HStack space="xs" className="items-center">
-                  <Text size="sm">📝</Text>
-                  <Text size="sm" className="font-medium">
-                    Note
-                  </Text>
-                  <Text size="xs" className="text-muted-foreground">
-                    (opzionale)
-                  </Text>
-                </HStack>
-                <Input>
-                  <InputField
-                    placeholder="Es. allergie, richieste particolari..."
-                    value={form.note}
-                    onChangeText={setField('note')}
-                  />
-                </Input>
-              </VStack>
-
-              <VStack space="xs">
-                <HStack space="xs" className="items-center">
-                  <Icon as={ClockIcon} size="sm" className="text-sky-700" />
-                  <Text size="sm" className="font-medium">
-                    Orario di arrivo previsto
-                  </Text>
-                  <Text size="xs" className="text-destructive">
-                    *
-                  </Text>
-                </HStack>
-                <Pressable
-                  onPress={() => setIsTimePickerOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Scegli l'orario di arrivo dall'orologio"
-                  className="min-h-9 w-full flex-row items-center justify-between rounded-md border border-border bg-transparent px-3 py-2"
-                >
-                  <Text size="sm" className={form.orario ? 'font-semibold text-sky-900' : 'text-muted-foreground'}>
-                    {form.orario || `Es. ${inventario.orario_apertura.slice(0, 5)}`}
-                  </Text>
-                  <Icon as={ClockIcon} size="sm" className="text-sky-700" />
-                </Pressable>
-                <Text size="2xs" className="text-sky-900/60">
-                  Orario di apertura: {inventario.orario_apertura.slice(0, 5)} -{' '}
-                  {inventario.orario_chiusura.slice(0, 5)}
-                </Text>
-              </VStack>
-            </VStack>
-
-            <Suspense fallback={null}>
-              <TimePickerModal
-                visible={isTimePickerOpen}
-                onDismiss={() => setIsTimePickerOpen(false)}
-                onConfirm={({ hours, minutes }) => {
-                  setIsTimePickerOpen(false);
-                  setField('orario')(minutesToHHMM(hours * 60 + minutes));
-                }}
-                hours={orarioMinutiCorrenti !== null ? Math.floor(orarioMinutiCorrenti / 60) : undefined}
-                minutes={orarioMinutiCorrenti !== null ? orarioMinutiCorrenti % 60 : undefined}
-                use24HourClock
-                locale="it"
-                label="Orario di arrivo previsto"
-                cancelLabel="Annulla"
-                confirmLabel="OK"
-                animationType="fade"
-              />
-            </Suspense>
-
-            <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
-              <Heading size="sm">Cosa vuoi prenotare</Heading>
-              <RisorsaField
-                icon="🎟️"
-                label="Ingressi"
-                value={form.ingressi}
-                onChangeText={setField('ingressi')}
-                prezzo={inventario.prezzo_ingresso}
-              />
-              {Number.parseFloat(inventario.prezzo_ingresso_ridotto) > 0 ? (
-                <RisorsaField
-                  icon="🌇"
-                  label={`Ingressi ridotti (dalle ${inventario.orario_inizio_ridotto.slice(0, 5)})`}
-                  value={form.ingressiRidotti}
-                  onChangeText={setField('ingressiRidotti')}
-                  prezzo={inventario.prezzo_ingresso_ridotto}
-                />
-              ) : null}
-              {Number.parseFloat(inventario.prezzo_ingresso_bambino) > 0 ? (
-                <RisorsaField
-                  icon="🧒"
-                  label={`Ingressi bambini (${inventario.eta_minima_bambino}-${inventario.eta_massima_bambino} anni)`}
-                  value={form.ingressiBambini}
-                  onChangeText={setField('ingressiBambini')}
-                  prezzo={inventario.prezzo_ingresso_bambino}
-                />
-              ) : null}
-              {Number.parseFloat(inventario.prezzo_ingresso_bambino) > 0 ? (
-                <RisorsaField
-                  icon="🆓"
-                  label={`Ingressi gratuiti (sotto ${inventario.eta_minima_bambino} anni)`}
-                  value={form.ingressiGratuiti}
-                  onChangeText={setField('ingressiGratuiti')}
-                  gratis
-                />
-              ) : null}
-              {inventario.totale_lettini > 0 ? (
-                <RisorsaField
-                  icon="🛏️"
-                  label="Lettini"
-                  value={form.lettino}
-                  onChangeText={setField('lettino')}
-                  prezzo={inventario.prezzo_lettino}
-                  residuo={disponibilita?.lettino}
-                />
-              ) : null}
-              {inventario.totale_sdraie > 0 ? (
-                <RisorsaField
-                  icon="🪑"
-                  label="Sdraie"
-                  value={form.sdraia}
-                  onChangeText={setField('sdraia')}
-                  prezzo={inventario.prezzo_sdraia}
-                  residuo={disponibilita?.sdraia}
-                />
-              ) : null}
-
-              <Box className="rounded-xl bg-white/60 px-3 py-2">
-                <HStack className="items-center justify-between">
-                  <HStack space="xs" className="items-center">
-                    <Text size="sm" className="font-medium text-sky-900">
-                      Totale stimato
+                  <VStack space="xs">
+                    <HStack space="xs" className="items-center">
+                      <Icon as={PhoneIcon} size="sm" className="text-sky-700" />
+                      <Text size="sm" className="font-medium">
+                        Telefono
+                      </Text>
+                      <Text size="xs" className="text-destructive">
+                        *
+                      </Text>
+                    </HStack>
+                    <Input>
+                      <InputField
+                        keyboardType="phone-pad"
+                        placeholder="Es. 333 1234567"
+                        value={form.telefono}
+                        onChangeText={setField('telefono')}
+                      />
+                    </Input>
+                    <Text size="2xs" className="text-sky-900/60">
+                      📌 Usa sempre lo stesso numero: ti aiuta a ritrovare prenotazioni e preferenze.
                     </Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Informazioni sul prezzo dell'ingresso"
-                      accessibilityState={{ expanded: isInfoPrezzoOpen }}
-                      onPress={() => setIsInfoPrezzoOpen((prev) => !prev)}
-                      className="h-6 w-6 items-center justify-center rounded-full active:bg-sky-200"
-                    >
-                      <Icon as={InfoIcon} size="sm" className="text-sky-700" />
-                    </Pressable>
-                  </HStack>
-                  <Text size="md" className="font-bold text-sky-900">
-                    €{totale.toFixed(2).replace('.', ',')}
-                  </Text>
-                </HStack>
-                {isInfoPrezzoOpen ? (
-                  <Text size="xs" className="mt-2 text-sky-900/70">
-                    Il prezzo dell'ingresso potrebbe variare in base all'orario di arrivo e alla
-                    presenza di bambini: il totale qui sopra è solo una stima.
-                  </Text>
-                ) : null}
-              </Box>
-            </VStack>
+                  </VStack>
 
-            {mostraMappaPostazioni ? (
-              <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
-                <VStack space="xs">
-                  <Heading size="sm">Scegli la tua postazione</Heading>
-                  <Text size="xs" className="text-sky-900/70">
-                    Tocca una postazione libera sulla mappa per selezionarla, tocca di nuovo per
-                    deselezionarla. Trascina per spostarti e pizzica con due dita (o usa i pulsanti)
-                    per ingrandire.
-                  </Text>
-                  <Text size="xs" className="text-sky-900/70">
-                    💡 Per stare comodi, ti consigliamo al massimo 3 lettini/sdraie complessivi per
-                    ogni ombrellone o gazebo prenotato.
-                  </Text>
+                  <VStack space="xs">
+                    <HStack space="xs" className="items-center">
+                      <Text size="sm">📝</Text>
+                      <Text size="sm" className="font-medium">
+                        Note
+                      </Text>
+                      <Text size="xs" className="text-muted-foreground">
+                        (opzionale)
+                      </Text>
+                    </HStack>
+                    <Input>
+                      <InputField
+                        placeholder="Es. allergie, richieste particolari..."
+                        value={form.note}
+                        onChangeText={setField('note')}
+                      />
+                    </Input>
+                  </VStack>
+
+                  <VStack space="xs">
+                    <HStack space="xs" className="items-center">
+                      <Icon as={ClockIcon} size="sm" className="text-sky-700" />
+                      <Text size="sm" className="font-medium">
+                        Orario di arrivo previsto
+                      </Text>
+                      <Text size="xs" className="text-destructive">
+                        *
+                      </Text>
+                    </HStack>
+                    <Pressable
+                      onPress={() => setIsTimePickerOpen(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Scegli l'orario di arrivo dall'orologio"
+                      className="min-h-9 w-full flex-row items-center justify-between rounded-md border border-border bg-transparent px-3 py-2"
+                    >
+                      <Text size="sm" className={form.orario ? 'font-semibold text-sky-900' : 'text-muted-foreground'}>
+                        {form.orario || `Es. ${inventario.orario_apertura.slice(0, 5)}`}
+                      </Text>
+                      <Icon as={ClockIcon} size="sm" className="text-sky-700" />
+                    </Pressable>
+                    <Text size="2xs" className="text-sky-900/60">
+                      Orario di apertura: {inventario.orario_apertura.slice(0, 5)} -{' '}
+                      {inventario.orario_chiusura.slice(0, 5)}
+                    </Text>
+                  </VStack>
                 </VStack>
 
-                {residuiPostazioni.length > 0 ? (
-                  <DisponibilitaCards items={residuiPostazioni} title="Disponibilità residua" />
-                ) : null}
+                <Suspense fallback={null}>
+                  <TimePickerModal
+                    visible={isTimePickerOpen}
+                    onDismiss={() => setIsTimePickerOpen(false)}
+                    onConfirm={({ hours, minutes }) => {
+                      setIsTimePickerOpen(false);
+                      setField('orario')(minutesToHHMM(hours * 60 + minutes));
+                    }}
+                    hours={orarioMinutiCorrenti !== null ? Math.floor(orarioMinutiCorrenti / 60) : undefined}
+                    minutes={orarioMinutiCorrenti !== null ? orarioMinutiCorrenti % 60 : undefined}
+                    use24HourClock
+                    locale="it"
+                    label="Orario di arrivo previsto"
+                    cancelLabel="Annulla"
+                    confirmLabel="OK"
+                    animationType="fade"
+                  />
+                </Suspense>
 
-                <PiscinaMappaSelettore
-                  inventarioId={inventarioId}
-                  selectedDate={selectedDate}
-                  selectedIds={new Set(selezionePostazioni.ids)}
-                  onSelectionChange={setSelezionePostazioni}
-                />
+                <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
+                  <Heading size="sm">Cosa vuoi prenotare</Heading>
+                  <RisorsaField
+                    icon="🎟️"
+                    label="Ingressi"
+                    value={form.ingressi}
+                    onChangeText={setField('ingressi')}
+                    prezzo={inventario.prezzo_ingresso}
+                  />
+                  {Number.parseFloat(inventario.prezzo_ingresso_ridotto) > 0 ? (
+                    <RisorsaField
+                      icon="🌇"
+                      label={`Ingressi ridotti (dalle ${inventario.orario_inizio_ridotto.slice(0, 5)})`}
+                      value={form.ingressiRidotti}
+                      onChangeText={setField('ingressiRidotti')}
+                      prezzo={inventario.prezzo_ingresso_ridotto}
+                    />
+                  ) : null}
+                  {Number.parseFloat(inventario.prezzo_ingresso_bambino) > 0 ? (
+                    <RisorsaField
+                      icon="🧒"
+                      label={`Ingressi bambini (${inventario.eta_minima_bambino}-${inventario.eta_massima_bambino} anni)`}
+                      value={form.ingressiBambini}
+                      onChangeText={setField('ingressiBambini')}
+                      prezzo={inventario.prezzo_ingresso_bambino}
+                    />
+                  ) : null}
+                  {Number.parseFloat(inventario.prezzo_ingresso_bambino) > 0 ? (
+                    <RisorsaField
+                      icon="🆓"
+                      label={`Ingressi gratuiti (sotto ${inventario.eta_minima_bambino} anni)`}
+                      value={form.ingressiGratuiti}
+                      onChangeText={setField('ingressiGratuiti')}
+                      gratis
+                    />
+                  ) : null}
+                  {inventario.totale_lettini > 0 ? (
+                    <RisorsaField
+                      icon="🛏️"
+                      label="Lettini"
+                      value={form.lettino}
+                      onChangeText={setField('lettino')}
+                      prezzo={inventario.prezzo_lettino}
+                      residuo={disponibilita?.lettino}
+                    />
+                  ) : null}
+                  {inventario.totale_sdraie > 0 ? (
+                    <RisorsaField
+                      icon="🪑"
+                      label="Sdraie"
+                      value={form.sdraia}
+                      onChangeText={setField('sdraia')}
+                      prezzo={inventario.prezzo_sdraia}
+                      residuo={disponibilita?.sdraia}
+                    />
+                  ) : null}
 
-                <Text size="sm" className="text-center font-medium text-sky-900">
-                  {selezionePostazioni.ombrellone === 0 && selezionePostazioni.gazebo === 0
-                    ? 'Nessuna postazione selezionata (solo ingresso)'
-                    : [
-                        selezionePostazioni.ombrellone > 0 ? `⛱️ ${selezionePostazioni.ombrellone}` : null,
-                        selezionePostazioni.gazebo > 0 ? `⛺ ${selezionePostazioni.gazebo}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join('   ')}
-                </Text>
+                  <Box className="rounded-xl bg-white/60 px-3 py-2">
+                    <HStack className="items-center justify-between">
+                      <HStack space="xs" className="items-center">
+                        <Text size="sm" className="font-medium text-sky-900">
+                          Totale stimato
+                        </Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Informazioni sul prezzo dell'ingresso"
+                          accessibilityState={{ expanded: isInfoPrezzoOpen }}
+                          onPress={() => setIsInfoPrezzoOpen((prev) => !prev)}
+                          className="h-6 w-6 items-center justify-center rounded-full active:bg-sky-200"
+                        >
+                          <Icon as={InfoIcon} size="sm" className="text-sky-700" />
+                        </Pressable>
+                      </HStack>
+                      <Text size="md" className="font-bold text-sky-900">
+                        €{totale.toFixed(2).replace('.', ',')}
+                      </Text>
+                    </HStack>
+                    {isInfoPrezzoOpen ? (
+                      <Text size="xs" className="mt-2 text-sky-900/70">
+                        Il prezzo dell'ingresso potrebbe variare in base all'orario di arrivo e alla
+                        presenza di bambini: il totale qui sopra è solo una stima.
+                      </Text>
+                    ) : null}
+                  </Box>
+                </VStack>
               </VStack>
-            ) : null}
+
+              {mostraMappaPostazioni ? (
+                <VStack space="lg" className="w-full lg:flex-1">
+                  <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
+                    <VStack space="xs">
+                      <Heading size="sm">Scegli la tua postazione</Heading>
+                      <Text size="xs" className="text-sky-900/70">
+                        Tocca una postazione libera sulla mappa per selezionarla, tocca di nuovo per
+                        deselezionarla. Trascina per spostarti e pizzica con due dita (o usa i pulsanti)
+                        per ingrandire.
+                      </Text>
+                      <Text size="xs" className="text-sky-900/70">
+                        💡 Per stare comodi, ti consigliamo al massimo 3 lettini/sdraie complessivi per
+                        ogni ombrellone o gazebo prenotato.
+                      </Text>
+                    </VStack>
+
+                    {residuiPostazioni.length > 0 ? (
+                      <DisponibilitaCards items={residuiPostazioni} title="Disponibilità residua" />
+                    ) : null}
+
+                    <PiscinaMappaSelettore
+                      inventarioId={inventarioId}
+                      selectedDate={selectedDate}
+                      selectedIds={new Set(selezionePostazioni.ids)}
+                      onSelectionChange={setSelezionePostazioni}
+                    />
+
+                    <Text size="sm" className="text-center font-medium text-sky-900">
+                      {selezionePostazioni.ombrellone === 0 && selezionePostazioni.gazebo === 0
+                        ? 'Nessuna postazione selezionata (solo ingresso)'
+                        : [
+                            selezionePostazioni.ombrellone > 0 ? `⛱️ ${selezionePostazioni.ombrellone}` : null,
+                            selezionePostazioni.gazebo > 0 ? `⛺ ${selezionePostazioni.gazebo}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join('   ')}
+                    </Text>
+                  </VStack>
+                </VStack>
+              ) : null}
+            </Box>
 
             {error ? (
               <Text size="sm" className="text-center text-destructive">

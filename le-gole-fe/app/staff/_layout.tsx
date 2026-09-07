@@ -55,7 +55,7 @@ export default function StaffLayout() {
     <StaffNotificationsProvider>
       <Box className="flex-1 bg-background">
         <Box className="border-b border-border/80 bg-background/70 web:backdrop-blur-md">
-          <HStack className="mx-auto w-full max-w-4xl items-center justify-between px-4 py-3 md:px-8 md:py-4">
+          <HStack className="mx-auto w-full max-w-6xl items-center justify-between px-4 py-3 md:px-8 md:py-4">
             <Pressable
               className="flex-row items-center gap-2"
               onPress={() => setIsAccountSheetOpen(true)}
@@ -94,7 +94,10 @@ export default function StaffLayout() {
 
         <NotificationsBanner />
 
-        <Box className="mx-auto w-full max-w-4xl flex-1">
+        {/* max-w-6xl (era 4xl): su tablet in landscape e desktop il contenuto sfrutta la larghezza
+            reale invece di lasciare due bande vuote ai lati — necessario perché la mappa piscina
+            possa affiancare la propria colonna laterale (app/staff/piscina/[inventarioId].tsx). */}
+        <Box className="mx-auto w-full max-w-6xl flex-1">
           <Slot />
         </Box>
 

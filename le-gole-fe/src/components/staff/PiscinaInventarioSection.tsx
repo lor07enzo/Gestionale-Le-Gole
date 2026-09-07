@@ -7,9 +7,10 @@ import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
-import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
+import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/ui/spinner';
+import { AddIcon } from '@/components/ui/icon';
 import {
   Actionsheet,
   ActionsheetBackdrop,
@@ -154,10 +155,14 @@ function PiscinaInventarioCard({ inventario, onEdit, onDelete }: Readonly<Piscin
   const openMappa = () => router.push(`/staff/piscina/${inventario.id}` as Href);
 
   return (
-    <Box className="w-full rounded-2xl border border-sky-200 bg-sky-100 md:flex-1">
+    <Box className="h-full w-full rounded-2xl border border-sky-200 bg-sky-100">
       {/* Zona primaria: l'intera card apre la mappa. Modifica/Elimina vivono FUORI da questo
           Pressable (sotto, dopo il divisorio) per non mischiare "vai alla mappa" con "modifica il listino". */}
-      <Pressable onPress={openMappa} accessibilityLabel={`Apri mappa postazioni per ${inventario.nome}`}>
+      <Pressable
+        onPress={openMappa}
+        className="flex-1"
+        accessibilityLabel={`Apri mappa postazioni per ${inventario.nome}`}
+      >
         <VStack space="sm" className="p-5 pb-4">
           <HStack space="sm" className="items-center">
             <Box className="h-10 w-10 items-center justify-center rounded-full bg-white/70">
@@ -364,15 +369,12 @@ export function PiscinaInventarioSection() {
 
   return (
     <VStack space="md" className="w-full">
-      <HStack className="items-center justify-between">
-        <VStack>
-          <Heading size="md">Inventario Piscina</Heading>
-          <Text size="xs" className="text-muted-foreground">
-            Tocca un listino per gestire la mappa delle postazioni del giorno.
-          </Text>
-        </VStack>
-        <Button size="sm" onPress={() => setIsTypeChooserOpen(true)}>
-          <ButtonText>+ Aggiungi</ButtonText>
+      {/* Titolo e sottotitolo vivono ora nell'header della pagina (app/staff/piscina.tsx): qui resta
+          solo l'azione primaria, così la sezione non ripete l'intestazione appena sopra. */}
+      <HStack className="items-center">
+        <Button size="default" className="min-h-11" onPress={() => setIsTypeChooserOpen(true)}>
+          <ButtonIcon as={AddIcon} className="text-primary-foreground" />
+          <ButtonText>Nuovo listino</ButtonText>
         </Button>
       </HStack>
 
@@ -397,16 +399,20 @@ export function PiscinaInventarioSection() {
         </VStack>
       ) : null}
 
-      <VStack space="md" className="w-full md:flex-row md:flex-wrap">
+      {/* Griglia 1/2/3 colonne. Ogni cella ha il proprio padding e il contenitore lo compensa con un
+          margine negativo: con `space` (gap) + `md:w-1/2` la somma supererebbe il 100% e ogni card
+          finirebbe da sola su una riga. */}
+      <Box className="-m-2 w-full flex-row flex-wrap">
         {items.map((item) => (
-          <PiscinaInventarioCard
-            key={item.id}
-            inventario={item}
-            onEdit={() => openEditForm(item)}
-            onDelete={() => handleDelete(item)}
-          />
+          <Box key={item.id} className="w-full p-2 md:w-1/2 lg:w-1/3">
+            <PiscinaInventarioCard
+              inventario={item}
+              onEdit={() => openEditForm(item)}
+              onDelete={() => handleDelete(item)}
+            />
+          </Box>
         ))}
-      </VStack>
+      </Box>
 
       <Actionsheet isOpen={isTypeChooserOpen} onClose={() => setIsTypeChooserOpen(false)}>
         <ActionsheetBackdrop />

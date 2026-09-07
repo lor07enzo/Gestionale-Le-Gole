@@ -1,6 +1,6 @@
 # Le Gole — Gestionale Prenotazioni
 
-Applicazione di gestione prenotazioni per Osteria/Pizzeria Le Gole: area piscina (staff + self-service cliente), con ristorante, asporto e padel in arrivo. Backend Django/PostgreSQL + app React Native (Expo Router), rilasciata attualmente in versione **solo web** in fase di test.
+Applicazione di gestione prenotazioni per Osteria/Pizzeria Le Gole: aree piscina, asporto e padel complete (staff + self-service cliente), con il ristorante ancora in arrivo. Backend Django/PostgreSQL + app React Native (Expo Router), rilasciata attualmente in versione **solo web** in fase di test.
 
 [![CI](https://github.com/lor07enzo/Gestionale-Le-Gole/actions/workflows/ci.yml/badge.svg)](https://github.com/lor07enzo/Gestionale-Le-Gole/actions/workflows/ci.yml)
 [![Deploy Frontend](https://github.com/lor07enzo/Gestionale-Le-Gole/actions/workflows/deploy-frontend.yml/badge.svg)](https://github.com/lor07enzo/Gestionale-Le-Gole/actions/workflows/deploy-frontend.yml)
@@ -43,9 +43,9 @@ Applicazione di gestione prenotazioni per Osteria/Pizzeria Le Gole: area piscina
 Gestionale-Le-Gole/
 ├── le-gole-be/            # Backend Django REST Framework
 │   ├── users/              # Autenticazione staff, anagrafica clienti
-│   ├── struttura/           # Inventario piscina, postazioni (layout fisico)
-│   ├── prenotazioni/         # Prenotazioni, occupazioni postazione, logica di business
-│   └── menu/                # (da sviluppare) catalogo prodotti
+│   ├── struttura/           # Inventario piscina, postazioni, configurazione padel + catalogo racchette
+│   ├── prenotazioni/         # Prenotazioni (piscina/asporto/padel), occupazioni postazione, logica di business
+│   └── menu/                # Catalogo prodotti asporto (categorie, allergeni, prodotti, voci d'ordine)
 ├── le-gole-fe/             # Frontend Expo Router (React Native + Web)
 │   ├── app/                 # Routing a file system (staff, cliente, rotte pubbliche)
 │   ├── src/                  # Context, componenti, servizi API, utility
@@ -85,20 +85,44 @@ Gestionale-Le-Gole/
 - Generazione biglietto di ingresso in PDF (WeasyPrint)
 - Sola lettura automatica per i giorni passati (consultabili ma non modificabili)
 
+### 🥡 Asporto — lato staff
+- Catalogo prodotti a due livelli (Categorie/Allergeni gestiti a parte, poi assegnati ai prodotti), con foto scattata/scelta dalla galleria
+- Ricerca e filtri (nome, disponibilità) sul catalogo, con barra di navigazione rapida tra categorie
+- Orario di disponibilità configurabile, anche su due turni separati (es. pranzo/cena)
+- Interruttore per attivare/disattivare le prenotazioni online, senza bloccare la registrazione allo sportello
+- Calendario delle chiusure straordinarie a tocco
+- Limite di prenotazioni accettate per singolo orario di ritiro, applicato automaticamente a ogni fascia
+- Pagina "Storico Ordini" del giorno: modifica righe/orario/note e annullamento, sola lettura per i giorni passati
+- Registrazione di un ordine walk-in (cliente al banco/al telefono) direttamente dalla stessa area
+- Generazione ricevuta in PDF (WeasyPrint)
+
+### 🎾 Padel — lato staff
+- Configurazione del campo: orario, durata e prezzo di una partita, partecipanti massimi, tariffa palline
+- Interruttore per attivare/disattivare le prenotazioni online, senza bloccare la registrazione allo sportello
+- Calendario delle chiusure a tocco (un giorno si chiude e si riapre con un tap)
+- Catalogo racchette a noleggio: ogni marca con la propria tariffa e i propri pezzi disponibili
+- Griglia oraria generata automaticamente dalla durata configurata, con orari liberi e occupati a colpo d'occhio
+- Registrazione di una partita al banco o al telefono, già confermata
+- Dettaglio partita con noleggio racchette (salvataggio immediato), conferma, annullamento e biglietto PDF
+- Sola lettura automatica per le partite passate
+
 ### 👥 Area Cliente — self-service
-- Landing pubblica con selezione servizio (Piscina attiva, Ristorante/Asporto/Padel "in arrivo")
+- Landing pubblica con selezione servizio (Piscina, Asporto e Padel attivi — condizionati a un interruttore lato staff —, Ristorante "in arrivo")
 - Flusso di prenotazione piscina completo: dati cliente, scelta data/orario (con time picker a quadrante), disponibilità residua in tempo reale, selezione ombrellone/gazebo direttamente sulla mappa
+- Flusso di ordine asporto completo: sfoglia il menu per categoria (con pagina di dettaglio prodotto), carrello, scelta orario di ritiro (fascia → slot, con residuo posti mostrato quando scarseggia), checkout
+- Flusso di prenotazione padel completo: dati cliente, calendario con giorni di chiusura evidenziati, griglia orari liberi/occupati, partecipanti, palline e racchette a noleggio a scelta
 - Anti-overbooking e validazione orari lato client e lato server
 - Prenotazione confermata **immediatamente** (nessuna attesa di conferma manuale dello staff)
-- Biglietto PDF scaricabile subito dopo l'invio (cross-platform: download diretto su web, condivisione di sistema su nativo)
+- Biglietto/ricevuta PDF scaricabile subito dopo l'invio (cross-platform: download diretto su web, condivisione di sistema su nativo)
+- "Le mie prenotazioni": consultazione dello storico per numero di telefono (piscina, asporto e padel), con filtri per servizio/stato, sezione "In programma"/"Storico", dettaglio e riprenotazione/riordino in un tap
 - Note su come contattare il locale per eventi/compleanni e sezione "Assistenza e feedback" per segnalazioni sulla piattaforma
 - Privacy policy dedicata
 
 ### 🔔 Notifiche in-app staff
 - Pannello notifiche con polling automatico per le nuove prenotazioni self-service
 - Stato letto/non letto per singola notifica (persistito, sincronizzato correttamente anche tra più schede del browser)
-- Filtri per categoria di servizio (Piscina attiva, Asporto/Sala predisposte per il futuro)
-- Tap su una notifica → apertura diretta della mappa staff sul giorno della prenotazione
+- Filtri per categoria di servizio (Piscina, Asporto e Padel con dati reali; Sala predisposta per il futuro)
+- Tap su una notifica → apertura diretta del punto dove gestirla (mappa piscina sul giorno prenotato, dettaglio ordine o dettaglio partita)
 
 ### 🔒 Sicurezza e infrastruttura
 - CORS ristretto alle origini reali di produzione
@@ -108,8 +132,8 @@ Gestionale-Le-Gole/
 - Variabili sensibili sempre lette da ambiente, mai hardcoded
 
 ### ✅ Testing automatico
-- **Backend:** suite pytest (170+ test, ~99% di copertura) organizzata per app e per area funzionale
-- **Frontend:** suite jest (utility di business logic, context/hook), introdotta per coprire i punti più delicati dell'app
+- **Backend:** suite pytest (460+ test, ~99% di copertura) organizzata per app e per area funzionale
+- **Frontend:** suite jest (130+ test — utility di business logic, context/hook), introdotta per coprire i punti più delicati dell'app
 - Gate automatico in CI che verifica l'assenza di crash JS sulla build web esportata prima di ogni deploy
 
 ### 🚀 CI/CD e deploy
@@ -124,11 +148,7 @@ Gestionale-Le-Gole/
 
 | Area | Stato | Note |
 |---|---|---|
-| **Ristorante** (`Sala`, `Tavolo`, `Prenotazione_Tavolo`) | 📋 Da sviluppare | Nessun modello/API backend ancora definito |
-| **Asporto** (`Prenotazione_Asporto`) | 📋 Da sviluppare | Dipende anche dal catalogo prodotti (`menu`) |
-| **Padel** | 📋 Da sviluppare | Card/UI già predisposte come "in arrivo", nessun backend |
-| **Catalogo prodotti** (app `menu`, `Prodotto`/`Voce_Ordine`) | 📋 Da sviluppare | Necessario per Asporto e futuri menu digitali |
-| **Area cliente "Le mie prenotazioni"** | 📋 Da sviluppare | Oggi il cliente riceve solo la conferma a schermo/PDF, nessuna vista di consultazione successiva |
+| **Ristorante** (`Sala`, `Tavolo`, `Prenotazione_Tavolo`) | 📋 Da sviluppare | Nessun modello/API backend ancora definito — unico servizio senza alcun backend |
 | **Build native iOS/Android** (EAS Build) | 📋 Da sviluppare | Fase attuale è "solo web" per i test; nessun profilo `eas.json` configurato |
 | **Cache condivisa per il rate-limiting** (Redis) | 📋 Valutazione futura | Non giustificata al livello di traffico attuale |
 

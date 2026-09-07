@@ -210,14 +210,9 @@ function StaffManagementSectionInner() {
 
   return (
     <VStack space="md" className="w-full">
-      <HStack className="items-center justify-between">
-        <VStack>
-          <Heading size="md">Gestione Staff</Heading>
-          <Text size="xs" className="text-muted-foreground">
-            Visualizza e gestisci gli account che accedono alla dashboard.
-          </Text>
-        </VStack>
-        <Button size="sm" onPress={openCreateForm}>
+      {/* Titolo e sottotitolo vivono ora nell'header della pagina (app/staff/utenti.tsx). */}
+      <HStack className="items-center">
+        <Button size="default" className="min-h-11" onPress={openCreateForm}>
           <ButtonText>+ Nuovo staff</ButtonText>
         </Button>
       </HStack>

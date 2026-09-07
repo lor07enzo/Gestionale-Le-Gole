@@ -8,7 +8,7 @@ export function SoloIngressoPanel() {
   const { soloIngresso } = usePiscinaMappaData();
 
   return (
-    <VStack space="xs">
+    <VStack space="sm" className="w-full rounded-2xl border border-sky-100 bg-white p-3 shadow-sm">
       <Heading size="sm">Solo ingresso</Heading>
       {soloIngresso.length === 0 ? (
         <Text size="sm" className="text-muted-foreground">
@@ -19,7 +19,7 @@ export function SoloIngressoPanel() {
           {soloIngresso.map((p) => {
             const totaleIngressi = p.ingressi + p.ingressi_ridotti + p.ingressi_bambini + p.ingressi_gratuiti;
             return (
-              <HStack key={p.id} className="items-center justify-between rounded-lg bg-white/60 px-3 py-2">
+              <HStack key={p.id} className="items-center justify-between rounded-lg bg-sky-50 px-3 py-2">
                 <Text size="sm" className="text-sky-900">
                   {p.cliente_nome}
                 </Text>

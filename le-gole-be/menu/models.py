@@ -63,6 +63,11 @@ class ConfigurazioneAsporto(models.Model):
     categoria. Nessun pacchetto tipo django-solo: un get_or_create su un pk fisso basta.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Interruttore del solo canale online (stesso principio di struttura.ConfigurazionePadel.attivo,
+    # sezione 16): a False il self-service pubblico non può più creare ordini, lo staff può
+    # comunque registrarne uno manuale — bypass identico a GiornoChiusoAsporto, non un secondo
+    # concetto nuovo. Default True: introdotto a servizio già in uso, non deve disattivarlo da solo.
+    attivo = models.BooleanField(default=True, verbose_name="Prenotazioni online attive")
     orario_apertura = models.TimeField(
         default=datetime.time(11, 0), verbose_name="Orario di inizio disponibilità"
     )

@@ -62,13 +62,27 @@ function PiscinaMappaContent() {
           </Text>
         ) : null}
 
+        {/* Fascia "di controllo" a tutta larghezza: giorno selezionato, blocco prenotazioni online
+            e disponibilità residua restano in cima a ogni dimensione di schermo. */}
         <DateNavigator />
         <GiornoPienoToggle />
         <DisponibilitaRow />
-        <MappaCanvas />
-        <ActionToolbar />
-        <DaAssegnarePanel />
-        <SoloIngressoPanel />
+
+        {/* Da tablet landscape in su (lg, >= 1024px) la mappa si affianca a una colonna laterale con
+            "Da assegnare" e "Solo ingresso": assegnare un cliente a una postazione non richiede più
+            di scorrere avanti e indietro tra la lista e la mappa. Sotto quella soglia (telefono e
+            tablet in portrait, dove una mappa da ~370px sarebbe inservibile) resta l'impilamento
+            verticale di sempre, nello stesso ordine di prima. */}
+        <Box className="w-full gap-4 lg:flex-row lg:items-start">
+          <VStack space="md" className="w-full lg:flex-1">
+            <MappaCanvas />
+            <ActionToolbar />
+          </VStack>
+          <VStack space="md" className="w-full lg:w-80">
+            <DaAssegnarePanel />
+            <SoloIngressoPanel />
+          </VStack>
+        </Box>
       </VStack>
 
       <PostazioneSheet />

@@ -126,7 +126,7 @@ export function PiscinaMappaSelettore({
 
   return (
     <Box className="w-full gap-2">
-      <Box className="relative h-72 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50">
+      <Box className="relative h-72 w-full overflow-hidden rounded-2xl border border-sky-200 bg-sky-50 md:h-100 lg:h-125">
         <Box className="absolute left-2 top-2 z-10">
           <ZoomControls scale={scale} setScale={setScale} />
         </Box>
@@ -164,13 +164,18 @@ export function PiscinaMappaSelettore({
           </Text>
         </HStack>
         <HStack space="xs" className="items-center">
-          <Box className="h-3.5 w-3.5 rounded-full border-2 border-sky-300 bg-white" />
+          {/* Ogni postazione libera su questa mappa arriva sempre con `isSelectable={true}`
+              (sotto), quindi il colore realmente disegnato dal marker è quello di
+              `stateColorClassName` per lo stato "selezionabile" — questo swatch va tenuto
+              allineato a quello, non a un colore neutro scelto a sé (bug pre-esistente corretto
+              il 2026-09-05: mostrava un bordo sky-300 mai realmente reso su questa pagina). */}
+          <Box className="h-3.5 w-3.5 rounded-full border-2 border-emerald-500 bg-emerald-50" />
           <Text size="2xs" className="text-sky-900/70">
             Libera
           </Text>
         </HStack>
         <HStack space="xs" className="items-center">
-          <Box className="h-3.5 w-3.5 rounded-full border-2 border-emerald-500 bg-emerald-50" />
+          <Box className="h-3.5 w-3.5 rounded-full border-2 border-rose-400 bg-rose-50" />
           <Text size="2xs" className="text-sky-900/70">
             Occupata
           </Text>

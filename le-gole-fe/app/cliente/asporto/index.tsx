@@ -367,7 +367,7 @@ function FiltroChip({
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={`${label}, ${count} ${count === 1 ? 'prodotto' : 'prodotti'}${selected ? ', filtro attivo' : ''}`}
-      className={`rounded-full border-2 px-3.5 py-1.5 ${selected ? selectedClass : unselectedClass}`}
+      className={`min-h-9 items-center justify-center rounded-full border-2 px-3.5 py-1.5 ${selected ? selectedClass : unselectedClass}`}
     >
       <Text size="xs" className={`font-medium ${selected ? 'text-white' : unselectedTextClass}`}>
         {selected ? '✓ ' : ''}
@@ -834,6 +834,13 @@ export default function ClienteAsportoScreen() {
   };
 
   const handleSubmit = async () => {
+    // Backstop: con `configurazione.attivo === false` la UI non mostra nemmeno il form (sotto),
+    // ma la funzione ripete comunque il controllo, stesso principio "mai fidarsi solo del
+    // disabled lato UI" già seguito altrove nel progetto (es. isPastDate sulla mappa piscina).
+    if (configurazione && !configurazione.attivo) {
+      setError('Il servizio asporto non è al momento ordinabile online.');
+      return;
+    }
     // Backstop: con `bloccoChiusura?.includeOggi` la UI non mostra nemmeno il form (sotto), ma
     // la funzione ripete comunque il controllo, stesso principio "mai fidarsi solo del disabled
     // lato UI" già seguito altrove nel progetto (es. isPastDate sulla mappa piscina).
@@ -971,7 +978,26 @@ export default function ClienteAsportoScreen() {
           </Text>
         </VStack>
 
-        {bloccoChiusura?.includeOggi ? (
+        {!configurazione.attivo ? (
+          // Interruttore globale del canale online (ConfigurazioneAsporto.attivo, staff): a
+          // differenza di un giorno chiuso (sotto, per una data specifica), qui nessuna data
+          // sarebbe comunque prenotabile — stesso trattamento "pagina bloccata a prescindere
+          // dalla data" già scelto per il padel self-service quando il servizio è disattivato.
+          <Box className="w-full rounded-2xl border border-rose-200 bg-rose-50 p-5">
+            <HStack space="sm" className="items-start">
+              <Icon as={LockIcon} size="md" className="mt-0.5 text-rose-700" />
+              <VStack className="flex-1">
+                <Heading size="sm" className="text-rose-900">
+                  Ordini online non disponibili
+                </Heading>
+                <Text size="sm" className="mt-1 text-rose-800">
+                  Il servizio asporto non è al momento ordinabile online. Contatta direttamente
+                  il ristorante per informazioni.
+                </Text>
+              </VStack>
+            </HStack>
+          </Box>
+        ) : bloccoChiusura?.includeOggi ? (
           // Giorno di chiusura impostato dallo staff (GiornoChiusoAsporto): sostituisce
           // interamente menu/carrello/form, stesso principio del banner "Giorno al completo"
           // della piscina self-service — non ha senso far compilare un ordine che comunque il
@@ -1064,6 +1090,14 @@ export default function ClienteAsportoScreen() {
               </VStack>
             ) : (
               <>
+              {/* Da tablet landscape in su (lg): menu a sinistra (la colonna che scorre, la più
+                  ingombrante) e carrello+dati+invio a destra, agganciata in alto durante lo scroll
+                  (`lg:sticky`) — stesso principio "due colonne da lg, mappa/riepilogo laterale
+                  sempre in vista" già usato per la prenotazione piscina (sezione 7) e per la mappa
+                  staff (sezione 5). Sotto quella soglia resta l'impilamento verticale di sempre,
+                  nello stesso ordine. */}
+              <Box className="w-full gap-4 lg:flex-row lg:items-start">
+              <VStack space="md" className="w-full lg:flex-1">
                 {/* Barra sticky: pulsante Filtri, navigazione rapida per categoria, pillola
                     carrello a destra quando non vuoto — stesso pattern "food delivery" già
                     introdotto lato staff (MenuAsportoSection.tsx, sezione 15), qui adattato per la
@@ -1071,13 +1105,19 @@ export default function ClienteAsportoScreen() {
                     `gruppi.length === 0` sotto): deve restare raggiungibile anche quando i filtri
                     attivi azzerano i risultati, altrimenti l'utente resterebbe bloccato senza un
                     modo per rilassarli. */}
-                <Box className="web:sticky web:top-0 z-10 -mx-4 bg-background px-4 py-1 md:-mx-8 md:px-8">
+                {/* `-mx-4 md:-mx-8` compensa il padding orizzontale della pagina per un
+                    background full-bleed edge-to-edge — corretto per uno sticky a piena
+                    larghezza, ma da `lg:` in su questa barra vive dentro la sola colonna sinistra
+                    (sotto), non più contro il bordo del viewport: `lg:mx-0 lg:px-0` annulla il
+                    trucco a quella soglia, altrimenti il margine negativo sconfinerebbe nel gap
+                    verso la colonna carrello. */}
+                <Box className="web:sticky web:top-0 z-10 -mx-4 bg-background px-4 py-1 md:-mx-8 md:px-8 lg:mx-0 lg:px-0">
                   <HStack space="sm" className="items-center">
                     <Pressable
                       onPress={() => setIsFiltriOpen(true)}
                       accessibilityRole="button"
                       accessibilityLabel={`Filtri${numeroFiltriAttivi > 0 ? `, ${numeroFiltriAttivi} attivi` : ''}`}
-                      className="relative h-9 w-9 items-center justify-center rounded-full border-2 border-sky-200 bg-white active:bg-sky-50"
+                      className="relative h-11 w-11 items-center justify-center rounded-full border-2 border-sky-200 bg-white active:bg-sky-50 md:h-12 md:w-12"
                     >
                       <Icon as={SlidersIcon} size="sm" className="text-sky-700" />
                       {numeroFiltriAttivi > 0 ? (
@@ -1124,11 +1164,17 @@ export default function ClienteAsportoScreen() {
                     ) : (
                       <Box className="flex-1" />
                     )}
+                    {/* `lg:hidden`: da tablet landscape in su il carrello è già sempre visibile
+                        nella colonna laterale agganciata (sotto), questo pulsante "vai al
+                        carrello" diventerebbe un'azione ridondante verso qualcosa già in vista —
+                        stesso principio "un pulsante di scorciatoia sparisce quando la sua
+                        destinazione è già in vista" già seguito per il carrello asporto staff
+                        (sezione 15). */}
                     {cartLines.length > 0 ? (
                       <Pressable
                         onPress={scrollToCarrello}
                         accessibilityLabel="Vai al carrello"
-                        className="flex-row items-center gap-1.5 rounded-full bg-sky-600 px-3 py-2 active:bg-sky-700"
+                        className="flex-row items-center gap-1.5 rounded-full bg-sky-600 px-3 py-2 active:bg-sky-700 lg:hidden"
                       >
                         <Text size="xs" className="font-semibold text-white">
                           🛒 {totaleArticoli} · €{totalePrezzo.toFixed(2).replace('.', ',')}
@@ -1203,6 +1249,12 @@ export default function ClienteAsportoScreen() {
                     ))}
                   </VStack>
                 )}
+              </VStack>
+
+              {/* Colonna carrello + dati + invio — agganciata in alto durante lo scroll da `lg:`
+                  in su (`lg:sticky lg:top-4`), sempre della stessa larghezza del menu di sinistra
+                  su telefono/tablet in portrait (sotto `lg:` nessuna colonna, tutto impilato). */}
+              <VStack space="md" className="w-full lg:sticky lg:top-4 lg:w-96">
 
                 <Box ref={registerCartRef} className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
                   <VStack space="md">
@@ -1228,7 +1280,7 @@ export default function ClienteAsportoScreen() {
                                 <Button
                                   size="icon"
                                   variant="outline"
-                                  className="h-8 w-8 rounded-full border-2 border-sky-300 bg-white"
+                                  className="h-9 w-9 rounded-full border-2 border-sky-300 bg-white md:h-10 md:w-10"
                                   onPress={() => setQuantita(line.prodotto.id, line.quantita - 1)}
                                   accessibilityLabel={`Diminuisci ${line.prodotto.nome}`}
                                 >
@@ -1240,7 +1292,7 @@ export default function ClienteAsportoScreen() {
                                 <Button
                                   size="icon"
                                   variant="outline"
-                                  className="h-8 w-8 rounded-full border-2 border-sky-300 bg-white"
+                                  className="h-9 w-9 rounded-full border-2 border-sky-300 bg-white md:h-10 md:w-10"
                                   onPress={() => setQuantita(line.prodotto.id, line.quantita + 1)}
                                   accessibilityLabel={`Aumenta ${line.prodotto.nome}`}
                                 >
@@ -1504,6 +1556,8 @@ export default function ClienteAsportoScreen() {
                 <Text size="2xs" className="text-center text-muted-foreground">
                   L'ordine viene confermato subito, senza attese.
                 </Text>
+              </VStack>
+              </Box>
               </>
             )}
           </>

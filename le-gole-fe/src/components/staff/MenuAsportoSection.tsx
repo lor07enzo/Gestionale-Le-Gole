@@ -140,6 +140,11 @@ const ALLERGENE_ICONA_PRESET_EXTRA = [
   '🥩',
   '🍗',
   '🫘',
+  // Surgelato (2026-09-03), su richiesta esplicita dell'utente — non un allergene in senso
+  // stretto, ma un'indicazione comune che lo staff vuole poter segnalare sul prodotto con lo
+  // stesso meccanismo (icona + badge), coerente col resto della tavolozza "extra". Fiocco di
+  // neve (2026-09-04, su ulteriore richiesta esplicita), non più il cubetto di ghiaccio.
+  '❄️',
 ];
 
 // Tavolozza completa passata a `CatalogListEditor` (`iconOptions`, sotto) — un unico elenco
@@ -768,7 +773,7 @@ export function MenuAsportoSection() {
     <VStack space="md" className="w-full">
       <HStack className="items-center justify-between">
         {!isLoadingCatalogo && categorie.length > 0 ? (
-          <Button size="sm" onPress={() => openCreateForm()}>
+          <Button size="sm" onPress={() => openCreateForm()} className="min-h-11">
             <ButtonIcon as={AddIcon} className="text-white" />
             <ButtonText>Nuovo prodotto</ButtonText>
           </Button>
@@ -779,7 +784,7 @@ export function MenuAsportoSection() {
           onPress={() => setIsManageOpen(true)}
           accessibilityRole="button"
           accessibilityLabel="Gestisci categorie e allergeni"
-          className="h-9 w-9 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50"
+          className="h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50 md:h-12 md:w-12"
         >
           <Icon as={SettingsIcon} size="sm" className="text-sky-700" />
         </Pressable>
@@ -809,7 +814,7 @@ export function MenuAsportoSection() {
           <Text size="sm" className="text-center text-muted-foreground">
             Nessuna categoria creata ancora.{'\n'}Crea la prima categoria per iniziare a costruire il menu asporto.
           </Text>
-          <Button size="sm" onPress={() => setIsManageOpen(true)}>
+          <Button size="sm" onPress={() => setIsManageOpen(true)} className="min-h-11">
             <ButtonText>+ Crea la prima categoria</ButtonText>
           </Button>
         </VStack>
@@ -817,8 +822,11 @@ export function MenuAsportoSection() {
 
       {!isLoadingCatalogo && categorie.length > 0 ? (
         <VStack space="sm">
-          <VStack space="sm">
-            <Input>
+          {/* Da tablet in su, ricerca e filtro disponibilità stanno sulla stessa riga invece di
+              impilati — su uno schermo largo, tenerli su due righe separate spreca spazio
+              verticale senza alcun beneficio di leggibilità. */}
+          <VStack space="sm" className="md:flex-row md:items-center">
+            <Input className="md:flex-1">
               <InputSlot className="pl-3">
                 <InputIcon as={SearchIcon} className="text-sky-400" />
               </InputSlot>
@@ -849,7 +857,7 @@ export function MenuAsportoSection() {
                   <Pressable
                     key={opzione.valore}
                     onPress={() => setFiltroDisponibilita(opzione.valore)}
-                    className={`rounded-full border px-3 py-1.5 ${
+                    className={`min-h-9 items-center justify-center rounded-full border px-3 py-1.5 ${
                       selezionato ? 'border-sky-500 bg-sky-100' : 'border-sky-200 bg-white'
                     }`}
                   >

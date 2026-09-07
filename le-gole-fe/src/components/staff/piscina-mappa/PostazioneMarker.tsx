@@ -31,19 +31,29 @@ function edgeClassName(shape: 'circle' | 'rectangle', groupInfo: GazeboGroupInfo
   return 'border-t-2 border-r-0 border-b-2 border-l-0 rounded-none';
 }
 
+// Colori rivisti (2026-09-05), su richiesta esplicita dell'utente — lo schema precedente aveva
+// "occupata" in verde e "libera/selezionabile" in ambra: l'esatto contrario dell'aspettativa
+// comune (verde = disponibile/positivo, non "già preso da qualcun altro"), e in contrasto con la
+// stessa scala cromatica già in uso ovunque nel resto del progetto (verde = confermato/positivo,
+// rosa = chiuso/pieno/cancellato — sezioni 2/7/15 di CLAUDE.md). Nuovo schema, coerente con
+// quelle convenzioni: libera/selezionabile = verde (disponibile), occupata = rosa (non
+// disponibile, stessa famiglia di "giorno pieno"/"cancellata"), selezionata = blu invariato
+// (colore d'azione primario in tutto il resto dell'app), neutra (nessun contesto di selezione,
+// solo lato staff senza un candidato scelto) = grigio ardesia invece di un blu chiaro facilmente
+// confuso con "selezionata".
 function stateColorClassName(
   isOccupied: boolean,
   isSelected: boolean,
   isSelectable: boolean,
   draggable: boolean
 ): string {
-  let colore = 'border-sky-300';
+  let colore = 'border-slate-300';
   if (isOccupied) {
-    colore = 'border-emerald-500 bg-emerald-50';
+    colore = 'border-rose-400 bg-rose-50';
   } else if (isSelected) {
     colore = 'border-sky-600 bg-sky-200';
   } else if (isSelectable) {
-    colore = 'border-amber-400 bg-amber-50';
+    colore = 'border-emerald-500 bg-emerald-50';
   }
   return draggable ? `${colore} border-dashed` : colore;
 }
@@ -78,13 +88,13 @@ function MarkerLabel({
     return (
       <>
         <Text
-          className="pointer-events-none select-none font-bold text-emerald-900"
+          className="pointer-events-none select-none font-bold text-rose-900"
           style={{ fontSize: style.labelFontSize * scale }}
         >
           #{numero}
         </Text>
         <Text
-          className="pointer-events-none select-none px-0.5 text-center font-semibold text-emerald-800"
+          className="pointer-events-none select-none px-0.5 text-center font-semibold text-rose-800"
           style={{ fontSize: (style.labelFontSize - 1) * scale }}
         >
           {truncateNome(clienteNome, style.nameLabelMaxChars)}
@@ -164,7 +174,7 @@ function NameTag({
       className="items-center"
     >
       <Text
-        className="select-none rounded-full border border-emerald-300 bg-white px-1.5 py-0.5 text-center font-semibold text-emerald-800 shadow-sm"
+        className="select-none rounded-full border border-rose-300 bg-white px-1.5 py-0.5 text-center font-semibold text-rose-800 shadow-sm"
         style={{ fontSize: style.labelFontSize * scale }}
       >
         {truncateNome(clienteNome, style.nameLabelMaxChars)}

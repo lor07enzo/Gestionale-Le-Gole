@@ -1,8 +1,9 @@
+import datetime
 import uuid
 from decimal import Decimal
 from django.db import models
 from users.models import Cliente
-from struttura.models import PiscinaInventario, Postazione
+from struttura.models import PiscinaInventario, Postazione, RacchettaPadel
 
 class Prenotazione(models.Model):
     STATO_CHOICES = [
@@ -72,6 +73,116 @@ class PrenotazioneAsporto(Prenotazione):
     @property
     def totale(self):
         return sum((voce.subtotale for voce in self.voci.all()), Decimal('0.00'))
+
+
+class PrenotazionePadel(Prenotazione):
+    """
+    Prenotazione del campo da padel: `ora` (ereditato da Prenotazione) è l'orario di *inizio*
+    della partita, sempre allineato alla griglia di slot generata da
+    struttura.ConfigurazionePadel.slot_disponibili() — stesso riuso del campo `ora` già fatto per
+    l'orario di arrivo (piscina) e di ritiro (asporto).
+
+    La struttura ha un solo campo, quindi non esiste alcuna FK verso una risorsa fisica: due
+    prenotazioni non cancellate non possono sovrapporsi nel tempo, e basta questo come
+    anti-overbooking (vedi prenotazioni.utils.slot_padel_occupati).
+
+    Durata e prezzi sono **snapshot** della configurazione al momento della prenotazione, non
+    letti a runtime: la configurazione è una riga unica e mutabile (a differenza del listino
+    piscina, protetto da PROTECT), quindi senza snapshot un cambio di tariffa riscriverebbe
+    retroattivamente il costo di ogni partita già prenotata — stesso identico principio di
+    menu.VoceOrdine.prezzo_unitario. Sono tutti forzati server-side da
+    PrenotazionePadelViewSet.perform_create(), mai accettati dal payload.
+    """
+    # Indicativo: non incide sul prezzo (fisso a partita), è solo il numero di giocatori attesi,
+    # limitato da ConfigurazionePadel.max_partecipanti.
+    partecipanti = models.PositiveSmallIntegerField(default=4, verbose_name="Numero di partecipanti")
+
+    # Le racchette noleggiate NON sono un contatore qui: ognuna ha una marca e un prezzo propri,
+    # quindi vivono in righe dedicate (NoleggioRacchetta, related_name='noleggi') — stesso
+    # rapporto che PrenotazioneAsporto ha con menu.VoceOrdine. Le palline restano un booleano
+    # con tariffa unica: non esiste un catalogo di marche di palline.
+    palline_noleggiate = models.BooleanField(default=False, verbose_name="Palline noleggiate")
+
+    durata_minuti = models.PositiveSmallIntegerField(default=90, verbose_name="Durata della partita (minuti)")
+    prezzo_partita = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    prezzo_palline = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+
+    # Forzato da perform_create() in base all'autenticazione, mai dal payload.
+    creata_da_staff = models.BooleanField(default=False, verbose_name="Creata dallo staff")
+
+    class Meta:
+        verbose_name = "Prenotazione Padel"
+        verbose_name_plural = "Prenotazioni Padel"
+
+    def __str__(self):
+        return f"Padel - {self.cliente_id.nome} del {self.data} alle {self.ora.strftime('%H:%M')}"
+
+    @property
+    def orario_fine(self):
+        """Orario di fine partita (datetime.time), derivato dallo snapshot di durata."""
+        giorno = datetime.date(2000, 1, 1)  # data fittizia: servono solo le ore
+        fine = datetime.datetime.combine(giorno, self.ora) + datetime.timedelta(minutes=self.durata_minuti)
+        return fine.time()
+
+    @property
+    def racchette_totali(self):
+        """Numero complessivo di racchette noleggiate, sommando le righe di tutte le marche."""
+        return sum(noleggio.quantita for noleggio in self.noleggi.all())
+
+    @property
+    def totale(self):
+        """
+        Costo della prenotazione: partita (snapshot) + righe di noleggio racchette (ciascuna col
+        proprio snapshot di prezzo) + eventuale set di palline. Calcolato a runtime e mai
+        persistito, stesso principio di PrenotazioneAsporto.totale — un totale salvato potrebbe
+        disallinearsi da cio che lo compone.
+        """
+        totale = self.prezzo_partita + sum(
+            (noleggio.subtotale for noleggio in self.noleggi.all()), Decimal('0.00')
+        )
+        if self.palline_noleggiate:
+            totale += self.prezzo_palline
+        return Decimal(totale).quantize(Decimal('0.01'))
+
+
+
+class NoleggioRacchetta(models.Model):
+    """
+    Singola riga di noleggio di una PrenotazionePadel: una marca di racchetta e quante se ne
+    prendono. Stessa identica forma di menu.VoceOrdine — CASCADE verso la prenotazione (una riga
+    non ha senso senza la sua partita), PROTECT verso il catalogo (una racchetta con noleggi
+    storici non è eliminabile, resta solo nascondibile via `disponibile=False`), e
+    `prezzo_unitario` come snapshot del prezzo al momento della prenotazione, così cambiare la
+    tariffa non riscrive retroattivamente i noleggi già effettuati.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    prenotazione = models.ForeignKey(
+        PrenotazionePadel, on_delete=models.CASCADE, related_name='noleggi'
+    )
+    racchetta = models.ForeignKey(
+        RacchettaPadel, on_delete=models.PROTECT, related_name='noleggi'
+    )
+    quantita = models.PositiveSmallIntegerField(default=1)
+    prezzo_unitario = models.DecimalField(max_digits=6, decimal_places=2)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Noleggio Racchetta"
+        verbose_name_plural = "Noleggi Racchette"
+        # Una sola riga per marca su una stessa prenotazione: due racchette Babolat sono
+        # `quantita=2`, non due righe da 1 che renderebbero ambiguo il conteggio dei pezzi.
+        unique_together = ('prenotazione', 'racchetta')
+        ordering = ['racchetta__nome']
+
+    def __str__(self):
+        return f"{self.quantita}x {self.racchetta.nome} ({self.prenotazione_id})"
+
+    @property
+    def subtotale(self):
+        return self.quantita * self.prezzo_unitario
 
 
 class GiornoPienoPiscina(models.Model):

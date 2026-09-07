@@ -14,6 +14,12 @@ class TestConfigurazioneAsportoLettura:
         assert response.data["orario_apertura"] == "11:00:00"
         assert response.data["orario_chiusura"] == "22:00:00"
 
+    def test_attivo_di_default_true(self, api_client):
+        # A differenza del padel (servizio nuovo, di default disattivo), l'asporto è già in uso:
+        # il default deve essere True per non spegnere da sola una funzionalità già attiva.
+        response = api_client.get(reverse("configurazione-asporto"))
+        assert response.data["attivo"] is True
+
     def test_la_riga_singleton_non_si_duplica_tra_richieste(self, api_client):
         api_client.get(reverse("configurazione-asporto"))
         api_client.get(reverse("configurazione-asporto"))
@@ -51,6 +57,23 @@ class TestConfigurazioneAsportoScrittura:
         response = auth_client.get(reverse("configurazione-asporto"))
         assert response.data["orario_apertura"] == "08:00:00"
         assert ConfigurazioneAsporto.objects.count() == 1
+
+
+class TestConfigurazioneAsportoAttivo:
+    def test_staff_puo_disattivare_e_riattivare(self, auth_client):
+        response = auth_client.patch(reverse("configurazione-asporto"), {"attivo": False}, format="json")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["attivo"] is False
+        assert ConfigurazioneAsporto.get_solo().attivo is False
+
+        response = auth_client.patch(reverse("configurazione-asporto"), {"attivo": True}, format="json")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["attivo"] is True
+
+    def test_anonimo_non_puo_disattivare(self, api_client):
+        response = api_client.patch(reverse("configurazione-asporto"), {"attivo": False}, format="json")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert ConfigurazioneAsporto.get_solo().attivo is True
 
 
 class TestConfigurazioneAsportoValidazione:
