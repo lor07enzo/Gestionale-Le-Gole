@@ -42,6 +42,81 @@ function getIniziali(nome: string): string {
   return (parole[0][0] + parole[1][0]).toUpperCase();
 }
 
+// Badge del conteggio non letto, condiviso tra la campanella e i tab del foglio: erano due blocchi
+// identici a parte dimensioni e colore del bordo.
+//
+// `fontSize` numerico inline invece di `size="2xs"`: `text-2xs` non è definita da nessuna parte
+// (né in tailwind.config.js, né nel blocco @theme di global.css, né nel preset NativeWind), quindi
+// non veniva applicata alcuna dimensione e il numero finiva renderizzato alla taglia di default —
+// più alto del cerchio che lo contiene, quindi tagliato e illeggibile. Nessun `lineHeight`
+// numerico, per lo stesso gotcha già documentato per PostazioneMarker: su web NativeWind lo emette
+// senza unità, dove vale come moltiplicatore del font-size invece che come pixel.
+//
+// Il resto dello stile resta inline (non className) perché le utility NativeWind per queste
+// dimensioni minuscole si sono dimostrate inaffidabili su nativo: i valori numerici passano diretti
+// a Yoga, nessuna traduzione di mezzo.
+function NotificaCountBadge({
+  count,
+  diameter,
+  fontSize,
+  offset,
+  borderClassName,
+}: Readonly<{
+  count: number;
+  diameter: number;
+  fontSize: number;
+  offset: number;
+  borderClassName: string;
+}>) {
+  // Fino a 99 il numero reale, non più un generico "9+" da una cifra sola: ora che il testo entra
+  // davvero nel cerchio, il badge si allarga da sé (minWidth + paddingHorizontal) per due o tre
+  // caratteri, e "12 da leggere" nell'intestazione del foglio non contraddice più il badge.
+  const label = count > 99 ? '99+' : String(count);
+  return (
+    <Box
+      className={`absolute items-center justify-center rounded-full border-2 bg-sky-600 ${borderClassName}`}
+      style={{
+        top: -offset,
+        right: -offset,
+        height: diameter,
+        minWidth: diameter,
+        paddingHorizontal: label.length > 1 ? 3 : 0,
+      }}
+    >
+      {/*
+        `size="2xs"` esplicito (non il default 'md' del componente): 'md' risolve in `text-base`,
+        che in Tailwind v4 porta `line-height: calc(1.5 / 1)` — un RAPPORTO unitario, non un valore
+        in pixel. Sul web il browser lo ricalcola sul font-size EFFETTIVO dell'elemento (il nostro
+        `fontSize` inline, che vince in cascata) — corretto. Su nativo, react-native-css deve invece
+        precalcolare quel rapporto in un valore assoluto PRIMA di unire il nostro style inline,
+        usando il font-size della classe stessa (1rem = 16px, non il nostro override) — un
+        `lineHeight` fisso da ~24px completamente scollegato dal font 9-10px effettivo, dentro un
+        cerchio di 16-18px: la riga di testo risultava molto più alta del badge, e il glifo — pur
+        centrato al suo interno — finiva visivamente spostato in basso una volta che Android
+        ritagliava la riga in eccesso sui bordi arrotondati del Box (nessun bug della centratura in
+        sé, un mismatch di lineHeight che il centraggio del contenitore non poteva correggere).
+        `size="2xs"` risolve in `text-2xs`, classe inesistente nel progetto (nessun Tailwind
+        config/tema la definisce) — non contribuisce alcun font-size/line-height, lasciando lo style
+        inline come unica fonte di verità su entrambe le piattaforme.
+
+        `includeFontPadding: false` (Android-only, ignorato su web): di default RN aggiunge sopra e
+        sotto al testo un padding derivato dalle metriche del font — asimmetrico, tipicamente più
+        alto dell'ascender che del descender. Dentro un contenitore centrato quel padding sposta
+        il glifo visibile verso il basso: il box del testo è centrato, la cifra dentro di esso no.
+        Disattivarlo lascia che sia `items-center`/`justify-center` del Box a centrare davvero la
+        cifra. `textAlignVertical` è la controparte per l'allineamento interno del testo stesso.
+      */}
+      <Text
+        size="2xs"
+        className="text-center font-bold text-white"
+        style={{ fontSize, includeFontPadding: false, textAlignVertical: 'center' }}
+      >
+        {label}
+      </Text>
+    </Box>
+  );
+}
+
 // Icona sopra, etichetta sotto (non affiancate): su 5 colonne strette il badge conteggio in linea
 // finiva per sconfinare nel tab accanto — ora è un overlay assoluto sull'angolo.
 //
@@ -64,32 +139,35 @@ function CategoriaTabs({
         const count = unreadByCategoria[c.key];
         const showBadge = c.disponibile && count > 0;
         return (
-          <Pressable
-            key={c.key}
-            accessibilityRole="button"
-            accessibilityLabel={`Filtra per ${c.label}${c.disponibile ? '' : ' (in arrivo)'}`}
-            onPress={() => onChange(c.key)}
-            className={`relative flex-1 items-center justify-center rounded-xl px-0.5 py-1.5 ${
-              isActive ? 'bg-white shadow-sm' : ''
-            }`}
-          >
-            <Text size="xs">{c.icon}</Text>
-            <Text
-              size="2xs"
-              className={`font-bold ${
-                !c.disponibile ? 'text-muted-foreground/70' : isActive ? 'text-sky-700' : 'text-sky-600/80'
+          // Il badge è un fratello del Pressable, non un suo figlio: su Android un View con
+          // `borderRadius` ritaglia i figli posizionati fuori dai propri bordi arrotondati
+          // (comportamento nativo, non un bug NativeWind) — annidare il badge dentro il Pressable
+          // `rounded-xl` tagliava via quasi tutto il cerchio/numero, lasciando visibile solo la
+          // piccola porzione entro l'angolo arrotondato. Questo Box esterno non ha `rounded-*`,
+          // quindi non clippa nulla.
+          <Box key={c.key} className="relative flex-1">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Filtra per ${c.label}${c.disponibile ? '' : ' (in arrivo)'}`}
+              onPress={() => onChange(c.key)}
+              className={`items-center justify-center rounded-xl px-0.5 py-1.5 ${
+                isActive ? 'bg-white shadow-sm' : ''
               }`}
             >
-              {c.label}
-            </Text>
+              <Text size="xs">{c.icon}</Text>
+              <Text
+                size="2xs"
+                className={`font-bold ${
+                  !c.disponibile ? 'text-muted-foreground/70' : isActive ? 'text-sky-700' : 'text-sky-600/80'
+                }`}
+              >
+                {c.label}
+              </Text>
+            </Pressable>
             {showBadge ? (
-              <Box className="absolute -right-0.5 -top-0.5 min-w-3.5 items-center justify-center rounded-full border-2 border-sky-50 bg-sky-600 px-0.5">
-                <Text size="2xs" className="text-center font-bold leading-none text-white">
-                  {count > 9 ? '9+' : count}
-                </Text>
-              </Box>
+              <NotificaCountBadge count={count} diameter={16} fontSize={9} offset={3} borderClassName="border-sky-50" />
             ) : null}
-          </Pressable>
+          </Box>
         );
       })}
     </HStack>
@@ -353,11 +431,13 @@ export function NotificationsBell() {
       >
         <Icon as={BellIcon} size="md" className="text-sky-700" />
         {unreadCount > 0 ? (
-          <Box className="absolute -right-1 -top-1 h-4 min-w-4 items-center justify-center rounded-full border-2 border-background bg-sky-600 px-1">
-            <Text size="2xs" className="text-center font-bold leading-none text-white">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </Text>
-          </Box>
+          <NotificaCountBadge
+            count={unreadCount}
+            diameter={18}
+            fontSize={10}
+            offset={5}
+            borderClassName="border-background"
+          />
         ) : null}
       </Pressable>
 

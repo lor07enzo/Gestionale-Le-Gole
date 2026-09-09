@@ -149,7 +149,7 @@ Gestionale-Le-Gole/
 | Area | Stato | Note |
 |---|---|---|
 | **Ristorante** (`Sala`, `Tavolo`, `Prenotazione_Tavolo`) | 📋 Da sviluppare | Nessun modello/API backend ancora definito — unico servizio senza alcun backend |
-| **Build native iOS/Android** (EAS Build) | 📋 Da sviluppare | Fase attuale è "solo web" per i test; nessun profilo `eas.json` configurato |
+| **Build native iOS/Android** (EAS Build) | 📋 Da sviluppare | Fase attuale è "solo web" per i test; `eas.json` e le correzioni di `app.json` (icona senza alpha, orientamento) sono pronte, ma mancano ancora `ios.bundleIdentifier`/`android.package` e un account Apple Developer/Google Play Console |
 | **Cache condivisa per il rate-limiting** (Redis) | 📋 Valutazione futura | Non giustificata al livello di traffico attuale |
 
 ---

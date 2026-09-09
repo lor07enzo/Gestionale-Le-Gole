@@ -13,6 +13,16 @@ import { Spinner } from '@/components/ui/spinner';
 const logo = require('../assets/logo-le-gole-nero.png');
 const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
+// Stesso valore di --background/--border in global.css (234 224 200 / #eae0c8 e 229 229 229 /
+// #e5e5e5) — passati come style inline, non come classi bg-background/border-border, apposta: il
+// pulsante "Area Cliente" (variant="outline", che risolverebbe di suo entrambi da quelle classi)
+// su alcuni dispositivi mostrava bianco invece del crema atteso, segno che le variabili CSS non
+// venivano sempre risolte in modo affidabile da NativeWind v5 (ancora alpha). Un colore letterale
+// nello style bypassa del tutto quella risoluzione, quindi non può mai più dipendere da essa. Se
+// --background/--border cambiano in global.css, vanno aggiornati a mano anche qui.
+const AREA_CLIENTE_BUTTON_BG = '#eae0c8';
+const AREA_CLIENTE_BUTTON_BORDER = '#e5e5e5';
+
 export default function RoleSelectionScreen() {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -46,7 +56,16 @@ export default function RoleSelectionScreen() {
             <ButtonText>Accedi come Staff</ButtonText>
           </Button>
 
-          <Button size="lg" variant="outline" onPress={() => router.push('/cliente')}>
+          <Button
+            size="lg"
+            variant="outline"
+            style={{
+              backgroundColor: AREA_CLIENTE_BUTTON_BG,
+              borderWidth: 1,
+              borderColor: AREA_CLIENTE_BUTTON_BORDER,
+            }}
+            onPress={() => router.push('/cliente')}
+          >
             <ButtonText>Area Cliente</ButtonText>
           </Button>
         </VStack>

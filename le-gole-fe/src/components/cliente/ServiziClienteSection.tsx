@@ -89,13 +89,13 @@ function ServizioCard({ servizio }: Readonly<{ servizio: ServizioCliente }>) {
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={`${servizio.label}${servizio.disponibile ? '' : ' (non disponibile)'}`}
-      className="h-full w-full active:opacity-90"
+      className="w-full web:h-full active:opacity-90"
     >
       <Box
         className={
           servizio.disponibile
-            ? 'h-full w-full rounded-2xl border border-sky-200 bg-sky-100 p-5'
-            : 'h-full w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5'
+            ? 'w-full web:h-full rounded-2xl border border-sky-200 bg-sky-100 p-5'
+            : 'w-full web:h-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5'
         }
       >
         <HStack space="sm" className="items-center">

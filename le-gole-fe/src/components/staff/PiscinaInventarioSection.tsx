@@ -17,8 +17,6 @@ import {
   ActionsheetContent,
   ActionsheetDragIndicator,
   ActionsheetDragIndicatorWrapper,
-  ActionsheetItem,
-  ActionsheetItemText,
   ActionsheetScrollView,
 } from '@/components/ui/actionsheet';
 import {
@@ -31,20 +29,6 @@ import {
 } from '../../services/struttura';
 import { extractErrorMessage } from '../../utils/errors';
 import { formatOrarioInput } from '../../utils/piscinaMappa';
-
-type TipoInventario = 'PISCINA' | 'SALA' | 'PADEL';
-
-const TIPO_INVENTARIO_OPTIONS: Array<{
-  tipo: TipoInventario;
-  icon: string;
-  label: string;
-  descrizione: string;
-  disponibile: boolean;
-}> = [
-  { tipo: 'PISCINA', icon: '🏊', label: 'Piscina', descrizione: 'Listino, ombrelloni, gazebi, lettini e sdraie', disponibile: true },
-  { tipo: 'SALA', icon: '🍽️', label: 'Sala', descrizione: 'In arrivo', disponibile: false },
-  { tipo: 'PADEL', icon: '🎾', label: 'Padel', descrizione: 'In arrivo', disponibile: false },
-];
 
 const STOCK_ITEMS: Array<{ key: keyof PiscinaInventario; icon: string; label: string }> = [
   { key: 'totale_ombrelloni', icon: '⛱️', label: 'Ombrelloni' },
@@ -155,7 +139,7 @@ function PiscinaInventarioCard({ inventario, onEdit, onDelete }: Readonly<Piscin
   const openMappa = () => router.push(`/staff/piscina/${inventario.id}` as Href);
 
   return (
-    <Box className="h-full w-full rounded-2xl border border-sky-200 bg-sky-100">
+    <Box className="w-full web:h-full rounded-2xl border border-sky-200 bg-sky-100">
       {/* Zona primaria: l'intera card apre la mappa. Modifica/Elimina vivono FUORI da questo
           Pressable (sotto, dopo il divisorio) per non mischiare "vai alla mappa" con "modifica il listino". */}
       <Pressable
@@ -218,13 +202,37 @@ function PiscinaInventarioCard({ inventario, onEdit, onDelete }: Readonly<Piscin
       <Box className="mx-5 h-px bg-sky-200" />
 
       <HStack space="sm" className="p-5 pt-3">
-        <Button size="sm" variant="outline" className="flex-1 border-sky-300" onPress={onEdit}>
+        {/*
+          bg-white esplicito su entrambi, non il bg-background di default di variant="outline":
+          quest'ultimo eredita il tema dell'app (crema/dark a seconda della variabile --background),
+          che non ha senso dentro una card a tinta fissa bg-sky-100 — stesso principio già in uso
+          per i pulsanti di navigazione/zoom della mappa piscina (sezione 5 di CLAUDE.md). bg-white
+          è una classe Tailwind letterale (non legata a nessuna variabile CSS di progetto), quindi
+          resta identica a prescindere dal tema e non soffre della stessa inaffidabilità di
+          risoluzione già osservata per bg-background/bg-card su alcuni dispositivi.
+
+          I bordi colorati NON sono più affidati alle classi border-sky-300/border-destructive/40:
+          border-sky-300 risolve in Tailwind v4 con un colore oklch() (`oklch(82.8% 0.111 230.318)`,
+          node_modules/tailwindcss/theme.css) — segnalato dall'utente come non applicato lato web,
+          border-destructive/40 dipende invece dalla variabile CSS di progetto --destructive. Stesso
+          principio già usato per il pulsante "Area Cliente" in app/index.tsx: un colore letterale via style
+          inline bypassa del tutto la risoluzione (className, variabile CSS, oklch), quindi è
+          garantito identico su ogni piattaforma.
+        */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 bg-white"
+          style={{ borderWidth: 1, borderColor: '#7dd3fc' }}
+          onPress={onEdit}
+        >
           <ButtonText>Modifica listino</ButtonText>
         </Button>
         <Button
           size="sm"
           variant="outline"
-          className="flex-1 border-destructive/40"
+          className="flex-1 bg-white"
+          style={{ borderWidth: 1, borderColor: 'rgba(231, 0, 11, 0.4)' }}
           onPress={onDelete}
         >
           <ButtonText className="text-destructive">Elimina</ButtonText>
@@ -259,7 +267,6 @@ export function PiscinaInventarioSection() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(INITIAL_FORM_STATE);
   const [editingItem, setEditingItem] = useState<PiscinaInventario | null>(null);
-  const [isTypeChooserOpen, setIsTypeChooserOpen] = useState(false);
 
   useEffect(() => {
     listPiscinaInventari()
@@ -279,21 +286,6 @@ export function PiscinaInventarioSection() {
     setForm(INITIAL_FORM_STATE);
     setError(null);
     setIsFormOpen(true);
-  };
-
-  const handleChooseTipoInventario = (tipo: TipoInventario) => {
-    setIsTypeChooserOpen(false);
-    if (tipo === 'PISCINA') {
-      openCreateForm();
-      return;
-    }
-    const label = TIPO_INVENTARIO_OPTIONS.find((option) => option.tipo === tipo)?.label ?? tipo;
-    const message = `La gestione dell'inventario ${label} è in arrivo: non è ancora disponibile.`;
-    if (Platform.OS === 'web') {
-      window.alert(message);
-    } else {
-      Alert.alert('Prossimamente', message);
-    }
   };
 
   const openEditForm = (item: PiscinaInventario) => {
@@ -372,7 +364,7 @@ export function PiscinaInventarioSection() {
       {/* Titolo e sottotitolo vivono ora nell'header della pagina (app/staff/piscina.tsx): qui resta
           solo l'azione primaria, così la sezione non ripete l'intestazione appena sopra. */}
       <HStack className="items-center">
-        <Button size="default" className="min-h-11" onPress={() => setIsTypeChooserOpen(true)}>
+        <Button size="default" className="min-h-11" onPress={openCreateForm}>
           <ButtonIcon as={AddIcon} className="text-primary-foreground" />
           <ButtonText>Nuovo listino</ButtonText>
         </Button>
@@ -393,7 +385,7 @@ export function PiscinaInventarioSection() {
           <Text size="sm" className="text-center text-muted-foreground">
             Nessun listino piscina creato ancora.{'\n'}Crea il primo per iniziare a gestire prenotazioni e postazioni.
           </Text>
-          <Button size="sm" onPress={() => setIsTypeChooserOpen(true)}>
+          <Button size="sm" onPress={openCreateForm}>
             <ButtonText>+ Crea il primo listino</ButtonText>
           </Button>
         </VStack>
@@ -413,46 +405,6 @@ export function PiscinaInventarioSection() {
           </Box>
         ))}
       </Box>
-
-      <Actionsheet isOpen={isTypeChooserOpen} onClose={() => setIsTypeChooserOpen(false)}>
-        <ActionsheetBackdrop />
-        <ActionsheetContent>
-          <ActionsheetDragIndicatorWrapper>
-            <ActionsheetDragIndicator />
-          </ActionsheetDragIndicatorWrapper>
-
-          <VStack space="xs" className="w-full pb-4 pt-1">
-            <Heading size="sm" className="px-1 pb-2">
-              Che tipo di inventario vuoi creare?
-            </Heading>
-
-            {TIPO_INVENTARIO_OPTIONS.map((option) => (
-              <ActionsheetItem
-                key={option.tipo}
-                onPress={() => handleChooseTipoInventario(option.tipo)}
-                className="rounded-lg data-[hover=true]:bg-sky-100 data-[active=true]:bg-sky-100"
-              >
-                <Text size="lg">{option.icon}</Text>
-                <VStack className="flex-1">
-                  <ActionsheetItemText className={option.disponibile ? 'font-semibold' : 'font-semibold text-muted-foreground'}>
-                    {option.label}
-                  </ActionsheetItemText>
-                  <Text size="xs" className="text-muted-foreground">
-                    {option.descrizione}
-                  </Text>
-                </VStack>
-                {!option.disponibile ? (
-                  <Box className="rounded-full bg-amber-100 px-2 py-0.5">
-                    <Text size="2xs" className="font-medium text-amber-700">
-                      In arrivo
-                    </Text>
-                  </Box>
-                ) : null}
-              </ActionsheetItem>
-            ))}
-          </VStack>
-        </ActionsheetContent>
-      </Actionsheet>
 
       <Actionsheet isOpen={isFormOpen} onClose={() => setIsFormOpen(false)}>
         <ActionsheetBackdrop />

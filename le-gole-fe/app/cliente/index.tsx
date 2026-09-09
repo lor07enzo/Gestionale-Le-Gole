@@ -50,7 +50,7 @@ export default function AreaClienteScreen() {
             schermo. Stessa griglia cella+margine negativo usata per i servizi sotto. */}
         <Box className="-m-2 w-full flex-row flex-wrap">
           <Box className="w-full p-2 md:w-1/2">
-            <Box className="h-full w-full rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4">
+            <Box className="w-full web:h-full rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4">
               <HStack space="sm" className="items-start">
                 <Text size="md">🚧</Text>
                 <VStack space="xs" className="flex-1">
@@ -72,7 +72,7 @@ export default function AreaClienteScreen() {
               non un avviso temporaneo legato alla fase di test — tono/colore diversi (sky, non
               amber) per non confonderla con quello. */}
           <Box className="w-full p-2 md:w-1/2">
-            <Box className="h-full w-full rounded-2xl border border-sky-200 bg-sky-50 p-4">
+            <Box className="w-full web:h-full rounded-2xl border border-sky-200 bg-sky-50 p-4">
               <HStack space="sm" className="items-start">
                 <Text size="md">🎉</Text>
                 <VStack space="xs" className="flex-1">

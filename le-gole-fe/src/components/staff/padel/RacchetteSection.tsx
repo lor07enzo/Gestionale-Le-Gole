@@ -51,7 +51,7 @@ function RacchettaRow({
   onOpenMenu,
 }: Readonly<{ racchetta: RacchettaPadel; onOpenMenu: () => void }>) {
   return (
-    <Box className="h-full w-full rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
+    <Box className="w-full web:h-full rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
       <HStack space="sm" className="items-start justify-between">
         <VStack space="xs" className="flex-1">
           <HStack space="xs" className="flex-wrap items-center">
@@ -184,7 +184,7 @@ export function RacchetteSection() {
         {racchette.map((racchetta) => (
           <Box key={racchetta.id} className="w-full p-1.5 md:w-1/2 lg:w-1/3">
             {busyId === racchetta.id ? (
-              <Box className="h-full w-full items-center justify-center rounded-2xl border border-sky-100 bg-white p-6">
+              <Box className="w-full web:h-full items-center justify-center rounded-2xl border border-sky-100 bg-white p-6">
                 <Spinner size="small" />
               </Box>
             ) : (

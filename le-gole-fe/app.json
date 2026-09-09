@@ -4,15 +4,16 @@
     "slug": "legole",
     "version": "1.0.0",
     "scheme": "legole",
-    "orientation": "portrait",
-    "icon": "./assets/logo-le-gole-nero.png",
+    "orientation": "default",
+    "icon": "./assets/icon-appstore.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.osterialegole.legole",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#eae0c8",
         "foregroundImage": "./assets/logo-le-gole-nero.png"
       },
       "predictiveBackGestureEnabled": false

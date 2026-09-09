@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable } from 'react-native';
 import { router, Slot } from 'expo-router';
 import Constants from 'expo-constants';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
 import { StaffNotificationsProvider } from '../../src/context/StaffNotificationsContext';
 import { NotificationsBanner, NotificationsBell } from '../../src/components/staff/NotificationsBell';
@@ -28,6 +29,7 @@ const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 export default function StaffLayout() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [isAccountSheetOpen, setIsAccountSheetOpen] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -54,7 +56,10 @@ export default function StaffLayout() {
   return (
     <StaffNotificationsProvider>
       <Box className="flex-1 bg-background">
-        <Box className="border-b border-border/80 bg-background/70 web:backdrop-blur-md">
+        <Box
+          className="border-b border-border/80 bg-background/70 web:backdrop-blur-md"
+          style={{ paddingTop: insets.top }}
+        >
           <HStack className="mx-auto w-full max-w-6xl items-center justify-between px-4 py-3 md:px-8 md:py-4">
             <Pressable
               className="flex-row items-center gap-2"

@@ -29,9 +29,9 @@ export function SezioneLinkCard({ icon, title, descrizione, href, tone = 'sky' }
       onPress={() => router.push(href)}
       accessibilityRole="button"
       accessibilityLabel={`${title}: ${descrizione}`}
-      className={`h-full w-full rounded-2xl border active:opacity-90 ${contenitore}`}
+      className={`w-full web:h-full rounded-2xl border active:opacity-90 ${contenitore}`}
     >
-      <HStack space="sm" className="h-full items-center p-4">
+      <HStack space="sm" className="web:h-full items-center p-4">
         <Box className="h-10 w-10 items-center justify-center rounded-full bg-white/70">
           <Text size="lg">{icon}</Text>
         </Box>

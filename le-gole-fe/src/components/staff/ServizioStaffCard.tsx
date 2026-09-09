@@ -25,8 +25,8 @@ type ServizioStaffCardProps = {
 export function ServizioStaffCard({ icon, title, descrizione, stat, ctaLabel, href }: Readonly<ServizioStaffCardProps>) {
   if (!href) {
     return (
-      <Box className="h-full w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
-        <VStack space="sm" className="h-full">
+      <Box className="w-full web:h-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
+        <VStack space="sm" className="web:h-full">
           <HStack space="sm" className="items-center">
             <Box className="h-11 w-11 items-center justify-center rounded-full bg-white">
               <Text size="lg">{icon}</Text>
@@ -58,9 +58,9 @@ export function ServizioStaffCard({ icon, title, descrizione, stat, ctaLabel, hr
       onPress={() => router.push(href)}
       accessibilityRole="button"
       accessibilityLabel={`${title}: ${ctaLabel}`}
-      className="h-full w-full rounded-2xl border border-sky-200 bg-sky-100 shadow-sm active:opacity-90"
+      className="w-full web:h-full rounded-2xl border border-sky-200 bg-sky-100 shadow-sm active:opacity-90"
     >
-      <VStack space="sm" className="h-full p-5">
+      <VStack space="sm" className="web:h-full p-5">
         <HStack space="sm" className="items-center">
           <Box className="h-11 w-11 items-center justify-center rounded-full bg-white/70">
             <Text size="lg">{icon}</Text>

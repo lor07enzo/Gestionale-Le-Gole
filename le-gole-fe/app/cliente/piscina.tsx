@@ -102,11 +102,11 @@ export default function ClientePiscinaScreen() {
                 onPress={() => router.push(`/cliente/piscina/${piscina.id}` as Href)}
                 accessibilityRole="button"
                 accessibilityLabel={`Piscina ${piscina.nome} — tocca per prenotare`}
-                className="h-full active:opacity-80"
+                className="w-full web:h-full active:opacity-80"
               >
                 {/* `justify-between` + `flex-1` sul corpo: in una riga di card di altezza diversa
                     (descrizioni/prezzi differenti) la barra CTA resta comunque allineata in fondo. */}
-                <Box className="h-full w-full justify-between overflow-hidden rounded-2xl border-2 border-sky-300 bg-sky-100 shadow-sm">
+                <Box className="w-full web:h-full justify-between overflow-hidden rounded-2xl border-2 border-sky-300 bg-sky-100 shadow-sm">
                   <VStack space="sm" className="p-5">
                     <HStack space="sm" className="items-center">
                       <Box className="h-12 w-12 items-center justify-center rounded-full bg-white/70">
