@@ -271,3 +271,38 @@ class TestPrenotazioniPerOrario:
         response = api_client.get(reverse("prenotazione-asporto-prenotazioni-per-orario"), {"data": "2026-12-25"})
 
         assert response.data == {"12:15": 1}
+
+
+class TestConteggi:
+    # Stessa forma/scopo di TestConteggi in test_views_padel.py, senza alcun filtro 'inventario':
+    # l'asporto non ha un concetto di listino, sezione 1 di CLAUDE.md.
+    def test_richiede_autenticazione(self, api_client):
+        response = api_client.get(reverse("prenotazione-asporto-conteggi"), {"anno": "2026", "mese": "9"})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_richiede_i_parametri_obbligatori(self, auth_client):
+        response = auth_client.get(reverse("prenotazione-asporto-conteggi"))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_parametri_non_numerici(self, auth_client):
+        response = auth_client.get(reverse("prenotazione-asporto-conteggi"), {"anno": "duemila", "mese": "9"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_conta_gli_ordini_non_cancellati_per_giorno(self, auth_client):
+        PrenotazioneAsportoFactory(data="2026-09-05", ora="12:00")
+        PrenotazioneAsportoFactory(data="2026-09-05", ora="13:00")
+        PrenotazioneAsportoFactory(data="2026-09-12", ora="12:00")
+        PrenotazioneAsportoFactory(data="2026-09-20", ora="12:00", stato="CANCELLED")
+
+        response = auth_client.get(reverse("prenotazione-asporto-conteggi"), {"anno": "2026", "mese": "9"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"2026-09-05": 2, "2026-09-12": 1}
+
+    def test_isolato_per_mese(self, auth_client):
+        PrenotazioneAsportoFactory(data="2026-09-05", ora="12:00")
+        PrenotazioneAsportoFactory(data="2026-10-05", ora="12:00")
+
+        response = auth_client.get(reverse("prenotazione-asporto-conteggi"), {"anno": "2026", "mese": "9"})
+
+        assert response.data == {"2026-09-05": 1}

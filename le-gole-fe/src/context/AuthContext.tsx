@@ -1,5 +1,6 @@
 import React, { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import api, { setSessionExpiredHandler } from '../services/api';
+import { registraDispositivoPush, rimuoviDispositivoPush } from '../utils/push';
 import { clearTokens, getAccessToken, saveTokens } from '../utils/storage';
 
 export type StaffUser = {
@@ -40,6 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         setUser(await fetchStaffProfile());
+        // Anche al ripristino della sessione, non solo al login: uno staff che non si disconnette
+        // mai altrimenti non registrerebbe il dispositivo dopo un aggiornamento dell'app.
+        void registraDispositivoPush();
       } catch {
         await clearTokens();
       } finally {
@@ -59,9 +63,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await saveTokens(access, refresh);
 
     setUser(await fetchStaffProfile());
+    // `void`: una registrazione lenta o fallita non deve tenere il login in sospeso.
+    void registraDispositivoPush();
   };
 
   const logout = async () => {
+    // Prima di scartare i token JWT: senza autenticazione il backend rifiuterebbe la richiesta e
+    // il dispositivo continuerebbe a ricevere notifiche di un account non più connesso.
+    await rimuoviDispositivoPush();
     await clearTokens();
     setUser(null);
   };

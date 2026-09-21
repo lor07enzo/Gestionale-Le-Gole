@@ -1,13 +1,14 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .views import UtenteViewSet, ClienteViewSet
+from .views import UtenteViewSet, ClienteViewSet, DispositivoStaffViewSet
 
 router = DefaultRouter()
 
 # rotte per Utenti e Clienti
 router.register(r'staff', UtenteViewSet, basename='staff')
 router.register(r'clienti', ClienteViewSet, basename='clienti')
+router.register(r'dispositivi', DispositivoStaffViewSet, basename='dispositivi')
 
 urlpatterns = [
     # Endpoint per l'autenticazione (Login)

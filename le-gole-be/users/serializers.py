@@ -1,8 +1,10 @@
+import re
+
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from .models import Cliente
+from .models import Cliente, DispositivoStaff
 
 Utente = get_user_model()
 
@@ -66,6 +68,33 @@ class ActivateAccountSerializer(serializers.Serializer):
             validate_password(value)
         except DjangoValidationError as e:
             raise serializers.ValidationError(list(e.messages))
+        return value
+
+
+# Formato dei token emessi da expo-notifications. Validarlo qui evita di riempire la tabella di
+# stringhe che l'API Expo rifiuterebbe comunque a ogni invio, una per notifica, per sempre.
+TOKEN_EXPO = re.compile(r'^Expo(nent)?PushToken\[[^\[\]\s]+\]$')
+
+
+class DispositivoStaffSerializer(serializers.ModelSerializer):
+    """`utente` non è mai nel payload: lo impone la viewset dalla richiesta autenticata."""
+
+    class Meta:
+        model = DispositivoStaff
+        fields = ['id', 'token', 'piattaforma']
+        extra_kwargs = {
+            # `token` è unique a livello di modello, quindi DRF genererebbe da sé un
+            # UniqueValidator: qui va tolto, perché ri-registrare un token già noto è il caso
+            # normale (ogni avvio dell'app) e la viewset lo gestisce come upsert, non come
+            # errore. Il controllo di formato sotto resta, `validate_token` è indipendente.
+            'token': {'validators': []},
+        }
+
+    def validate_token(self, value):
+        if not TOKEN_EXPO.match(value):
+            raise serializers.ValidationError(
+                'Token push non valido: atteso il formato ExponentPushToken[...].'
+            )
         return value
 
 

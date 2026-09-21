@@ -157,6 +157,15 @@ const ALLERGENE_ICONA_PRESET = [...ALLERGENE_ICONA_PRESET_UFFICIALI, ...ALLERGEN
 // la riga a dismisura con `flex-wrap`, rompendo l'altezza uniforme delle card del catalogo.
 const MAX_ALLERGENI_INLINE = 3;
 
+// Stesso valore letterale di `--background` in global.css (`#eae0c8`, sezione 4) — bypassa la
+// stessa inaffidabilità di risoluzione già documentata per `bg-background` su nativo (il pulsante
+// "Area Cliente" di app/index.tsx). Qui la classe non bastava per un motivo in più, specifico a
+// questa barra: resa sticky su nativo solo oggi (`stickyHeaderIndices`, sezione 15) — prima, in
+// flusso normale, uno sfondo trasparente non aveva nulla scorrervi "sotto" e il difetto restava
+// invisibile; ora che il catalogo scorre dietro di lei, un `bg-background` non risolto la rende
+// trasparente e lascia intravedere le righe prodotto sottostanti al suo posto.
+const NAV_BAR_BACKGROUND = '#eae0c8';
+
 type CategoriaGruppo = { categoria: Categoria; items: Prodotto[] };
 
 type FiltroDisponibilita = 'tutti' | 'visibili' | 'nascosti';
@@ -447,7 +456,13 @@ function CategoriaCard({
   );
 }
 
-export function MenuAsportoSection() {
+type UseMenuAsportoCatalogoParams = {
+  // Serve solo per lo scroll-to-categoria su nativo (sotto): su web il tap usa `scrollIntoView`
+  // sul DOM, che non ha bisogno di alcun riferimento alla ScrollView della pagina.
+  scrollViewRef?: React.RefObject<ScrollView | null>;
+};
+
+export function useMenuAsportoCatalogo({ scrollViewRef }: UseMenuAsportoCatalogoParams = {}) {
   const [categorie, setCategorie] = useState<Categoria[]>([]);
   const [isLoadingCategorie, setIsLoadingCategorie] = useState(true);
   const [allergeni, setAllergeni] = useState<Allergene[]>([]);
@@ -550,16 +565,90 @@ export function MenuAsportoSection() {
   const [activeCategoriaId, setActiveCategoriaId] = useState<string | null>(null);
   const suppressObserverUntilRef = useRef(0);
 
-  // Solo web: sposta lo scroll della pagina fino alla card della categoria scelta dalla barra di
-  // navigazione rapida sotto. Su nativo il nodo catturato dal ref non espone `scrollIntoView` —
-  // il tap resta un no-op silenzioso lì, coerente con la fase attuale del progetto (solo web,
-  // sezione 8).
+  // Posizione Y di ogni card categoria relativa alla ScrollView della pagina, misurata una volta
+  // (non ad ogni frame di scroll: `measureLayout` è una chiamata verso il bridge nativo, farla per
+  // ogni categoria ad ogni evento di scroll sarebbe costoso e superfluo) e riusata sia dal tap
+  // (`scrollToCategoria` sopra) sia dallo scroll-spy nativo (`handleScrollNative` sotto).
+  const categoriaYCache = useRef<Map<string, number>>(new Map());
+
+  type MeasurableNode = {
+    measureLayout?: (relativeToRef: unknown, onSuccess: (x: number, y: number) => void, onFail: () => void) => void;
+  };
+
+  // Ricalcola `categoriaYCache` — chiamata da `onContentSizeChange` sulla ScrollView della pagina
+  // (`app/staff/asporto.tsx`), che scatta quando il contenuto scrollabile cambia dimensione: un
+  // segnale affidabile che il layout si è appena assestato, più robusto di un timeout arbitrario.
+  const remeasureCategorieYNative = () => {
+    if (Platform.OS === 'web') return;
+    const scrollView = scrollViewRef?.current;
+    if (!scrollView) return;
+    categoriaNodeById.current.forEach((node, id) => {
+      (node as MeasurableNode | undefined)?.measureLayout?.(
+        scrollView,
+        (_x, y) => categoriaYCache.current.set(id, y),
+        () => {}
+      );
+    });
+  };
+
+  // Sposta lo scroll della pagina fino alla card della categoria scelta dalla barra di
+  // navigazione rapida sotto — due percorsi distinti per piattaforma, stesso motivo di sempre
+  // (`react-native-web` non implementa il responder system legacy, qui il DOM ha `scrollIntoView`
+  // che nativo non ha). Su nativo la ScrollView è quella della pagina intera (passata da
+  // `app/staff/asporto.tsx` come `scrollViewRef`): `measureLayout` calcola la posizione della card
+  // relativa ad essa, `scrollTo` ci scorre sopra — bug corretto (2026-09-12), prima il tap non
+  // faceva nulla su nativo (segnalato dall'utente dopo il primo build reale su Android).
+  //
+  // Bug corretto (2026-09-12, stesso giorno, verificato su Expo Go) — `measureLayout` va chiamato
+  // passando come primo argomento il REF del nodo relativo (`scrollView`), non un handle numerico
+  // da `findNodeHandle`: con la New Architecture (Fabric, attiva di default su Expo SDK 56, sezione
+  // AGENTS.md) `measureLayout` si aspetta un ref a un componente nativo, non più il vecchio node
+  // handle numerico dell'architettura legacy — passargli un numero produce l'errore "ref.measureLayout
+  // must be called with a ref to a native component" (mai visibile su web, dove questo ramo non gira
+  // affatto). `findNodeHandle` è stato quindi rimosso da questo file.
   const scrollToCategoria = (categoriaId: string) => {
     setActiveCategoriaId(categoriaId);
-    if (Platform.OS !== 'web') return;
+    // Sospende lo scroll-spy (web e nativo) per la durata dello scroll animato innescato dal tap,
+    // altrimenti "litiga" con la scelta appena fatta mentre le sezioni intermedie attraversano la
+    // fascia osservata — stesso bug di sfarfallio già scoperto e risolto lato cliente.
     suppressObserverUntilRef.current = Date.now() + 700;
-    const node = categoriaNodeById.current.get(categoriaId) as { scrollIntoView?: (opts: unknown) => void } | undefined;
-    node?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    if (Platform.OS === 'web') {
+      const node = categoriaNodeById.current.get(categoriaId) as
+        | { scrollIntoView?: (opts: unknown) => void }
+        | undefined;
+      node?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    const node = categoriaNodeById.current.get(categoriaId) as MeasurableNode | undefined;
+    const scrollView = scrollViewRef?.current;
+    if (!node?.measureLayout || !scrollView) return;
+    node.measureLayout(
+      scrollView,
+      (_x, y) => scrollView.scrollTo({ y: Math.max(y - 12, 0), animated: true }),
+      () => {}
+    );
+  };
+
+  // Scroll-spy su nativo — stesso ruolo dell'`IntersectionObserver` web (sotto), inesistente su
+  // nativo: ad ogni evento di scroll della pagina, la categoria "attiva" è quella con la Y
+  // memorizzata più alta che ha già superato la soglia `scrollY + CATEGORIA_ATTIVA_THRESHOLD_PX`
+  // (stessa idea del `rootMargin: '-96px ...'` usato dall'observer web, qui applicata come offset
+  // sulla posizione di scroll invece che come margine di osservazione).
+  const CATEGORIA_ATTIVA_THRESHOLD_PX = 100;
+  const handleScrollNative = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    if (Platform.OS === 'web') return;
+    if (Date.now() < suppressObserverUntilRef.current) return;
+    if (categoriaYCache.current.size === 0) return;
+    const scrollY = event.nativeEvent.contentOffset.y;
+    let candidateId: string | null = null;
+    let candidateY = Number.NEGATIVE_INFINITY;
+    categoriaYCache.current.forEach((y, id) => {
+      if (y <= scrollY + CATEGORIA_ATTIVA_THRESHOLD_PX && y > candidateY) {
+        candidateY = y;
+        candidateId = id;
+      }
+    });
+    if (candidateId && candidateId !== activeCategoriaId) setActiveCategoriaId(candidateId);
   };
 
   const resetImagePickerState = () => {
@@ -769,7 +858,13 @@ export function MenuAsportoSection() {
     scrollChipIntoView(chipNodeById.current.get(activeCategoriaId));
   }, [activeCategoriaId]);
 
-  return (
+  // Restituito in tre pezzi (non un solo albero JSX) apposta perché la barra di navigazione
+  // categorie deve arrivare a `app/staff/asporto.tsx` come figlio DIRETTO della ScrollView della
+  // pagina: `stickyHeaderIndices` (l'unico meccanismo nativo affidabile per uno sticky header, a
+  // differenza di `web:sticky`/CSS che non esiste su nativo, e di un overlay `Modal` — scartato,
+  // rischia di bloccare il touch sullo scroll sottostante su Android) guarda gli indici dei figli
+  // letterali passati alla ScrollView in JSX, non quanto in profondità un componente li annida.
+  const beforeNavBar = (
     <VStack space="md" className="w-full">
       <HStack className="items-center justify-between">
         {!isLoadingCatalogo && categorie.length > 0 ? (
@@ -821,115 +916,144 @@ export function MenuAsportoSection() {
       ) : null}
 
       {!isLoadingCatalogo && categorie.length > 0 ? (
-        <VStack space="sm">
-          {/* Da tablet in su, ricerca e filtro disponibilità stanno sulla stessa riga invece di
-              impilati — su uno schermo largo, tenerli su due righe separate spreca spazio
-              verticale senza alcun beneficio di leggibilità. */}
-          <VStack space="sm" className="md:flex-row md:items-center">
-            <Input className="md:flex-1">
-              <InputSlot className="pl-3">
-                <InputIcon as={SearchIcon} className="text-sky-400" />
+        /* Da tablet in su, ricerca e filtro disponibilità stanno sulla stessa riga invece di
+           impilati — su uno schermo largo, tenerli su due righe separate spreca spazio
+           verticale senza alcun beneficio di leggibilità. */
+        <VStack space="sm" className="md:flex-row md:items-center">
+          <Input className="md:flex-1">
+            <InputSlot className="pl-3">
+              <InputIcon as={SearchIcon} className="text-sky-400" />
+            </InputSlot>
+            <InputField
+              placeholder="Cerca prodotto per nome..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery ? (
+              <InputSlot className="pr-3">
+                <Pressable onPress={() => setSearchQuery('')} accessibilityLabel="Cancella ricerca">
+                  <InputIcon as={CloseIcon} className="text-sky-400" />
+                </Pressable>
               </InputSlot>
-              <InputField
-                placeholder="Cerca prodotto per nome..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {searchQuery ? (
-                <InputSlot className="pr-3">
-                  <Pressable onPress={() => setSearchQuery('')} accessibilityLabel="Cancella ricerca">
-                    <InputIcon as={CloseIcon} className="text-sky-400" />
-                  </Pressable>
-                </InputSlot>
-              ) : null}
-            </Input>
+            ) : null}
+          </Input>
 
-            <HStack space="xs">
-              {(
-                [
-                  { valore: 'tutti', label: 'Tutti' },
-                  { valore: 'visibili', label: 'Visibili' },
-                  { valore: 'nascosti', label: 'Nascosti' },
-                ] as const
-              ).map((opzione) => {
-                const selezionato = filtroDisponibilita === opzione.valore;
-                return (
-                  <Pressable
-                    key={opzione.valore}
-                    onPress={() => setFiltroDisponibilita(opzione.valore)}
-                    className={`min-h-9 items-center justify-center rounded-full border px-3 py-1.5 ${
-                      selezionato ? 'border-sky-500 bg-sky-100' : 'border-sky-200 bg-white'
-                    }`}
-                  >
-                    <Text size="xs" className={selezionato ? 'font-semibold text-sky-800' : 'text-sky-900/70'}>
-                      {opzione.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </HStack>
-          </VStack>
-
-          {/* Barra di navigazione rapida (ispirata a Just Eat/Glovo/Deliveroo, sezione 15):
-              con molte categorie saltare direttamente a quella cercata batte scorrere tutta la
-              pagina. Sticky solo su web (`web:sticky`, coerente con la fase attuale del progetto). */}
-          {gruppi.length > 1 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              className="web:sticky web:top-0 z-10 -mx-4 bg-background px-4 py-1 md:-mx-8 md:px-8"
-              contentContainerClassName="gap-2"
-            >
-              {gruppi.map((gruppo) => {
-                const isActive = gruppo.categoria.id === activeCategoriaId;
-                return (
-                  <Box key={gruppo.categoria.id} ref={registerChipRef(gruppo.categoria.id)}>
-                    <Pressable
-                      onPress={() => scrollToCategoria(gruppo.categoria.id)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Vai alla categoria ${gruppo.categoria.nome}`}
-                      className={`flex-row items-center gap-1.5 rounded-full border px-3 py-1.5 ${
-                        isActive ? 'border-sky-600 bg-sky-600 shadow-sm' : 'border-sky-300 bg-white active:bg-sky-50'
-                      }`}
-                    >
-                      <Text size="xs" className={`font-medium ${isActive ? 'text-white' : 'text-sky-900'}`}>
-                        {gruppo.categoria.nome}
-                      </Text>
-                      <Box className={`rounded-full px-1.5 py-0.5 ${isActive ? 'bg-white/25' : 'bg-sky-100'}`}>
-                        <Text size="2xs" className={`font-medium ${isActive ? 'text-white' : 'text-sky-700'}`}>
-                          {gruppo.items.length}
-                        </Text>
-                      </Box>
-                    </Pressable>
-                  </Box>
-                );
-              })}
-            </ScrollView>
-          ) : null}
-
-          {gruppi.length === 0 ? (
-            <Text size="sm" className="px-1 py-6 text-center text-muted-foreground">
-              {filtroAttivo
-                ? `Nessun prodotto trovato${searchQuery.trim() ? ` per «${searchQuery.trim()}»` : ''}.`
-                : 'Nessun prodotto nel menu ancora.'}
-            </Text>
-          ) : (
-            <VStack space="sm">
-              {gruppi.map((gruppo) => (
-                <CategoriaCard
-                  key={gruppo.categoria.id}
-                  gruppo={gruppo}
-                  cardRef={registerCategoriaRef(gruppo.categoria.id)}
-                  allergeneById={allergeneById}
-                  onAddProdotto={() => openCreateForm(gruppo.categoria.id)}
-                  onEditProdotto={openEditForm}
-                  onDeleteProdotto={handleDelete}
-                  onToggleDisponibile={handleToggleDisponibile}
-                />
-              ))}
-            </VStack>
-          )}
+          <HStack space="xs">
+            {(
+              [
+                { valore: 'tutti', label: 'Tutti' },
+                { valore: 'visibili', label: 'Visibili' },
+                { valore: 'nascosti', label: 'Nascosti' },
+              ] as const
+            ).map((opzione) => {
+              const selezionato = filtroDisponibilita === opzione.valore;
+              return (
+                <Pressable
+                  key={opzione.valore}
+                  onPress={() => setFiltroDisponibilita(opzione.valore)}
+                  className={`min-h-9 items-center justify-center rounded-full border px-3 py-1.5 ${
+                    selezionato ? 'border-sky-500 bg-sky-100' : 'border-sky-200 bg-white'
+                  }`}
+                >
+                  <Text size="xs" className={selezionato ? 'font-semibold text-sky-800' : 'text-sky-900/70'}>
+                    {opzione.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </HStack>
         </VStack>
+      ) : null}
+    </VStack>
+  );
+
+  const mostraCatalogo = !isLoadingCatalogo && categorie.length > 0;
+
+  // Barra di navigazione rapida (ispirata a Just Eat/Glovo/Deliveroo, sezione 15): con molte
+  // categorie saltare direttamente a quella cercata batte scorrere tutta la pagina. Su web resta
+  // sticky via CSS (`web:sticky web:top-0`, invariato); su nativo la stessa classe non ha alcun
+  // effetto — è `app/staff/asporto.tsx` a renderla sticky passandone l'indice a
+  // `stickyHeaderIndices` sulla ScrollView della pagina.
+  const navBar =
+    mostraCatalogo && gruppi.length > 1 ? (
+      // Sticky/sfondo/padding vivono sul `Box` esterno, non sulla `ScrollView` interna: quest'ultima
+      // si occupa solo dello scroll orizzontale dei chip, il `Box` è la barra vera e propria (il suo
+      // padding verticale è lo spazio "fuori dai pulsanti", non dentro ciascuno — i singoli chip
+      // (`Pressable px-3 py-1.5` sotto) restano invariati). `mt-2` sostituisce il gap `space="sm"`
+      // che, con questo pezzo diventato un figlio separato della ScrollView della pagina (non più
+      // annidato nella stessa VStack di ricerca/filtri e catalogo, sopra), non arriva più da un
+      // genitore condiviso. Sfondo passato come `style` inline (`NAV_BAR_BACKGROUND`, sopra), non
+      // più `bg-background` in className: bug corretto (2026-09-12), segnalato dall'utente su mobile.
+      <Box
+        // `py-2.5` (2026-09-12, stesso giorno, richiesta esplicita dell'utente — "non dentro i
+        // singoli bottoni ma fuori... aumenta la spaziatura sopra e sotto i pulsanti", poi
+        // ritoccato da `py-4` a `py-2.5` sulla stessa richiesta perché risultava "leggermente
+        // troppa"): spostato dal padding della `ScrollView` (un tentativo precedente, rimasto
+        // ambiguo su un componente che ha già un proprio meccanismo di scroll/misurazione) a questo
+        // `Box` wrapper — un contenitore "puro", senza altra responsabilità che ospitare la barra:
+        // il suo padding è inequivocabilmente spazio esterno ai pulsanti, sempre parte del suo box
+        // a prescindere da dove/come la barra viene posizionata durante lo scroll (sticky su
+        // nativo, `stickyHeaderIndices`).
+        className="web:sticky web:top-0 z-10 -mx-4 mt-2 px-4 py-2.5 md:-mx-8 md:px-8"
+        style={{ backgroundColor: NAV_BAR_BACKGROUND }}
+      >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
+          {gruppi.map((gruppo) => {
+            const isActive = gruppo.categoria.id === activeCategoriaId;
+            return (
+              <Box key={gruppo.categoria.id} ref={registerChipRef(gruppo.categoria.id)}>
+                <Pressable
+                  onPress={() => scrollToCategoria(gruppo.categoria.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Vai alla categoria ${gruppo.categoria.nome}`}
+                  className={`flex-row items-center gap-1.5 rounded-full border px-3 py-1.5 ${
+                    isActive ? 'border-sky-600 bg-sky-600 shadow-sm' : 'border-sky-300 bg-white active:bg-sky-50'
+                  }`}
+                >
+                  <Text size="xs" className={`font-medium ${isActive ? 'text-white' : 'text-sky-900'}`}>
+                    {gruppo.categoria.nome}
+                  </Text>
+                  <Box className={`rounded-full px-1.5 py-0.5 ${isActive ? 'bg-white/25' : 'bg-sky-100'}`}>
+                    <Text size="2xs" className={`font-medium ${isActive ? 'text-white' : 'text-sky-700'}`}>
+                      {gruppo.items.length}
+                    </Text>
+                  </Box>
+                </Pressable>
+              </Box>
+            );
+          })}
+        </ScrollView>
+      </Box>
+    ) : null;
+
+  const afterNavBar = (
+    <>
+      {/* `mt-2` sullo stesso principio del `navBar` sopra: replica il gap `space="sm"` perso
+          diventando un pezzo separato — presente sia con sia senza `navBar` sopra (un gruppo
+          nullo non consuma comunque il gap del genitore precedente, stesso effetto). */}
+      {mostraCatalogo ? (
+        gruppi.length === 0 ? (
+          <Text size="sm" className="mt-2 px-1 py-6 text-center text-muted-foreground">
+            {filtroAttivo
+              ? `Nessun prodotto trovato${searchQuery.trim() ? ` per «${searchQuery.trim()}»` : ''}.`
+              : 'Nessun prodotto nel menu ancora.'}
+          </Text>
+        ) : (
+          <VStack space="sm" className="mt-2">
+            {gruppi.map((gruppo) => (
+              <CategoriaCard
+                key={gruppo.categoria.id}
+                gruppo={gruppo}
+                cardRef={registerCategoriaRef(gruppo.categoria.id)}
+                allergeneById={allergeneById}
+                onAddProdotto={() => openCreateForm(gruppo.categoria.id)}
+                onEditProdotto={openEditForm}
+                onDeleteProdotto={handleDelete}
+                onToggleDisponibile={handleToggleDisponibile}
+              />
+            ))}
+          </VStack>
+        )
       ) : null}
 
       {/* Foglio "Gestisci categorie e allergeni": setup occasionale, tenuto fuori dal
@@ -1156,6 +1280,17 @@ export function MenuAsportoSection() {
           </ActionsheetScrollView>
         </ActionsheetContent>
       </Actionsheet>
-    </VStack>
+    </>
   );
+
+  // `handleScrollNative`/`handleContentSizeChangeNative` vanno agganciati alla ScrollView della
+  // pagina (`app/staff/asporto.tsx`) per lo scroll-spy nativo — no-op su web, dove la stessa cosa
+  // è già gestita dall'`IntersectionObserver` sopra.
+  return {
+    beforeNavBar,
+    navBar,
+    afterNavBar,
+    handleScrollNative,
+    handleContentSizeChangeNative: remeasureCategorieYNative,
+  };
 }

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Le Gole",
     "slug": "legole",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "scheme": "legole",
     "orientation": "default",
     "icon": "./assets/icon-appstore.png",
@@ -12,9 +12,10 @@
     },
     "android": {
       "package": "com.osterialegole.legole",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#eae0c8",
-        "foregroundImage": "./assets/logo-le-gole-nero.png"
+        "foregroundImage": "./assets/icon-adaptive-android.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -31,6 +32,13 @@
         {
           "photosPermission": "Le Gole ha bisogno di accedere alle tue foto per allegare l'immagine di un prodotto.",
           "cameraPermission": "Le Gole ha bisogno della fotocamera per scattare la foto di un prodotto."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#0284c7"
         }
       ]
     ],

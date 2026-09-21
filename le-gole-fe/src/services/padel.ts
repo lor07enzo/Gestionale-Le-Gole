@@ -219,6 +219,17 @@ export function listPrenotazioniPadelRecenti(limit = 50): Promise<PrenotazionePa
     .then((response) => response.data);
 }
 
+// Numero di partite (non cancellate) per giorno in un mese, per il calendario staff — stessa forma
+// di getConteggiPrenotazioniPiscina, senza 'inventario': il padel ha un solo campo.
+export function getConteggiPrenotazioniPadel(params: {
+  anno: number;
+  mese: number;
+}): Promise<Record<string, number>> {
+  return api
+    .get<Record<string, number>>(`${PRENOTAZIONI_PATH}conteggi/`, { params })
+    .then((response) => response.data);
+}
+
 export function getDisponibilitaPadel(params: { data: string }): Promise<DisponibilitaPadel> {
   return api
     .get<DisponibilitaPadel>(`${PRENOTAZIONI_PATH}disponibilita/`, { params })

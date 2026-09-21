@@ -1,4 +1,5 @@
 import { Image, Linking, Pressable } from 'react-native';
+import type { TextStyle, ViewStyle } from 'react-native';
 import { router } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
@@ -31,13 +32,32 @@ const ASSISTENZA = {
 
 const SOCIAL_LINKS = [
   { key: 'instagram', label: 'Instagram', Icon: InstagramIcon, url: 'https://instagram.com/osteria_legole' },
-  { key: 'facebook', label: 'Facebook', Icon: FacebookIcon, url: 'https://facebook.com/Le Gole' },
+  { key: 'facebook', label: 'Facebook', Icon: FacebookIcon, url: 'https://facebook.com/Osteria Le Gole' },
   { key: 'whatsapp', label: 'WhatsApp', Icon: WhatsAppIcon, url: 'https://wa.me/393334528903' },
 ];
 
 function openLink(url: string) {
   Linking.openURL(url).catch(() => {});
 }
+
+/**
+ * Le righe "icona + testo" di questo footer passano il vincolo di larghezza via `style` inline,
+ * non via className.
+ *
+ * Su nativo il default RN di `flexShrink` è 0: un `Text` in una riga senza un vincolo esplicito
+ * tiene la propria larghezza naturale, sfora a destra e viene tagliato dal `borderRadius` del
+ * riquadro che lo contiene (clipping implicito su Android) invece di andare a capo — da cui
+ * "Assistenza e feedback" reso come "Assistenza e", segnalato su Android e mai riproducibile sul
+ * web. Un primo tentativo con le sole classi (`flex-1` + `items-start`) non ha risolto: le classi
+ * flex di NativeWind v5 (alpha) si sono già dimostrate non sempre risolte su nativo, stesso
+ * genere di inaffidabilità già documentata per `bg-background`, `text-2xs` e `borderStyle` —
+ * quindi stesso rimedio già adottato altrove nel progetto, il valore passa da `style` inline.
+ *
+ * `flexWrap` sulla riga è la rete di sicurezza: se per qualunque motivo il testo restasse più
+ * largo dello spazio disponibile, scende su una seconda riga invece di essere tagliato.
+ */
+const ROW_STACK: ViewStyle = { flexWrap: 'wrap' };
+const ROW_TEXT: TextStyle = { flex: 1, flexShrink: 1 };
 
 function FooterColumnLabel({ children }: Readonly<{ children: string }>) {
   return (
@@ -78,9 +98,9 @@ export function ClienteFooter() {
               accessibilityRole="link"
               accessibilityLabel={`Chiama ${CONTATTI.telefono}`}
             >
-              <HStack space="sm" className="items-center">
-                <Icon as={PhoneIcon} size="sm" className="text-amber-200/70" />
-                <Text size="sm" className="text-amber-100/90">
+              <HStack space="sm" className="items-start" style={ROW_STACK}>
+                <Icon as={PhoneIcon} size="sm" className="mt-0.5 shrink-0 text-amber-200/70" />
+                <Text size="sm" className="text-amber-100/90" style={ROW_TEXT}>
                   {CONTATTI.telefono}
                 </Text>
               </HStack>
@@ -90,9 +110,9 @@ export function ClienteFooter() {
               accessibilityRole="link"
               accessibilityLabel={`Scrivi a ${CONTATTI.email}`}
             >
-              <HStack space="sm" className="items-center">
-                <Icon as={MailIcon} size="sm" className="text-amber-200/70" />
-                <Text size="sm" className="text-amber-100/90">
+              <HStack space="sm" className="items-start" style={ROW_STACK}>
+                <Icon as={MailIcon} size="sm" className="mt-0.5 shrink-0 text-amber-200/70" />
+                <Text size="sm" className="text-amber-100/90" style={ROW_TEXT}>
                   {CONTATTI.email}
                 </Text>
               </HStack>
@@ -102,9 +122,9 @@ export function ClienteFooter() {
               accessibilityRole="link"
               accessibilityLabel={`Apri l'indirizzo ${CONTATTI.indirizzo} su Google Maps`}
             >
-              <HStack space="sm" className="items-start">
+              <HStack space="sm" className="items-start" style={ROW_STACK}>
                 <Icon as={MapPinIcon} size="sm" className="mt-0.5 shrink-0 text-amber-200/70" />
-                <Text size="sm" className="flex-1 text-amber-100/90">
+                <Text size="sm" className="text-amber-100/90" style={ROW_TEXT}>
                   {CONTATTI.indirizzo}
                 </Text>
               </HStack>
@@ -134,9 +154,11 @@ export function ClienteFooter() {
         {/* Sezione dedicata a bug/feedback, distinta dalla colonna "Contatti" sopra. */}
         <Box className="w-full rounded-xl border border-white/10 bg-white/5 p-4">
           <VStack space="xs">
-            <HStack space="xs" className="items-center">
-              <Icon as={MessageCircleIcon} size="sm" className="text-amber-200/70" />
-              <Text size="sm" className="font-semibold text-amber-50">
+            {/* La riga che veniva tagliata su Android: vincolo di larghezza da `style` inline,
+                mai dalle sole classi — vedi ROW_STACK/ROW_TEXT sopra. */}
+            <HStack space="xs" className="items-start" style={ROW_STACK}>
+              <Icon as={MessageCircleIcon} size="sm" className="mt-0.5 shrink-0 text-amber-200/70" />
+              <Text size="sm" className="font-semibold text-amber-50" style={ROW_TEXT}>
                 Assistenza e feedback
               </Text>
             </HStack>
@@ -149,9 +171,10 @@ export function ClienteFooter() {
               accessibilityRole="link"
               accessibilityLabel={`Scrivi a ${ASSISTENZA.email} per assistenza o feedback`}
             >
-              <HStack space="sm" className="items-center">
-                <Icon as={MailIcon} size="sm" className="text-amber-200/70" />
-                <Text size="sm" className="font-semibold text-amber-100 underline">
+              {/* Stessa protezione: l'email è lunga abbastanza da rischiare lo stesso taglio. */}
+              <HStack space="sm" className="items-start" style={ROW_STACK}>
+                <Icon as={MailIcon} size="sm" className="mt-0.5 shrink-0 text-amber-200/70" />
+                <Text size="sm" className="font-semibold text-amber-100 underline" style={ROW_TEXT}>
                   {ASSISTENZA.email}
                 </Text>
               </HStack>

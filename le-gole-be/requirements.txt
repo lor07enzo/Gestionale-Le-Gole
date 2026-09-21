@@ -40,6 +40,30 @@ djangorestframework==3.17.1 \
     --hash=sha256:c3c74dd3e83a5a3efc37b3c18d92bd6f86a6791c7b7d4dff62bb068500e76457
 djangorestframework_simplejwt==5.5.1 \
     --hash=sha256:2c30f3707053d384e9f315d11c2daccfcb548d4faa453111ca19a542b732e469
+# Documentazione API: drf-spectacular genera lo schema OpenAPI 3 servito da Swagger UI/ReDoc
+# (sezione 17). Le righe che seguono sono la sua chiusura di dipendenze, obbligatoria per
+# intero sotto --require-hashes: inflection/uritemplate/PyYAML dirette, piu' jsonschema con
+# la propria catena (attrs, jsonschema-specifications, referencing, rpds-py). Hash dei wheel
+# LINUX (manylinux x86_64 per i due compilati, PyYAML e rpds-py): il venv Windows risolve
+# wheel win_amd64, i cui hash non combacerebbero con quelli scaricati dalla build Docker.
+drf-spectacular==0.30.0 \
+    --hash=sha256:006cf5921ebe20a9bd24f7c846261ebbf78780be5961b0d6e87afaa82afd62ff
+inflection==0.5.1 \
+    --hash=sha256:f38b2b640938a4f35ade69ac3d053042959b62a0f1076a5bbaa1b9526605a8a2
+uritemplate==4.2.0 \
+    --hash=sha256:962201ba1c4edcab02e60f9a0d3821e82dfc5d2d6662a21abd533879bdb8a686
+PyYAML==6.0.3 \
+    --hash=sha256:0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6
+jsonschema==4.26.0 \
+    --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
+attrs==26.1.0 \
+    --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309
+jsonschema-specifications==2025.9.1 \
+    --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe
+referencing==0.37.0 \
+    --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231
+rpds-py==2026.6.3 \
+    --hash=sha256:acac386b453c2516111b50985d60ce46e7fadb5ea71ae7b25f4c946935bf27cf
 factory_boy==3.3.3 \
     --hash=sha256:1c39e3289f7e667c4285433f305f8d506efc2fe9c73aaea4151ebd5cdea394fc
 Faker==40.36.0 \

@@ -34,6 +34,7 @@ type CalendarDayCellProps = {
   selectedDate: Date;
   today: Date;
   minDay: Date | null;
+  maxDay: Date | null;
   viewMode: ViewMode;
   count: number;
   isFull: boolean;
@@ -45,13 +46,15 @@ function CalendarDayCell({
   selectedDate,
   today,
   minDay,
+  maxDay,
   viewMode,
   count,
   isFull,
   onSelect,
 }: Readonly<CalendarDayCellProps>) {
-  // Un giorno "completo" non è selezionabile, stesso trattamento dei giorni prima di `minDate`.
-  const disabled = !inCurrentMonth || (minDay !== null && date < minDay) || isFull;
+  // Un giorno "completo" non è selezionabile, stesso trattamento dei giorni prima di `minDate`/dopo `maxDate`.
+  const fuoriIntervallo = (minDay !== null && date < minDay) || (maxDay !== null && date > maxDay);
+  const disabled = !inCurrentMonth || fuoriIntervallo || isFull;
   const isSelected = inCurrentMonth && isSameDay(date, selectedDate);
   const isToday = inCurrentMonth && isSameDay(date, today);
 
@@ -95,7 +98,26 @@ function CalendarDayCell({
                 : '-right-2 -top-2 h-3.5 min-w-3.5 border px-0.5'
             }`}
           >
-            <Text size="2xs" className={`text-center font-bold leading-none ${countBadge.text}`}>
+            {/*
+              `size="2xs"` esplicito + `fontSize` numerico inline, stesso identico fix già applicato
+              al badge di conteggio del pannello notifiche (NotificaCountBadge, NotificationsBell.tsx):
+              `text-2xs` non è definita da nessuna parte nel progetto, quindi senza questo override
+              il numero renderizzava alla taglia di default (~16px), eccedendo il badge (14-20px) e
+              risultando tagliato/illeggibile — esattamente lo stesso sintomo, stessa causa. Nessun
+              `lineHeight` numerico: su nativo react-native-css lo risolverebbe come multiplo del
+              font-size della CLASSE (non del nostro override), producendo una riga alta decine di
+              pixel dentro un badge di pochi pixel. `includeFontPadding`/`textAlignVertical` sono la
+              stessa contromisura Android-only per il glifo spinto in basso dal padding di riga.
+            */}
+            <Text
+              size="2xs"
+              className={`text-center font-bold ${countBadge.text}`}
+              style={{
+                fontSize: viewMode === 'week' ? 11 : 8,
+                includeFontPadding: false,
+                textAlignVertical: 'center',
+              }}
+            >
               {count}
             </Text>
           </Box>
@@ -110,6 +132,10 @@ export type CalendarPickerProps = {
   onSelect: (date: Date) => void;
   // Giorni prima di questa data sono disabilitati. Omesso lato staff.
   minDate?: Date;
+  // Giorni dopo questa data sono disabilitati — la controparte "verso il futuro" di `minDate`.
+  // Introdotto per "Storico Ordini" (asporto, sezione 15): un calendario di sola consultazione
+  // che non deve poter selezionare un giorno non ancora arrivato.
+  maxDate?: Date;
   // Mappa ISODate -> numero di prenotazioni. Presente solo lato staff: abilita anche il toggle Mese/Settimana.
   countsByDate?: Record<string, number>;
   // ISODate marcati "tutto prenotato", solo lato Area Cliente. Indipendente da countsByDate.
@@ -121,6 +147,7 @@ export function CalendarPicker({
   selectedDate,
   onSelect,
   minDate,
+  maxDate,
   countsByDate,
   fullDates,
   onVisibleMonthChange,
@@ -163,6 +190,7 @@ export function CalendarPicker({
   const cells = viewMode === 'month' ? buildMonthGrid(visibleMonth) : buildWeekGrid(visibleWeekStart);
   const today = new Date();
   const minDay = minDate ? new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate()) : null;
+  const maxDay = maxDate ? new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate()) : null;
   const weeks = Array.from({ length: cells.length / 7 }, (_, week) => cells.slice(week * 7, week * 7 + 7));
 
   return (
@@ -238,6 +266,7 @@ export function CalendarPicker({
                 selectedDate={selectedDate}
                 today={today}
                 minDay={minDay}
+                maxDay={maxDay}
                 viewMode={viewMode}
                 count={countsByDate?.[toISODate(day.date)] ?? 0}
                 isFull={fullDates?.[toISODate(day.date)] ?? false}

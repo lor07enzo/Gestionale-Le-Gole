@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ScrollView } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform, ScrollView } from 'react-native';
 import type { Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
@@ -14,7 +14,7 @@ import { AlertCircleIcon, ClockIcon, Icon } from '@/components/ui/icon';
 import { StaffPageHeader } from '../../src/components/staff/StaffPageHeader';
 import { SezioneLinkCard } from '../../src/components/staff/SezioneLinkCard';
 import { GiorniChiusuraCalendarCard } from '../../src/components/shared/GiorniChiusuraCalendarCard';
-import { MenuAsportoSection } from '../../src/components/staff/MenuAsportoSection';
+import { useMenuAsportoCatalogo } from '../../src/components/staff/MenuAsportoSection';
 import { StatoServizioAsportoCard } from '../../src/components/staff/asporto/StatoServizioAsportoCard';
 import {
   createGiornoChiusoAsporto,
@@ -471,8 +471,34 @@ export default function AsportoScreen() {
   const createChiusura = useCallback((iso: string) => createGiornoChiusoAsporto({ data: iso }), []);
   const removeChiusura = useCallback((id: string) => deleteGiornoChiusoAsporto(id), []);
 
+  // La ScrollView della pagina, passata al catalogo per lo scroll-to-categoria su nativo
+  // (measureLayout + scrollTo, `MenuAsportoSection.tsx`) e per rendere sticky la barra di
+  // navigazione categorie tramite `stickyHeaderIndices` (sotto) — `web:sticky`/CSS non esiste su
+  // nativo, quindi lì serve il meccanismo nativo di ScrollView, che richiede la barra come figlio
+  // diretto di QUESTA ScrollView (da cui `useMenuAsportoCatalogo` restituisce tre pezzi separati
+  // invece di un solo componente, sezione 15 di CLAUDE.md).
+  const scrollViewRef = useRef<ScrollView>(null);
+  const { beforeNavBar, navBar, afterNavBar, handleScrollNative, handleContentSizeChangeNative } =
+    useMenuAsportoCatalogo({ scrollViewRef });
+  // Indice del figlio "navBar" nell'array sotto — invariato finché la struttura resta questa
+  // (VStack, navBar, VStack). Solo su nativo: su web la stessa barra resta sticky via CSS
+  // (`web:sticky`), passare anche `stickyHeaderIndices` lì rischierebbe di far convivere due
+  // meccanismi di stickiness sulla stessa web build già funzionante.
+  const stickyHeaderIndices = Platform.OS !== 'web' && navBar ? [1] : undefined;
+
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
+    <ScrollView
+      ref={scrollViewRef}
+      className="flex-1 bg-background"
+      contentContainerClassName="px-4 py-6 md:px-8 md:py-10"
+      stickyHeaderIndices={stickyHeaderIndices}
+      // Scroll-spy nativo (evidenzia il chip categoria in base a cosa si sta guardando scorrendo
+      // la pagina, non solo al tap) — `onScroll`/`onContentSizeChange` sono no-op su web, dove lo
+      // stesso ruolo è già coperto dall'`IntersectionObserver` interno a `MenuAsportoSection.tsx`.
+      onScroll={handleScrollNative}
+      onContentSizeChange={handleContentSizeChangeNative}
+      scrollEventThrottle={100}
+    >
       <VStack space="lg" className="w-full">
         <StaffPageHeader
           title="Menu Asporto"
@@ -530,8 +556,10 @@ export default function AsportoScreen() {
         </Box>
 
         <Box className="h-px w-full bg-sky-200" />
-        <MenuAsportoSection />
+        {beforeNavBar}
       </VStack>
+      {navBar}
+      <Box className="w-full">{afterNavBar}</Box>
     </ScrollView>
   );
 }

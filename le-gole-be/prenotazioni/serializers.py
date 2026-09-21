@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 from .models import (
     PrenotazionePiscina,
     PrenotazioneAsporto,
@@ -202,6 +203,15 @@ class PrenotazionePadelSerializer(serializers.ModelSerializer):
         # principio di menu.VoceOrdineSerializer.prezzo_unitario).
         read_only_fields = ['durata_minuti', 'prezzo_partita', 'prezzo_palline']
 
+    # Un SerializerMethodField non dichiara da sé il proprio tipo: senza questo decoratore
+    # drf-spectacular documenterebbe `noleggi` come una semplice stringa invece che come elenco
+    # di righe di noleggio (sezione 17). Referenziato per nome di componente e non come classe
+    # perché NoleggioRacchettaSerializer è definita più sotto in questo stesso file, mentre un
+    # decoratore viene valutato alla definizione della classe — il `$ref` risolve invece a
+    # generazione dello schema, quando entrambi i componenti esistono già.
+    @extend_schema_field(
+        {'type': 'array', 'items': {'$ref': '#/components/schemas/NoleggioRacchetta'}}
+    )
     def get_noleggi(self, obj):
         return NoleggioRacchettaSerializer(
             obj.noleggi.select_related('racchetta').all(), many=True

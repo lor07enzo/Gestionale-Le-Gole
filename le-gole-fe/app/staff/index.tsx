@@ -20,7 +20,9 @@ function saluto(): string {
 
 function statPiscina(totale: number, attivi: number): string {
   if (totale === 0) return 'Nessun listino creato';
-  const listini = `${totale} listino${totale === 1 ? '' : 'i'}`;
+  // "listino"/"listini", non un suffisso: il plurale non si ottiene appendendo "i" al singolare
+  // (che finisce già in "o"), serve la parola intera.
+  const listini = `${totale} ${totale === 1 ? 'listino' : 'listini'}`;
   return `${listini} · ${attivi} attiv${attivi === 1 ? 'o' : 'i'}`;
 }
 

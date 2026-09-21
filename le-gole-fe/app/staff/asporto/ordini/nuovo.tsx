@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
@@ -308,26 +309,53 @@ export default function NuovoOrdineAsportoScreen() {
   // componendo — basta confrontare quante prenotazioni ci sono già con il limite.
   const limitePrenotazioniOrario = configurazione?.limite_prenotazioni_orario ?? null;
 
-  // Pulsante fluttuante "vai al carrello" (sotto, solo se cartLines non è vuoto) — stesso
-  // meccanismo ref+scrollIntoView già usato per `scrollToCarrello`/`cartSectionRef` in
-  // app/cliente/asporto/index.tsx, qui riportato identico (principio "copia diretta", sezione
-  // 15/7 di CLAUDE.md). Il ref va sull'unico `Box` reale (non su una `VStack`, la cui resa web
-  // non garantisce che il ref raggiunga il vero nodo DOM — stesso gotcha già documentato per
-  // `CategoriaCard`/`scrollToCategoria`).
+  // La ScrollView della pagina — serve solo su nativo, per `scrollToCarrello()` sotto
+  // (`measureLayout`/`scrollTo`, `scrollIntoView` non esiste lì).
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // Pulsante fluttuante "vai al carrello" (sotto, solo se cartLines non è vuoto). Il ref va
+  // sull'unico `Box` reale (non su una `VStack`, la cui resa web non garantisce che il ref
+  // raggiunga il vero nodo DOM — stesso gotcha già documentato per `CategoriaCard`/
+  // `scrollToCategoria`, MenuAsportoSection.tsx).
   const cartSectionRef = useRef<unknown>(null);
   const registerCartRef = (node: unknown) => {
     cartSectionRef.current = node;
   };
+  // Due percorsi per piattaforma — stesso motivo di sempre (`scrollIntoView` è un'API DOM, non
+  // esiste su nativo). Bug corretto (2026-09-12): su nativo il tap non faceva nulla, segnalato
+  // dall'utente dopo il primo build reale su Android — stesso fix già applicato a
+  // `scrollToCategoria` in MenuAsportoSection.tsx (`measureLayout` contro la ScrollView della
+  // pagina, poi `scrollTo`).
+  //
+  // Bug corretto (2026-09-12, stesso giorno, verificato su Expo Go): `measureLayout` vuole come
+  // primo argomento il REF del nodo relativo, non un node handle numerico da `findNodeHandle` —
+  // con la New Architecture (Fabric, di default su Expo SDK 56) un handle numerico produce l'errore
+  // "ref.measureLayout must be called with a ref to a native component" (mai visibile su web).
   const scrollToCarrello = () => {
-    if (Platform.OS !== 'web') return;
-    const node = cartSectionRef.current as { scrollIntoView?: (opts: unknown) => void } | undefined;
-    node?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    if (Platform.OS === 'web') {
+      const node = cartSectionRef.current as { scrollIntoView?: (opts: unknown) => void } | undefined;
+      node?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    const node = cartSectionRef.current as
+      | { measureLayout?: (relativeToRef: unknown, onSuccess: (x: number, y: number) => void, onFail: () => void) => void }
+      | undefined;
+    const scrollView = scrollViewRef.current;
+    if (!node?.measureLayout || !scrollView) return;
+    node.measureLayout(
+      scrollView,
+      (_x, y) => scrollView.scrollTo({ y: Math.max(y - 12, 0), animated: true }),
+      () => {}
+    );
   };
 
   // Il pulsante non ha senso quando la sezione "Riepilogo ordine" è già visibile a schermo — su
   // richiesta esplicita dell'utente, sparisce mentre lo staff sta già guardando il carrello.
-  // Stesso `IntersectionObserver` (solo web) già usato per lo scroll-spy delle categorie nelle
-  // pagine cliente asporto (`activeCategoriaId`), qui applicato a un solo nodo invece che a N.
+  // Web: `IntersectionObserver` (stesso già usato per lo scroll-spy delle categorie nelle pagine
+  // cliente asporto, `activeCategoriaId`, qui su un solo nodo invece che su N). Nativo: non esiste
+  // un `IntersectionObserver` — approssimato con "vicino al fondo dello scroll" (`onScroll` sulla
+  // stessa ScrollView, soglia in px), sufficiente perché il riepilogo è sempre l'ultima sezione
+  // della pagina: previene anche che il pulsante resti fisso sopra "Crea ordine" a fondo pagina.
   const [isCarrelloInView, setIsCarrelloInView] = useState(false);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -339,6 +367,11 @@ export default function NuovoOrdineAsportoScreen() {
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+  const handleScrollNative = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (Platform.OS === 'web') return;
+    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+    setIsCarrelloInView(contentOffset.y + layoutMeasurement.height >= contentSize.height - 80);
+  };
   const isSlotEsaurito = (slot: string) => {
     if (limitePrenotazioniOrario === null) return false;
     const prenotate = prenotazioniPerOrario[slot] ?? 0;
@@ -443,7 +476,13 @@ export default function NuovoOrdineAsportoScreen() {
 
   return (
     <>
-      <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
+      <ScrollView
+        ref={scrollViewRef}
+        onScroll={handleScrollNative}
+        scrollEventThrottle={100}
+        className="flex-1 bg-background"
+        contentContainerClassName="px-4 py-6 md:px-8 md:py-10"
+      >
         <VStack space="lg" className="w-full">
           <NuovoOrdineHeader />
 
@@ -701,7 +740,13 @@ export default function NuovoOrdineAsportoScreen() {
           onPress={scrollToCarrello}
           accessibilityRole="button"
           accessibilityLabel="Vai al riepilogo dell'ordine"
-          className="web:fixed bottom-6 right-6 z-20 flex-row items-center gap-1.5 rounded-full bg-sky-600 px-4 py-3 shadow-lg active:bg-sky-700"
+          // `web:fixed` da solo lasciava il pulsante senza alcun `position` su nativo — un
+          // Pressable "in flusso" dentro un genitore flex-column prende l'intera larghezza
+          // disponibile, esattamente il bug segnalato ("in orizzontale per tutta la larghezza
+          // dello schermo"). `native:absolute` lo rende un overlay anche lì: in RN un figlio
+          // assoluto si posiziona già rispetto al proprio genitore reale senza bisogno di un
+          // esplicito `position: relative` su di esso (a differenza del web).
+          className="native:absolute web:fixed bottom-6 right-6 z-20 flex-row items-center gap-1.5 rounded-full bg-sky-600 px-4 py-3 shadow-lg active:bg-sky-700"
         >
           <Text size="sm" className="font-semibold text-white">
             🛒 {totaleArticoli} · €{formatPrezzo(totale.toFixed(2))}

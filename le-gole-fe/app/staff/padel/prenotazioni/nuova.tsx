@@ -11,16 +11,19 @@ import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { AddIcon, Icon, RemoveIcon } from '@/components/ui/icon';
 import { StaffPageHeader } from '../../../../src/components/staff/StaffPageHeader';
-import { DateNavBar } from '../../../../src/components/shared/DateNavBar';
+import { DateNavigatorPadel } from '../../../../src/components/staff/padel/DateNavigatorPadel';
 import { SlotPickerPadel } from '../../../../src/components/shared/SlotPickerPadel';
 import { createCliente } from '../../../../src/services/clienti';
 import {
+  createNoleggioRacchetta,
   createPrenotazionePadel,
   getConfigurazionePadel,
   listGiorniChiusiPadel,
   listPrenotazioniPadel,
+  listRacchettePadel,
   type ConfigurazionePadel,
   type PrenotazionePadel,
+  type RacchettaPadel,
 } from '../../../../src/services/padel';
 import { toISODate } from '../../../../src/utils/piscinaMappa';
 import { calcolaSlotOccupazione, formatTotaleEuro } from '../../../../src/utils/padel';
@@ -39,6 +42,7 @@ export default function NuovaPartitaPadelScreen() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [configurazione, setConfigurazione] = useState<ConfigurazionePadel | null>(null);
   const [giorniChiusi, setGiorniChiusi] = useState<string[]>([]);
+  const [racchette, setRacchette] = useState<RacchettaPadel[]>([]);
   const [partiteDelGiorno, setPartiteDelGiorno] = useState<PrenotazionePadel[]>([]);
   const [isLoadingBase, setIsLoadingBase] = useState(true);
   const [isLoadingGiorno, setIsLoadingGiorno] = useState(true);
@@ -48,21 +52,44 @@ export default function NuovaPartitaPadelScreen() {
   const [ora, setOra] = useState('');
   const [partecipanti, setPartecipanti] = useState(2);
   const [palline, setPalline] = useState(false);
+  const [racchetteQty, setRacchetteQty] = useState<Record<string, number>>({});
   const [note, setNote] = useState('');
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getConfigurazionePadel(), listGiorniChiusiPadel()])
-      .then(([config, chiusure]) => {
+    // Nessun filtro 'disponibile': a differenza del self-service cliente, lo staff può noleggiare
+    // manualmente anche una racchetta nascosta dal catalogo online (stesso principio già in vigore
+    // per NoleggiRacchetteEditor sul dettaglio partita, sezione 16).
+    Promise.all([getConfigurazionePadel(), listGiorniChiusiPadel(), listRacchettePadel()])
+      .then(([config, chiusure, catalogoRacchette]) => {
         setConfigurazione(config);
         setGiorniChiusi(chiusure.map((giorno) => giorno.data));
+        setRacchette(catalogoRacchette);
         setPartecipanti(Math.min(2, config.max_partecipanti));
       })
       .catch(() => setError('Impossibile caricare la configurazione del campo.'))
       .finally(() => setIsLoadingBase(false));
   }, []);
+
+  // Un partecipante in meno può riportare il totale racchette già scelte sopra il nuovo tetto —
+  // stessa identica logica del flusso self-service cliente (app/cliente/padel.tsx).
+  useEffect(() => {
+    setRacchetteQty((prev) => {
+      let totale = Object.values(prev).reduce((somma, qty) => somma + qty, 0);
+      if (totale <= partecipanti) return prev;
+      const next = { ...prev };
+      for (const id of Object.keys(next)) {
+        while (totale > partecipanti && next[id] > 0) {
+          next[id] -= 1;
+          totale -= 1;
+        }
+        if (totale <= partecipanti) break;
+      }
+      return next;
+    });
+  }, [partecipanti]);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,13 +129,18 @@ export default function NuovaPartitaPadelScreen() {
 
   const isGiornoChiuso = giorniChiusi.includes(toISODate(selectedDate));
   const maxPartecipanti = configurazione?.max_partecipanti ?? 4;
+  const totaleRacchetteSelezionate = Object.values(racchetteQty).reduce((somma, qty) => somma + qty, 0);
 
   const totale = useMemo(() => {
     if (!configurazione) return 0;
-    const partita = Number.parseFloat(configurazione.prezzo_partita) || 0;
-    const setPalline = palline ? Number.parseFloat(configurazione.prezzo_noleggio_palline) || 0 : 0;
-    return partita + setPalline;
-  }, [configurazione, palline]);
+    let somma = Number.parseFloat(configurazione.prezzo_partita) || 0;
+    if (palline) somma += Number.parseFloat(configurazione.prezzo_noleggio_palline) || 0;
+    racchette.forEach((racchetta) => {
+      const qty = racchetteQty[racchetta.id] ?? 0;
+      if (qty > 0) somma += qty * (Number.parseFloat(racchetta.prezzo_noleggio) || 0);
+    });
+    return somma;
+  }, [configurazione, palline, racchette, racchetteQty]);
 
   const handleSubmit = async () => {
     if (!nome.trim() || !telefono.trim()) {
@@ -133,6 +165,19 @@ export default function NuovaPartitaPadelScreen() {
         note: note.trim(),
         stato: 'CONFIRMED',
       });
+
+      const righeRacchette = Object.entries(racchetteQty).filter(([, qty]) => qty > 0);
+      if (righeRacchette.length > 0) {
+        // Promise.all, non allSettled: un noleggio fallito silenziosamente lascerebbe lo staff
+        // convinto di aver registrato una racchetta che invece non risulta da nessuna parte —
+        // stesso principio già seguito per il checkout self-service cliente.
+        await Promise.all(
+          righeRacchette.map(([racchettaId, quantita]) =>
+            createNoleggioRacchetta({ prenotazione: partita.id, racchetta: racchettaId, quantita })
+          )
+        );
+      }
+
       router.replace(`/staff/padel/prenotazioni/${partita.id}` as Href);
     } catch (err) {
       setError(extractErrorMessage(err, 'Impossibile registrare la partita.'));
@@ -157,8 +202,10 @@ export default function NuovaPartitaPadelScreen() {
           <Text size="xs" className={SEZIONE_TITOLO}>
             Quando
           </Text>
-          {/* minDate a oggi: una partita non si prenota nel passato. */}
-          <DateNavBar selectedDate={selectedDate} onChange={setSelectedDate} minDate={new Date()} />
+          {/* minDate a oggi: una partita non si prenota nel passato. Stessa identica struttura
+              del DateNavigator della mappa piscina staff — pillola con calendario a tocco,
+              conteggi per giorno, "Torna a oggi" — invece del semplice ◀/▶ di DateNavBar. */}
+          <DateNavigatorPadel selectedDate={selectedDate} onChange={setSelectedDate} minDate={new Date()} />
 
           {isGiornoChiuso ? (
             <Box className="rounded-xl bg-amber-50 px-3 py-2">
@@ -288,6 +335,68 @@ export default function NuovaPartitaPadelScreen() {
             <Switch value={palline} onValueChange={setPalline} />
           </HStack>
 
+          {racchette.length > 0 ? (
+            <VStack space="sm" className="rounded-xl border border-sky-100 bg-sky-50 p-3">
+              <HStack className="items-center justify-between">
+                <Text size="sm" className="font-medium">
+                  Racchette a noleggio
+                </Text>
+                <Text size="2xs" className="text-muted-foreground">
+                  {totaleRacchetteSelezionate}/{partecipanti}
+                </Text>
+              </HStack>
+              {racchette.map((racchetta) => {
+                const valore = racchetteQty[racchetta.id] ?? 0;
+                const residuoPartecipanti = partecipanti - (totaleRacchetteSelezionate - valore);
+                const max = Math.max(0, Math.min(racchetta.quantita_disponibile, residuoPartecipanti));
+                return (
+                  <HStack key={racchetta.id} space="sm" className="items-center">
+                    <Text size="md">🎾</Text>
+                    <VStack className="flex-1">
+                      <Text size="sm" className="font-medium">
+                        {racchetta.nome}
+                        {racchetta.disponibile ? '' : ' · nascosta online'}
+                      </Text>
+                      <Text size="2xs" className="text-muted-foreground">
+                        € {formatPrezzo(racchetta.prezzo_noleggio)} a partita · {racchetta.quantita_disponibile}{' '}
+                        pezzi
+                      </Text>
+                    </VStack>
+                    <HStack space="xs" className="items-center">
+                      <Pressable
+                        onPress={() =>
+                          setRacchetteQty((prev) => ({ ...prev, [racchetta.id]: Math.max(0, valore - 1) }))
+                        }
+                        disabled={valore <= 0}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Diminuisci ${racchetta.nome}`}
+                        className={`h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white ${
+                          valore <= 0 ? 'opacity-40' : 'active:bg-sky-50'
+                        }`}
+                      >
+                        <Icon as={RemoveIcon} size="sm" className="text-sky-900" />
+                      </Pressable>
+                      <Text size="md" className="w-6 text-center font-bold text-sky-900">
+                        {valore}
+                      </Text>
+                      <Pressable
+                        onPress={() => setRacchetteQty((prev) => ({ ...prev, [racchetta.id]: valore + 1 }))}
+                        disabled={valore >= max}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Aumenta ${racchetta.nome}`}
+                        className={`h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white ${
+                          valore >= max ? 'opacity-40' : 'active:bg-sky-50'
+                        }`}
+                      >
+                        <Icon as={AddIcon} size="sm" className="text-sky-900" />
+                      </Pressable>
+                    </HStack>
+                  </HStack>
+                );
+              })}
+            </VStack>
+          ) : null}
+
           <VStack space="xs">
             <Text size="sm" className="font-medium">
               Note
@@ -298,8 +407,8 @@ export default function NuovaPartitaPadelScreen() {
           </VStack>
 
           <Text size="2xs" className="text-muted-foreground">
-            Le racchette a noleggio si aggiungono dal dettaglio della partita, subito dopo il
-            salvataggio.
+            Puoi aggiungere o modificare le racchette a noleggio anche dal dettaglio della partita,
+            dopo il salvataggio.
           </Text>
         </VStack>
 
@@ -310,6 +419,7 @@ export default function NuovaPartitaPadelScreen() {
           <HStack className="items-center justify-between">
             <Text size="sm" className="text-muted-foreground">
               Partita{palline ? ' + palline' : ''}
+              {totaleRacchetteSelezionate > 0 ? ' + racchette' : ''}
             </Text>
             <Text size="lg" className="font-bold text-sky-900">
               € {formatTotaleEuro(totale)}

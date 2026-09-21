@@ -10,7 +10,7 @@ import { Text } from '@/components/ui/text';
 import { Spinner } from '@/components/ui/spinner';
 import { AddIcon, ChevronRightIcon, Icon } from '@/components/ui/icon';
 import { StaffPageHeader } from '../../../src/components/staff/StaffPageHeader';
-import { DateNavBar } from '../../../src/components/shared/DateNavBar';
+import { DateNavigatorPadel } from '../../../src/components/staff/padel/DateNavigatorPadel';
 import { DisponibilitaGiornoPadel } from '../../../src/components/staff/padel/DisponibilitaGiornoPadel';
 import {
   getDisponibilitaPadel,
@@ -114,9 +114,11 @@ export default function PrenotazioniPadelScreen() {
           fallbackHref="/staff/padel"
         />
 
-        {/* Nessun limite sulle date: una partita si prenota con giorni di anticipo, quindi lo
-            staff deve poter guardare avanti oltre a consultare lo storico. */}
-        <DateNavBar selectedDate={selectedDate} onChange={setSelectedDate} />
+        {/* Nessun minDate: una partita si prenota con giorni di anticipo, quindi lo staff deve
+            poter guardare avanti oltre a consultare lo storico (stesso calendario a tocco della
+            mappa piscina staff, sezione 5/16 di CLAUDE.md — nessuna restrizione qui, a differenza
+            della pagina "Nuova partita"). */}
+        <DateNavigatorPadel selectedDate={selectedDate} onChange={setSelectedDate} />
 
         <Pressable
           onPress={() => router.push('/staff/padel/prenotazioni/nuova' as Href)}

@@ -568,9 +568,16 @@ export function EditOrdineSheet({
 
               <Box className="h-px w-full bg-sky-100" />
 
-              <HStack className="items-center justify-between">
+              {/* La nota sul salvataggio immediato delle righe vive qui, accanto a ciò che descrive,
+                  non più in fondo incastrata tra "Salva" e "Chiudi" (dove spezzava i due pulsanti e
+                  sembrava riferirsi al pulsante Salva invece che ai prodotti). */}
+              <VStack space="xs">
                 <Heading size="sm">Prodotti ({voci.length})</Heading>
-              </HStack>
+                <Text size="xs" className="text-muted-foreground">
+                  Quantità, aggiunte e rimozioni si salvano subito: il pulsante in fondo riguarda solo
+                  orario e note.
+                </Text>
+              </VStack>
 
               {voci.length === 0 ? (
                 <Text size="sm" className="text-muted-foreground">
@@ -616,15 +623,13 @@ export function EditOrdineSheet({
                 </Text>
               ) : null}
 
-              <Button onPress={handleSave} disabled={isSubmitting}>
+              <Button onPress={handleSave} disabled={isSubmitting} isDisabled={isSubmitting}>
                 {isSubmitting ? <ButtonSpinner /> : <ButtonText>Salva orario e note</ButtonText>}
               </Button>
-              <Text size="2xs" className="text-center text-muted-foreground">
-                Le modifiche ai prodotti (quantità, aggiunte, rimozioni) si salvano subito, senza
-                bisogno di premere "Salva".
-              </Text>
-              <Button variant="link" onPress={onClose}>
-                <ButtonText>Chiudi</ButtonText>
+              {/* Outline, non più `variant="link"`: sotto il pulsante pieno "Salva" un link nudo
+                  sbilanciava la coppia. Stesso stile del "Chiudi" di AggiungiProdottoSheet, sopra. */}
+              <Button variant="outline" className="border-2 border-sky-300 bg-white" onPress={onClose}>
+                <ButtonText className="text-sky-700">Chiudi</ButtonText>
               </Button>
             </VStack>
           </ActionsheetScrollView>

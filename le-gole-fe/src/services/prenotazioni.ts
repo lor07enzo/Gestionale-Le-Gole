@@ -298,6 +298,19 @@ export function listPrenotazioniAsportoRecenti(limit = 50): Promise<Prenotazione
     .then((response) => response.data);
 }
 
+// Numero di ordini (non cancellati) per giorno in un mese, per il calendario di "Storico Ordini" —
+// stessa forma di getConteggiPrenotazioniPiscina/getConteggiPrenotazioniPadel, senza 'inventario':
+// l'asporto non ha un concetto di listino.
+// GET /v1/prenotazioni/asporto/conteggi/?anno={anno}&mese={mese}
+export function getConteggiPrenotazioniAsporto(params: {
+  anno: number;
+  mese: number;
+}): Promise<Record<string, number>> {
+  return api
+    .get<Record<string, number>>(`${PRENOTAZIONI_ASPORTO_PATH}conteggi/`, { params })
+    .then((response) => response.data);
+}
+
 // Risposta pubblica di GET /prenotazioni/asporto/prenotazioni-per-orario/ — numero di
 // prenotazioni (ordini distinti, non CANCELLED) per ciascun orario in una data (es.
 // `{"12:15": 2}`), solo gli orari con almeno una prenotazione compaiono. Combinata lato client

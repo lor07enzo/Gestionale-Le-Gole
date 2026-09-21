@@ -5,6 +5,9 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema, extend_schema_view
+
+from backend import openapi
 
 from .models import (
     Allergene,
@@ -24,6 +27,17 @@ from .serializers import (
 )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary='Leggi la configurazione asporto (pubblico)',
+        responses={200: ConfigurazioneAsportoSerializer},
+    ),
+    patch=extend_schema(
+        summary='Aggiorna la configurazione asporto (staff)',
+        request=ConfigurazioneAsportoSerializer,
+        responses={200: ConfigurazioneAsportoSerializer, 400: openapi.errore('Valori non validi.')},
+    ),
+)
 class ConfigurazioneAsportoView(APIView):
     """
     Configurazione singleton dell'orario di disponibilità del servizio asporto. Non un

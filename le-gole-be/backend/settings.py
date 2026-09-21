@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'drf_spectacular',
     'anymail',
     'menu',
     'prenotazioni',
@@ -170,6 +171,61 @@ REST_FRAMEWORK = {
         'anon': '120/min',
         'user': '300/min',
     },
+    # Generatore dello schema OpenAPI 3 (drf-spectacular). Senza questa riga DRF userebbe il
+    # proprio generatore AutoSchema legacy, che produce OpenAPI 2 e ignora ogni @extend_schema.
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Documentazione API (drf-spectacular) — schema OpenAPI 3 + Swagger UI, vedi sezione 17.
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Le Gole — API Gestionale Prenotazioni',
+    'DESCRIPTION': (
+        'API REST del gestionale de Le Gole: piscina, asporto e padel.\n\n'
+        '**Autenticazione.** Le azioni riservate allo staff usano un token JWT: '
+        'chiamare `POST /api/v1/users/login/` con username e password, poi passare '
+        '`Authorization: Bearer <access>` (pulsante "Authorize" qui sopra). '
+        'Le azioni pubbliche (creazione prenotazione self-service, disponibilità, '
+        'biglietto PDF, storico per telefono) non richiedono alcun token — '
+        'ciascuna è marcata come tale nella propria descrizione.\n\n'
+        '**Rate limit.** 120 richieste/minuto per IP anonimo, 300/minuto per utente '
+        'autenticato (sezione 2 della guida).'
+    ),
+    'VERSION': '1.0.0',
+    # Lo schema si documenta da sé: senza questa riga drf-spectacular aggiunge anche
+    # /api/v1/schema/ e la UI stessa all'elenco degli endpoint.
+    'SERVE_INCLUDE_SCHEMA': False,
+    # Usato solo per derivare tag e operationId leggibili ("piscina_list" invece di
+    # "api_v1_prenotazioni_piscina_list"): il prefisso NON viene tolto dai path, che restano
+    # quelli reali e copiabili in un curl.
+    #
+    # Deliberatamente nessun 'SERVERS': dichiarare `/api/v1` come server URL mentre i path lo
+    # contengono già farebbe puntare il "Try it out" di Swagger a /api/v1/api/v1/... (404).
+    # Senza, la UI usa l'origine da cui è servita, che è sempre quella giusta in locale come in
+    # produzione.
+    'SCHEMA_PATH_PREFIX': '/api/v1',
+    'SORT_OPERATIONS': False,
+    # Versioni CDN pinnate, non il default `@latest` di drf-spectacular: un rilascio upstream
+    # che rompesse qualcosa arriverebbe altrimenti in produzione da solo, senza alcun deploy da
+    # parte nostra e senza che nessun test possa accorgersene. Stessa disciplina di pinning già
+    # in vigore ovunque nel progetto (digest del FROM Docker, --require-hashes, netlify-cli).
+    # Da alzare a mano quando si vuole aggiornare, come per il digest dell'immagine base.
+    'SWAGGER_UI_DIST': 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.15',
+    'SWAGGER_UI_FAVICON_HREF': 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.15/favicon-32x32.png',
+    # Base della distribuzione, non il file: drf-spectacular appende da sé
+    # `/bundles/redoc.standalone.js`.
+    'REDOC_DIST': 'https://cdn.jsdelivr.net/npm/redoc@2.5.4',
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+        'docExpansion': 'none',
+    },
+    # I due enum condivisi del progetto: senza un nome esplicito drf-spectacular lo deriva dal
+    # campo e avvisa a ogni collisione tra serializer che condividono le stesse choices
+    # (STATO_CHOICES è ereditato dalla base astratta Prenotazione da tutti e tre i servizi).
+    'ENUM_NAME_OVERRIDES': {
+        'StatoPrenotazioneEnum': 'prenotazioni.models.Prenotazione.STATO_CHOICES',
+        'TipoPostazioneEnum': 'struttura.models.Postazione.TIPO_CHOICES',
+    },
 }
 
 SIMPLE_JWT = {
@@ -194,6 +250,11 @@ ANYMAIL = {
 }
 
 DEFAULT_FROM_EMAIL = "Le Gole <noreply@osterialegole.com>" # Deve corrispondere al dominio verificato su Resend
+
+# Notifiche push staff (users/push.py). Opzionale: l'Expo Push Service accetta gli invii anche
+# senza, serve solo se su Expo è stata attivata la "push security" — che è comunque consigliata,
+# altrimenti chiunque conosca un push token potrebbe spedire notifiche a quel dispositivo.
+EXPO_ACCESS_TOKEN = env.str('EXPO_ACCESS_TOKEN', default='')
 
 # Cloudinary: storage per i file media (es. Prodotto.immagine, menu/models.py) — il filesystem di
 # Render è effimero (si svuota ad ogni deploy, sezione 12), quindi le immagini non possono vivere

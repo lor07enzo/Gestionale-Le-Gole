@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 const ACCESS_TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
 const NOTIFICHE_LETTE_KEY = 'staffNotificheLetteIds';
+const PUSH_TOKEN_KEY = 'staffPushToken';
 
 // expo-secure-store non ha implementazione web: fallback su localStorage.
 function getItem(key: string): Promise<string | null> {
@@ -63,4 +64,19 @@ export async function getNotificheLetteIds(): Promise<string[]> {
 
 export function saveNotificheLetteIds(ids: string[]): Promise<void> {
   return setItem(NOTIFICHE_LETTE_KEY, JSON.stringify(ids));
+}
+
+// Expo push token dell'installazione, salvato al momento della registrazione: al logout serve per
+// dire al backend quale dispositivo smettere di notificare, e richiederlo di nuovo a Expo in quel
+// momento potrebbe fallire (permesso nel frattempo revocato) proprio quando serve.
+export function getPushToken(): Promise<string | null> {
+  return getItem(PUSH_TOKEN_KEY);
+}
+
+export function savePushToken(token: string): Promise<void> {
+  return setItem(PUSH_TOKEN_KEY, token);
+}
+
+export function clearPushToken(): Promise<void> {
+  return deleteItem(PUSH_TOKEN_KEY);
 }

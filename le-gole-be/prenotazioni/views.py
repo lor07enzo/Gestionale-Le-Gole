@@ -4,13 +4,18 @@ from django.db import transaction
 from django.db.models import Count
 from django.http import HttpResponse
 from django.template.loader import render_to_string
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 import weasyprint
 
+from backend import openapi
+
 from struttura.models import ConfigurazionePadel, GiornoChiusoPadel, PiscinaInventario
+from users.push import invia_notifica_staff
 from .models import (
     PrenotazionePiscina,
     PrenotazioneAsporto,
@@ -28,6 +33,42 @@ from .serializers import (
     GiornoPienoPiscinaSerializer,
 )
 from .utils import calcola_disponibilita, calcola_disponibilita_padel
+
+TITOLI_NOTIFICA = {
+    'PISCINA': '🏊 Nuova prenotazione piscina',
+    'ASPORTO': '🥡 Nuovo ordine asporto',
+    'PADEL': '🎾 Nuova partita padel',
+}
+
+
+def _quando(prenotazione):
+    """
+    "alle 19:30" per oggi, "18/09 alle 19:30" per un altro giorno: su una schermata di blocco lo
+    spazio è poco e ripetere la data odierna su ogni notifica sarebbe solo rumore.
+    """
+    ora = prenotazione.ora.strftime('%H:%M') if prenotazione.ora else ''
+    if prenotazione.data == timezone.localdate():
+        return f'alle {ora}'
+    return f"{prenotazione.data.strftime('%d/%m')} alle {ora}"
+
+
+def _avvisa_staff(categoria, prenotazione, corpo, **dati):
+    """
+    Notifica push allo staff per una prenotazione arrivata dal self-service (users/push.py).
+
+    Chiamata **solo per le richieste anonime**, esattamente come `creata_da_staff=False`: avvisare
+    lo staff di un walk-in che ha appena registrato lui stesso sarebbe rumore, non un segnale —
+    stesso identico filtro già applicato dal feed `recenti` del pannello in-app (sezione 11).
+
+    `dati` viaggia insieme alla notifica e serve al tap: l'app la usa per aprire direttamente la
+    schermata della prenotazione invece di lasciare lo staff sulla home.
+    """
+    invia_notifica_staff(
+        titolo=TITOLI_NOTIFICA[categoria],
+        corpo=corpo,
+        dati={'categoria': categoria, 'prenotazioneId': str(prenotazione.id), **dati},
+    )
+
 
 class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
     """
@@ -50,7 +91,14 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
         request = self.request
         is_richiesta_pubblica = not (request.user and request.user.is_authenticated)
         if is_richiesta_pubblica:
-            serializer.save(stato='CONFIRMED', creata_da_staff=False)
+            prenotazione = serializer.save(stato='CONFIRMED', creata_da_staff=False)
+            _avvisa_staff(
+                'PISCINA',
+                prenotazione,
+                f'{prenotazione.cliente_id.nome} · {_quando(prenotazione)}',
+                inventarioId=str(prenotazione.inventario_id),
+                data=str(prenotazione.data),
+            )
         else:
             serializer.save(creata_da_staff=True)
 
@@ -72,6 +120,10 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
             if not era_cancellata and prenotazione.stato == 'CANCELLED':
                 OccupazionePostazione.objects.filter(prenotazione=prenotazione).delete()
 
+    @extend_schema(
+        summary='Biglietto PDF della prenotazione (pubblico)',
+        responses={openapi.PDF_200: openapi.RESPONSE_PDF, 400: openapi.errore('Prenotazione cancellata: nessun biglietto.')},
+    )
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def scarica_biglietto(self, request, pk=None):
         """
@@ -100,6 +152,15 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
 
         return response
 
+    @extend_schema(
+        summary='Disponibilita residua del giorno (pubblico)',
+        parameters=[openapi.PARAM_INVENTARIO, openapi.PARAM_DATA],
+        responses={
+            200: openapi.DISPONIBILITA_PISCINA,
+            400: openapi.errore('Parametri mancanti o data malformata.'),
+            404: openapi.errore('Inventario non trovato.'),
+        },
+    )
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def disponibilita(self, request):
         """
@@ -130,6 +191,10 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
         ).exists()
         return Response(residui)
 
+    @extend_schema(
+        summary='Prenotazioni arrivate di recente (staff)',
+        parameters=[openapi.PARAM_LIMIT],
+    )
     @action(detail=False, methods=['get'])
     def recenti(self, request):
         """
@@ -151,6 +216,12 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @extend_schema(
+        summary='Storico piscina per numero di telefono (pubblico)',
+        parameters=[openapi.PARAM_TELEFONO],
+        filters=False,
+        responses={200: PrenotazionePiscinaSerializer(many=True), 400: openapi.errore("Parametro 'telefono' mancante.")},
+    )
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def storico_telefono(self, request):
         """
@@ -176,6 +247,7 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @extend_schema(summary='Dettaglio di una prenotazione piscina (pubblico)')
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def dettaglio_pubblico(self, request, pk=None):
         """
@@ -192,6 +264,14 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(prenotazione)
         return Response(serializer.data)
 
+    @extend_schema(
+        summary='Prenotazioni per giorno in un mese (staff)',
+        parameters=[openapi.PARAM_INVENTARIO, openapi.PARAM_ANNO, openapi.PARAM_MESE],
+        responses={
+            200: openapi.mappa_conteggi('Conteggi', 'Giorni senza prenotazioni sono assenti, non a zero.', {'2026-07-01': 3, '2026-07-04': 1}),
+            400: openapi.errore('Parametri mancanti o non numerici.'),
+        },
+    )
     @action(detail=False, methods=['get'])
     def conteggi(self, request):
         """
@@ -247,10 +327,19 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
         request = self.request
         is_richiesta_pubblica = not (request.user and request.user.is_authenticated)
         if is_richiesta_pubblica:
-            serializer.save(stato='CONFIRMED', creata_da_staff=False)
+            prenotazione = serializer.save(stato='CONFIRMED', creata_da_staff=False)
+            _avvisa_staff(
+                'ASPORTO',
+                prenotazione,
+                f'{prenotazione.cliente_id.nome} · ritiro {_quando(prenotazione)}',
+            )
         else:
             serializer.save(creata_da_staff=True)
 
+    @extend_schema(
+        summary='Ricevuta PDF dell ordine (pubblico)',
+        responses={openapi.PDF_200: openapi.RESPONSE_PDF, 400: openapi.errore('Ordine cancellato: nessuna ricevuta.')},
+    )
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def scarica_ricevuta(self, request, pk=None):
         """
@@ -285,6 +374,10 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
 
         return response
 
+    @extend_schema(
+        summary='Dettaglio di un ordine asporto, righe incluse (pubblico)',
+        responses={200: openapi.DETTAGLIO_ASPORTO},
+    )
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def dettaglio_pubblico(self, request, pk=None):
         """
@@ -304,6 +397,12 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
         data['voci'] = VoceOrdineSerializer(voci, many=True).data
         return Response(data)
 
+    @extend_schema(
+        summary='Storico asporto per numero di telefono (pubblico)',
+        parameters=[openapi.PARAM_TELEFONO],
+        filters=False,
+        responses={200: PrenotazioneAsportoSerializer(many=True), 400: openapi.errore("Parametro 'telefono' mancante.")},
+    )
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def storico_telefono(self, request):
         """
@@ -323,6 +422,10 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @extend_schema(
+        summary='Ordini arrivati di recente (staff)',
+        parameters=[openapi.PARAM_LIMIT],
+    )
     @action(detail=False, methods=['get'])
     def recenti(self, request):
         """
@@ -345,6 +448,14 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @extend_schema(
+        summary='Ordini gia prenotati per ciascun orario (pubblico)',
+        parameters=[openapi.PARAM_DATA],
+        responses={
+            200: openapi.mappa_conteggi('Per orario', 'Un orario assente equivale a zero prenotazioni.', {'12:15': 2, '13:00': 1}),
+            400: openapi.errore('Parametro mancante o data malformata.'),
+        },
+    )
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def prenotazioni_per_orario(self, request):
         """
@@ -374,6 +485,42 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
             .annotate(totale=Count('id'))
         )
         return Response({riga['ora'].strftime('%H:%M'): riga['totale'] for riga in righe})
+
+    @extend_schema(
+        summary='Ordini per giorno in un mese (staff)',
+        parameters=[openapi.PARAM_ANNO, openapi.PARAM_MESE],
+        responses={
+            200: openapi.mappa_conteggi('Conteggi', 'Giorni senza ordini sono assenti, non a zero.', {'2026-09-01': 3}),
+            400: openapi.errore('Parametri mancanti o non numerici.'),
+        },
+    )
+    @action(detail=False, methods=['get'])
+    def conteggi(self, request):
+        """
+        Numero di ordini (non cancellati) per giorno in un mese, per il calendario staff — stessa
+        forma/scopo di PrenotazionePiscinaViewSet.conteggi/PrenotazionePadelViewSet.conteggi, senza
+        alcun filtro 'inventario': l'asporto non ha un concetto di listino (sezione 1 di CLAUDE.md).
+        GET /api/v1/prenotazioni/asporto/conteggi/?anno=2026&mese=9
+        Risposta: {"2026-09-01": 3, ...} (sparso: i giorni assenti hanno 0)
+        """
+        anno = request.query_params.get('anno')
+        mese = request.query_params.get('mese')
+        if not anno or not mese:
+            return Response({"detail": "Parametri 'anno' e 'mese' obbligatori."}, status=400)
+
+        try:
+            anno_int = int(anno)
+            mese_int = int(mese)
+        except ValueError:
+            return Response({"detail": "'anno' e 'mese' devono essere numerici."}, status=400)
+
+        conteggi = (
+            PrenotazioneAsporto.objects.filter(data__year=anno_int, data__month=mese_int)
+            .exclude(stato='CANCELLED')
+            .values('data')
+            .annotate(totale=Count('id'))
+        )
+        return Response({row['data'].isoformat(): row['totale'] for row in conteggi})
 
 
 class PrenotazionePadelViewSet(viewsets.ModelViewSet):
@@ -411,10 +558,20 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
         request = self.request
         is_richiesta_pubblica = not (request.user and request.user.is_authenticated)
         if is_richiesta_pubblica:
-            serializer.save(stato='CONFIRMED', creata_da_staff=False, **snapshot)
+            prenotazione = serializer.save(stato='CONFIRMED', creata_da_staff=False, **snapshot)
+            _avvisa_staff(
+                'PADEL',
+                prenotazione,
+                f'{prenotazione.cliente_id.nome} · {_quando(prenotazione)}',
+            )
         else:
             serializer.save(creata_da_staff=True, **snapshot)
 
+    @extend_schema(
+        summary='Slot liberi del giorno (pubblico)',
+        parameters=[openapi.PARAM_DATA],
+        responses={200: openapi.DISPONIBILITA_PADEL, 400: openapi.errore('Parametro mancante o data malformata.')},
+    )
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def disponibilita(self, request):
         """
@@ -448,6 +605,10 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
             else calcola_disponibilita_padel(configurazione, data_richiesta),
         })
 
+    @extend_schema(
+        summary='Biglietto PDF della partita (pubblico)',
+        responses={openapi.PDF_200: openapi.RESPONSE_PDF, 400: openapi.errore('Partita cancellata: nessun biglietto.')},
+    )
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def scarica_biglietto(self, request, pk=None):
         """
@@ -478,6 +639,7 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="padel_{prenotazione.id}.pdf"'
         return response
 
+    @extend_schema(summary='Dettaglio di una partita padel (pubblico)')
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def dettaglio_pubblico(self, request, pk=None):
         """
@@ -488,6 +650,12 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
         """
         return Response(self.get_serializer(self.get_object()).data)
 
+    @extend_schema(
+        summary='Storico padel per numero di telefono (pubblico)',
+        parameters=[openapi.PARAM_TELEFONO],
+        filters=False,
+        responses={200: PrenotazionePadelSerializer(many=True), 400: openapi.errore("Parametro 'telefono' mancante.")},
+    )
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def storico_telefono(self, request):
         """
@@ -508,6 +676,10 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
         )
         return Response(self.get_serializer(queryset, many=True).data)
 
+    @extend_schema(
+        summary='Partite arrivate di recente (staff)',
+        parameters=[openapi.PARAM_LIMIT],
+    )
     @action(detail=False, methods=['get'])
     def recenti(self, request):
         """
@@ -529,6 +701,42 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
             .order_by('-created_at')[:limit]
         )
         return Response(self.get_serializer(queryset, many=True).data)
+
+    @extend_schema(
+        summary='Partite per giorno in un mese (staff)',
+        parameters=[openapi.PARAM_ANNO, openapi.PARAM_MESE],
+        responses={
+            200: openapi.mappa_conteggi('Conteggi', 'Giorni senza partite sono assenti, non a zero.', {'2026-09-05': 2}),
+            400: openapi.errore('Parametri mancanti o non numerici.'),
+        },
+    )
+    @action(detail=False, methods=['get'])
+    def conteggi(self, request):
+        """
+        Numero di partite (non cancellate) per giorno in un mese, per il calendario staff — stessa
+        forma/scopo di PrenotazionePiscinaViewSet.conteggi, senza il filtro 'inventario': il padel
+        ha un solo campo, non un elenco di listini tra cui scegliere.
+        GET /api/v1/prenotazioni/padel/conteggi/?anno=2026&mese=9
+        Risposta: {"2026-09-01": 3, ...} (sparso: i giorni assenti hanno 0)
+        """
+        anno = request.query_params.get('anno')
+        mese = request.query_params.get('mese')
+        if not anno or not mese:
+            return Response({"detail": "Parametri 'anno' e 'mese' obbligatori."}, status=400)
+
+        try:
+            anno_int = int(anno)
+            mese_int = int(mese)
+        except ValueError:
+            return Response({"detail": "'anno' e 'mese' devono essere numerici."}, status=400)
+
+        conteggi = (
+            PrenotazionePadel.objects.filter(data__year=anno_int, data__month=mese_int)
+            .exclude(stato='CANCELLED')
+            .values('data')
+            .annotate(totale=Count('id'))
+        )
+        return Response({row['data'].isoformat(): row['totale'] for row in conteggi})
 
 
 class NoleggioRacchettaViewSet(viewsets.ModelViewSet):
@@ -581,6 +789,15 @@ class OccupazionePostazioneViewSet(viewsets.ModelViewSet):
         else:
             serializer.save()
 
+    @extend_schema(
+        summary='Id delle postazioni occupate (pubblico)',
+        parameters=[openapi.PARAM_INVENTARIO, openapi.PARAM_DATA],
+        responses={
+            200: openapi.LISTA_UUID,
+            400: openapi.errore('Parametri mancanti o data malformata.'),
+            404: openapi.errore('Inventario non trovato.'),
+        },
+    )
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def occupate(self, request):
         """
@@ -627,6 +844,14 @@ class GiornoPienoPiscinaViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return super().get_permissions()
 
+    @extend_schema(
+        summary='Giorni marcati tutto-prenotato in un mese (pubblico)',
+        parameters=[openapi.PARAM_INVENTARIO, openapi.PARAM_ANNO, openapi.PARAM_MESE],
+        responses={
+            200: openapi.lista_date('Solo le date piene del mese richiesto.', ['2026-07-05', '2026-07-12']),
+            400: openapi.errore('Parametri mancanti o non numerici.'),
+        },
+    )
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def calendario(self, request):
         """

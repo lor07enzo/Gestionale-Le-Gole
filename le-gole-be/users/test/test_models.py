@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from .factories import ClienteFactory, UtenteFactory
+from .factories import ClienteFactory, DispositivoStaffFactory, UtenteFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -25,3 +25,10 @@ def test_cliente_ha_pk_uuid_generata_automaticamente():
 def test_cliente_str_include_nome_e_telefono():
     cliente = ClienteFactory(nome="Luigi Verdi", telefono="3331234567")
     assert str(cliente) == "Luigi Verdi - 3331234567"
+
+
+def test_dispositivo_staff_str_include_utente_e_piattaforma():
+    dispositivo = DispositivoStaffFactory(
+        utente=UtenteFactory(username="mario"), piattaforma="ios"
+    )
+    assert str(dispositivo) == "mario - ios"

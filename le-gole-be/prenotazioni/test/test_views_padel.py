@@ -15,6 +15,7 @@ LIST_URL = reverse('prenotazione-padel-list')
 DISPONIBILITA_URL = reverse('prenotazione-padel-disponibilita')
 RECENTI_URL = reverse('prenotazione-padel-recenti')
 STORICO_URL = reverse('prenotazione-padel-storico-telefono')
+CONTEGGI_URL = reverse('prenotazione-padel-conteggi')
 
 
 def payload(cliente, **overrides):
@@ -283,3 +284,34 @@ class TestScaricaBiglietto:
         url = reverse('prenotazione-padel-scarica-biglietto', args=[prenotazione.id])
 
         assert api_client.get(url).status_code == 400
+
+
+class TestConteggi:
+    def test_richiede_autenticazione(self, api_client, configurazione_padel):
+        assert api_client.get(CONTEGGI_URL).status_code == 401
+
+    def test_richiede_i_parametri_obbligatori(self, auth_client, configurazione_padel):
+        assert auth_client.get(CONTEGGI_URL).status_code == 400
+
+    def test_parametri_non_numerici(self, auth_client, configurazione_padel):
+        response = auth_client.get(CONTEGGI_URL, {'anno': 'duemila', 'mese': '9'})
+        assert response.status_code == 400
+
+    def test_conta_le_partite_non_cancellate_per_giorno(self, auth_client, configurazione_padel):
+        PrenotazionePadelFactory(data='2026-09-05', ora='10:00')
+        PrenotazionePadelFactory(data='2026-09-05', ora='11:00')
+        PrenotazionePadelFactory(data='2026-09-12', ora='10:00')
+        PrenotazionePadelFactory(data='2026-09-20', ora='10:00', stato='CANCELLED')
+
+        response = auth_client.get(CONTEGGI_URL, {'anno': '2026', 'mese': '9'})
+
+        assert response.status_code == 200
+        assert response.data == {'2026-09-05': 2, '2026-09-12': 1}
+
+    def test_isolato_per_mese(self, auth_client, configurazione_padel):
+        PrenotazionePadelFactory(data='2026-09-05', ora='10:00')
+        PrenotazionePadelFactory(data='2026-10-05', ora='10:00')
+
+        response = auth_client.get(CONTEGGI_URL, {'anno': '2026', 'mese': '9'})
+
+        assert response.data == {'2026-09-05': 1}

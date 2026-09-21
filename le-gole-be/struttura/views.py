@@ -8,6 +8,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema, extend_schema_view
+
+from backend import openapi
 from .models import (
     ConfigurazionePadel,
     GiornoChiusoPadel,
@@ -93,6 +96,33 @@ class PiscinaInventarioViewSet(viewsets.ModelViewSet):
         return Response({"detail": "Nessun inventario attivo trovato."}, status=404)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary='Elenco postazioni, o la mappa "come era" in un giorno passato',
+        description=(
+            'Le postazioni sono un dato **strutturale**, condiviso da tutte le date: `pos_x`/'
+            '`pos_y` e la stessa esistenza della postazione cambiano nel tempo. Con `?data=` '
+            'passata la risposta è ricostruita dallo storico, così consultare un giorno '
+            'trascorso non mostra la mappa di oggi. Le postazioni eliminate sono soft-deleted, '
+            'quindi restano visibili nelle date in cui esistevano ancora.'
+        ),
+        parameters=[openapi.PARAM_DATA_STORICA],
+        responses={
+            200: PostazioneSerializer(many=True),
+            400: openapi.errore('Formato data non valido, atteso `YYYY-MM-DD`.'),
+        },
+    ),
+    destroy=extend_schema(
+        summary='Elimina una postazione (soft delete)',
+        description=(
+            'Non un `DELETE` reale: valorizza `deleted_at`. Una cancellazione vera '
+            "distruggerebbe a cascata lo storico di occupazioni e posizioni di ogni giorno "
+            'passato in cui la postazione era assegnata. Il suo `numero` torna comunque '
+            'riassegnabile a una postazione nuova.'
+        ),
+        responses={204: None},
+    ),
+)
 class PostazioneViewSet(viewsets.ModelViewSet):
     """
     Gestione delle postazioni fisiche (ombrelloni/gazebi) sulla mappa di un inventario.
@@ -155,6 +185,17 @@ class PostazioneViewSet(viewsets.ModelViewSet):
 
         return Response(payload)
 
+@extend_schema_view(
+    get=extend_schema(
+        summary='Leggi la configurazione padel (pubblico)',
+        responses={200: ConfigurazionePadelSerializer},
+    ),
+    patch=extend_schema(
+        summary='Aggiorna la configurazione padel (staff)',
+        request=ConfigurazionePadelSerializer,
+        responses={200: ConfigurazionePadelSerializer, 400: openapi.errore('Valori non validi.')},
+    ),
+)
 class ConfigurazionePadelView(APIView):
     """
     Configurazione singleton del servizio padel (attivazione, orari, durata, prezzi, partecipanti

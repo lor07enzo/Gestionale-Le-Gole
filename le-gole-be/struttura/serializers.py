@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from .models import (
     ConfigurazionePadel,
@@ -90,6 +91,10 @@ class ConfigurazionePadelSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'updated_at']
 
+    # Come get_noleggi in prenotazioni/serializers.py: un SerializerMethodField non dichiara da
+    # se' il proprio tipo, quindi senza questo decoratore lo schema lo darebbe per stringa invece
+    # che per elenco di orari "HH:MM" (sezione 17).
+    @extend_schema_field({'type': 'array', 'items': {'type': 'string', 'example': '10:00'}})
     def get_slot_disponibili(self, obj):
         return [ora.strftime('%H:%M') for ora in obj.slot_disponibili()]
 

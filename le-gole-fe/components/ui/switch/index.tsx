@@ -31,6 +31,13 @@ const Switch = React.forwardRef<
   return (
     <UISwitch
       ref={ref}
+      // Colori espliciti, non affidati al tema nativo di sistema: senza `trackColor`,
+      // Android (Material You, 12+) renderizza lo stato "spento" con un track trasparente
+      // a solo bordo, mostrando solo il pallino — corretto per il sistema operativo, ma
+      // diverso da come lo Switch personalizzato (div styled via CSS) appare sul web.
+      trackColor={{ false: '#cbd5e1', true: '#0284c7' }}
+      thumbColor="#ffffff"
+      ios_backgroundColor="#cbd5e1"
       {...props}
       className={switchStyle({ size, class: className })}
     />

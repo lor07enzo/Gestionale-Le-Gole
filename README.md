@@ -17,7 +17,7 @@ Applicazione di gestione prenotazioni per Osteria/Pizzeria Le Gole: aree piscina
 
 - [Stack tecnologico](#stack-tecnologico)
 - [Struttura del repository](#struttura-del-repository)
-- [Funzionalità implementate](#funzionalità-implementate)
+- [Funzionalità implementate](#funzionalità-implementate) — include la [documentazione API](#-documentazione-api) su `/api/v1/docs/`
 - [Roadmap — funzionalità da implementare](#roadmap--funzionalità-da-implementare)
 - [Setup ambiente di sviluppo](#setup-ambiente-di-sviluppo)
 - [Testing](#testing)
@@ -31,7 +31,7 @@ Applicazione di gestione prenotazioni per Osteria/Pizzeria Le Gole: aree piscina
 | Livello | Tecnologie |
 |---|---|
 | **Database** | PostgreSQL 17 |
-| **Backend** | Python 3.13, Django 6.0, Django REST Framework, `djangorestframework-simplejwt` (auth JWT), WeasyPrint (PDF biglietti), `django-cors-headers`, `django-filter`, `django-anymail` (email transazionali via Resend), pytest + pytest-django + factory_boy |
+| **Backend** | Python 3.13, Django 6.0, Django REST Framework, `djangorestframework-simplejwt` (auth JWT), WeasyPrint (PDF biglietti), `django-cors-headers`, `django-filter`, `django-anymail` (email transazionali via Resend), `drf-spectacular` (schema OpenAPI 3 + Swagger UI), pytest + pytest-django + factory_boy |
 | **Frontend** | React Native 0.85 (Expo SDK 56), Expo Router, Axios, `expo-secure-store`, NativeWind v5 (Tailwind CSS v4), gluestack-ui v5 (alpha), Zod, `expo-file-system` + `expo-sharing`, `react-native-paper`/`react-native-paper-dates` (solo per il time picker cliente), jest-expo + `@testing-library/react-native` |
 | **Infrastruttura** | Render (backend, Docker), Supabase (Postgres gestito), Netlify (frontend web statico), GitHub Actions (CI/CD), SonarQube Cloud (analisi qualità/coverage) |
 
@@ -118,8 +118,10 @@ Gestionale-Le-Gole/
 - Note su come contattare il locale per eventi/compleanni e sezione "Assistenza e feedback" per segnalazioni sulla piattaforma
 - Privacy policy dedicata
 
-### 🔔 Notifiche in-app staff
-- Pannello notifiche con polling automatico per le nuove prenotazioni self-service
+### 🔔 Notifiche staff
+- **Notifiche push sul telefono** per ogni prenotazione self-service (piscina, asporto, padel), anche ad app chiusa — con tap che apre direttamente la schermata dove gestirla
+- Un walk-in registrato dallo staff non genera notifiche: avviserebbe di qualcosa che ha appena inserito lui stesso
+- Pannello notifiche in-app con polling automatico per le nuove prenotazioni self-service
 - Stato letto/non letto per singola notifica (persistito, sincronizzato correttamente anche tra più schede del browser)
 - Filtri per categoria di servizio (Piscina, Asporto e Padel con dati reali; Sala predisposta per il futuro)
 - Tap su una notifica → apertura diretta del punto dove gestirla (mappa piscina sul giorno prenotato, dettaglio ordine o dettaglio partita)
@@ -131,8 +133,14 @@ Gestionale-Le-Gole/
 - `ALLOWED_HOSTS` ristretto agli host esatti di produzione
 - Variabili sensibili sempre lette da ambiente, mai hardcoded
 
+### 📖 Documentazione API
+- Schema **OpenAPI 3** generato automaticamente dalle viewset, sempre allineato al codice
+- **Swagger UI** su `/api/v1/docs/` (elenco navigabile + "Try it out" per eseguire le chiamate) e ReDoc su `/api/v1/redoc/`
+- Tutte le azioni custom annotate a mano con parametri, forme di risposta ed esempi — comprese quelle pubbliche del flusso self-service
+- Una suite di test fa fallire la CI se un endpoint nuovo resta non documentato
+
 ### ✅ Testing automatico
-- **Backend:** suite pytest (460+ test, ~99% di copertura) organizzata per app e per area funzionale
+- **Backend:** suite pytest (500+ test, ~99% di copertura) organizzata per app e per area funzionale
 - **Frontend:** suite jest (130+ test — utility di business logic, context/hook), introdotta per coprire i punti più delicati dell'app
 - Gate automatico in CI che verifica l'assenza di crash JS sulla build web esportata prima di ogni deploy
 

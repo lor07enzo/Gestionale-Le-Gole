@@ -1,7 +1,7 @@
 import factory
 from django.contrib.auth import get_user_model
 
-from users.models import Cliente
+from users.models import Cliente, DispositivoStaff
 
 Utente = get_user_model()
 
@@ -26,6 +26,15 @@ class UtenteFactory(factory.django.DjangoModelFactory):
 
 class SuperUserFactory(UtenteFactory):
     is_superuser = True
+
+
+class DispositivoStaffFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = DispositivoStaff
+
+    utente = factory.SubFactory(UtenteFactory)
+    token = factory.Sequence(lambda n: f"ExponentPushToken[test{n:022d}]")
+    piattaforma = 'android'
 
 
 class ClienteFactory(factory.django.DjangoModelFactory):

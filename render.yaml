@@ -51,6 +51,10 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      # Notifiche push staff (sezione 11). Opzionale: l'invio a Expo funziona anche senza, serve
+      # solo se sul progetto Expo viene attivata la "push security".
+      - key: EXPO_ACCESS_TOKEN
+        sync: false
       # Da impostare manualmente su https://osterialegole.com/activate e /reset-password.
       - key: FRONTEND_ACTIVATION_URL
         sync: false

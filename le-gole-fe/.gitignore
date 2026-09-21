@@ -46,3 +46,10 @@ coverage/
 # generated native folders
 /ios
 /android
+
+# Chiave privata del service account Firebase (FCM V1, sezione 11 di CLAUDE.md):
+# va caricata SOLO su EAS con `eas credentials`, mai committata.
+# google-services.json invece NON va qui: EAS Build rispetta .gitignore e senza
+# quel file l'app non riesce a registrarsi su FCM.
+*firebase-adminsdk*.json
+google-service-account*.json

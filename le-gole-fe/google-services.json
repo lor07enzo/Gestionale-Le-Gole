@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "224741681651",
+    "project_id": "le-gole",
+    "storage_bucket": "le-gole.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:224741681651:android:3daae0ef99da92fb948a86",
+        "android_client_info": {
+          "package_name": "com.osterialegole.legole"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGFbT3iHw-GTykD4nGS55lzGed08R7n_4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Slot } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { IconProps } from 'react-native-paper/lib/typescript/components/MaterialCommunityIcon';
 import { Box } from '@/components/ui/box';
 import { Spinner } from '@/components/ui/spinner';
@@ -22,6 +22,14 @@ function renderPaperIcon(props: IconProps) {
 // statico, facendo crashare l'intera app invece che solo /cliente/*.
 export default function ClienteLayout() {
   const [Paper, setPaper] = useState<PaperModule | null>(null);
+  // Riserva lo spazio della status bar/notch per **ogni** pagina cliente (2026-09-13, spostato qui
+  // da app/cliente/index.tsx dove era stato applicato solo alla landing — stesso principio già in
+  // uso per l'header di app/staff/_layout.tsx, condiviso da tutte le pagine staff via `<Slot />`).
+  // Il root layout (app/_layout.tsx) monta già un `SafeAreaProvider` a monte di questo componente,
+  // quindi l'hook risolve correttamente anche se chiamato qui — nessun bisogno che sia annidato
+  // sotto il `SafeAreaProvider` reso più sotto in questo stesso file (redundante ma innocuo,
+  // preesistente, per il `PaperProvider`/i suoi date-picker).
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     let cancelled = false;
@@ -56,14 +64,17 @@ export default function ClienteLayout() {
               staff: qui il contenuto è più editoriale (hero, avvisi, form) e regge peggio righe
               molto lunghe, ma resta comunque abbastanza largo per le due colonne del flusso di
               prenotazione piscina (app/cliente/piscina/[inventarioId].tsx). */}
-          <Box className="flex-1 bg-background">
+          <Box className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
             <Box className="mx-auto w-full max-w-5xl flex-1">
               <Slot />
             </Box>
           </Box>
         </Paper.PaperProvider>
       ) : (
-        <Box className="flex-1 items-center justify-center bg-background">
+        <Box
+          className="flex-1 items-center justify-center bg-background"
+          style={{ paddingTop: insets.top }}
+        >
           <Spinner size="large" />
         </Box>
       )}
