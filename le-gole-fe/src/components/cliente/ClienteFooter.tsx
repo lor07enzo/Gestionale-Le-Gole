@@ -1,6 +1,7 @@
 import { Image, Linking, Pressable } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 import { router } from 'expo-router';
+import type { Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
@@ -188,11 +189,23 @@ export function ClienteFooter() {
           <Text size="2xs" className="text-amber-200/50">
             © {anno} Le Gole
           </Text>
-          <Pressable onPress={() => router.push('/privacy')} accessibilityRole="link">
-            <Text size="2xs" className="text-amber-200/50 underline">
-              Privacy e Cookie
-            </Text>
-          </Pressable>
+          <HStack space="sm" className="items-center flex-wrap">
+            <Pressable onPress={() => router.push('/privacy')} accessibilityRole="link">
+              <Text size="2xs" className="text-amber-200/50 underline">
+                Privacy e Cookie
+              </Text>
+            </Pressable>
+            {/* Cast as Href: la rotta è nuova e i tipi generati da Expo Router
+                (.expo/types/router.d.ts) non la conoscono finché Metro non li rigenera. */}
+            <Pressable
+              onPress={() => router.push('/eliminazione-dati' as Href)}
+              accessibilityRole="link"
+            >
+              <Text size="2xs" className="text-amber-200/50 underline">
+                Eliminazione dati
+              </Text>
+            </Pressable>
+          </HStack>
         </HStack>
       </VStack>
     </Box>

@@ -12,8 +12,10 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 const PORT = process.env.VERIFY_WEB_BUILD_PORT || 5057;
 const BASE_URL = `http://localhost:${PORT}`;
-// Campione delle pagine più significative, non l'intero sitemap.
-const PAGES_TO_CHECK = ['/', '/cliente', '/cliente/piscina', '/login'];
+// Campione delle pagine più significative, non l'intero sitemap. `/eliminazione-dati` è l'unica
+// il cui malfunzionamento ha una conseguenza esterna: è l'URL dichiarato a Google Play nella
+// sezione "Sicurezza dei dati", che la revisione carica direttamente.
+const PAGES_TO_CHECK = ['/', '/cliente', '/cliente/piscina', '/login', '/eliminazione-dati'];
 const NAVIGATION_TIMEOUT_MS = 20000;
 const SETTLE_DELAY_MS = 1000;
 const SERVER_READY_TIMEOUT_MS = 30000;

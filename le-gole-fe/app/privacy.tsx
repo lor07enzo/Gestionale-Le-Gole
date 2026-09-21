@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { Linking, Pressable, ScrollView } from 'react-native';
+import { router } from 'expo-router';
+import type { Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
@@ -18,7 +20,7 @@ const TITOLARE = {
   emailPrivacy: 'osterialegole@icloud.com',
 };
 
-const ULTIMO_AGGIORNAMENTO = '23 agosto 2026';
+const ULTIMO_AGGIORNAMENTO = '21 settembre 2026';
 
 function SectionHeading({ children }: Readonly<{ children: string }>) {
   return (
@@ -215,6 +217,21 @@ export default function PrivacyScreen() {
             <ListItem>la cancellazione dei tuoi dati, quando non sussistano obblighi di conservazione;</ListItem>
             <ListItem>la limitazione o l'opposizione al trattamento;</ListItem>
             <ListItem>la portabilità dei dati che ci hai fornito.</ListItem>
+            <Paragraph>
+              Per la sola richiesta di cancellazione esiste una pagina dedicata, che spiega cosa
+              viene eliminato, cosa siamo tenuti a conservare e in quanto tempo rispondiamo:
+            </Paragraph>
+            {/* Cast as Href: rotta nuova, i tipi generati da Expo Router non la conoscono
+                finché Metro non li rigenera. */}
+            <Pressable
+              onPress={() => router.push('/eliminazione-dati' as Href)}
+              accessibilityRole="link"
+              accessibilityLabel="Apri la pagina Eliminazione dei dati"
+            >
+              <Text size="sm" className="font-semibold text-foreground underline">
+                Eliminazione dei dati
+              </Text>
+            </Pressable>
             <Paragraph>
               Hai inoltre il diritto di proporre reclamo all'Autorità Garante per la protezione dei
               dati personali (www.garanteprivacy.it) se ritieni che il trattamento violi la

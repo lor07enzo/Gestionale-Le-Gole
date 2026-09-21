@@ -116,7 +116,7 @@ Gestionale-Le-Gole/
 - Biglietto/ricevuta PDF scaricabile subito dopo l'invio (cross-platform: download diretto su web, condivisione di sistema su nativo)
 - "Le mie prenotazioni": consultazione dello storico per numero di telefono (piscina, asporto e padel), con filtri per servizio/stato, sezione "In programma"/"Storico", dettaglio e riprenotazione/riordino in un tap
 - Note su come contattare il locale per eventi/compleanni e sezione "Assistenza e feedback" per segnalazioni sulla piattaforma
-- Privacy policy dedicata
+- Privacy policy e pagina dedicata per richiedere l'eliminazione dei dati
 
 ### 🔔 Notifiche staff
 - **Notifiche push sul telefono** per ogni prenotazione self-service (piscina, asporto, padel), anche ad app chiusa — con tap che apre direttamente la schermata dove gestirla
