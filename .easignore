@@ -1,0 +1,44 @@
+# Cosa NON caricare su EAS Build (sezione 4 punto 13 di CLAUDE.md).
+# Se questo file esiste, eas-cli ignora del tutto i .gitignore: ogni esclusione
+# necessaria va ripetuta qui. Serve perché su Windows eas-cli non applica i
+# .gitignore delle sottocartelle, e senza questo file l'archivio includeva
+# anche il virtualenv del backend.
+
+# Il backend e gli strumenti del repository non servono alla build mobile
+le-gole-be/
+.github/
+.vscode/
+.claude/
+.coverage
+.pytest_cache/
+docker-compose.yml
+render.yaml
+sonar-project.properties
+.gitguardian.yaml
+
+# Dipendenze e artefatti generati del frontend
+node_modules/
+le-gole-fe/.expo/
+le-gole-fe/dist/
+le-gole-fe/web-build/
+le-gole-fe/coverage/
+le-gole-fe/.netlify
+le-gole-fe/.kotlin/
+le-gole-fe/android/
+le-gole-fe/ios/
+*.tsbuildinfo
+.metro-health-check*
+npm-debug.*
+.DS_Store
+
+# Segreti e file locali (.env.production invece SERVE: contiene l'URL del backend)
+le-gole-fe/.env
+.env*.local
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*firebase-adminsdk*.json
+google-service-account*.json
