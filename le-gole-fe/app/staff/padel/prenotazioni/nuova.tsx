@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView } from 'react-native';
+import { Platform, ScrollView } from 'react-native';
 import type { ViewStyle } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
@@ -9,14 +9,14 @@ import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { AddIcon, Icon, RemoveIcon } from '@/components/ui/icon';
 import { StaffPageHeader } from '../../../../src/components/staff/StaffPageHeader';
 import { DateNavigatorPadel } from '../../../../src/components/staff/padel/DateNavigatorPadel';
 import { SlotPickerPadel } from '../../../../src/components/shared/SlotPickerPadel';
+import { StepperQuantita } from '../../../../src/components/shared/StepperQuantita';
+import { RacchetteNoleggioPicker } from '../../../../src/components/shared/RacchetteNoleggioPicker';
 import { createCliente } from '../../../../src/services/clienti';
 import {
-  createNoleggioRacchetta,
-  createPrenotazionePadel,
+  createPrenotazionePadelConNoleggi,
   getConfigurazionePadel,
   listGiorniChiusiPadel,
   listPrenotazioniPadel,
@@ -26,7 +26,13 @@ import {
   type RacchettaPadel,
 } from '../../../../src/services/padel';
 import { toISODate } from '../../../../src/utils/piscinaMappa';
-import { calcolaSlotOccupazione, formatTotaleEuro } from '../../../../src/utils/padel';
+import {
+  calcolaSlotOccupazione,
+  formatTotaleEuro,
+  ricalibraRacchette,
+  totaleRacchetteScelte,
+  totaleStimatoPadel,
+} from '../../../../src/utils/padel';
 import { formatPrezzo } from '../../../../src/utils/prezzi';
 import { extractErrorMessage } from '../../../../src/utils/errors';
 
@@ -73,22 +79,8 @@ export default function NuovaPartitaPadelScreen() {
       .finally(() => setIsLoadingBase(false));
   }, []);
 
-  // Un partecipante in meno può riportare il totale racchette già scelte sopra il nuovo tetto —
-  // stessa identica logica del flusso self-service cliente (app/cliente/padel.tsx).
   useEffect(() => {
-    setRacchetteQty((prev) => {
-      let totale = Object.values(prev).reduce((somma, qty) => somma + qty, 0);
-      if (totale <= partecipanti) return prev;
-      const next = { ...prev };
-      for (const id of Object.keys(next)) {
-        while (totale > partecipanti && next[id] > 0) {
-          next[id] -= 1;
-          totale -= 1;
-        }
-        if (totale <= partecipanti) break;
-      }
-      return next;
-    });
+    setRacchetteQty((prev) => ricalibraRacchette(prev, partecipanti));
   }, [partecipanti]);
 
   useEffect(() => {
@@ -129,18 +121,8 @@ export default function NuovaPartitaPadelScreen() {
 
   const isGiornoChiuso = giorniChiusi.includes(toISODate(selectedDate));
   const maxPartecipanti = configurazione?.max_partecipanti ?? 4;
-  const totaleRacchetteSelezionate = Object.values(racchetteQty).reduce((somma, qty) => somma + qty, 0);
-
-  const totale = useMemo(() => {
-    if (!configurazione) return 0;
-    let somma = Number.parseFloat(configurazione.prezzo_partita) || 0;
-    if (palline) somma += Number.parseFloat(configurazione.prezzo_noleggio_palline) || 0;
-    racchette.forEach((racchetta) => {
-      const qty = racchetteQty[racchetta.id] ?? 0;
-      if (qty > 0) somma += qty * (Number.parseFloat(racchetta.prezzo_noleggio) || 0);
-    });
-    return somma;
-  }, [configurazione, palline, racchette, racchetteQty]);
+  const totaleRacchetteSelezionate = totaleRacchetteScelte(racchetteQty);
+  const totale = configurazione ? totaleStimatoPadel(configurazione, palline, racchette, racchetteQty) : 0;
 
   const handleSubmit = async () => {
     if (!nome.trim() || !telefono.trim()) {
@@ -156,27 +138,18 @@ export default function NuovaPartitaPadelScreen() {
     setIsSaving(true);
     try {
       const cliente = await createCliente({ nome: nome.trim(), telefono: telefono.trim() });
-      const partita = await createPrenotazionePadel({
-        cliente_id: cliente.id,
-        data: toISODate(selectedDate),
-        ora,
-        partecipanti,
-        palline_noleggiate: palline,
-        note: note.trim(),
-        stato: 'CONFIRMED',
-      });
-
-      const righeRacchette = Object.entries(racchetteQty).filter(([, qty]) => qty > 0);
-      if (righeRacchette.length > 0) {
-        // Promise.all, non allSettled: un noleggio fallito silenziosamente lascerebbe lo staff
-        // convinto di aver registrato una racchetta che invece non risulta da nessuna parte —
-        // stesso principio già seguito per il checkout self-service cliente.
-        await Promise.all(
-          righeRacchette.map(([racchettaId, quantita]) =>
-            createNoleggioRacchetta({ prenotazione: partita.id, racchetta: racchettaId, quantita })
-          )
-        );
-      }
+      const partita = await createPrenotazionePadelConNoleggi(
+        {
+          cliente_id: cliente.id,
+          data: toISODate(selectedDate),
+          ora,
+          partecipanti,
+          palline_noleggiate: palline,
+          note: note.trim(),
+          stato: 'CONFIRMED',
+        },
+        racchetteQty
+      );
 
       router.replace(`/staff/padel/prenotazioni/${partita.id}` as Href);
     } catch (err) {
@@ -292,31 +265,13 @@ export default function NuovaPartitaPadelScreen() {
               Partecipanti
             </Text>
             <HStack space="sm" className="items-center">
-              <Pressable
-                onPress={() => setPartecipanti((prev) => Math.max(1, prev - 1))}
-                disabled={partecipanti <= 1}
-                accessibilityRole="button"
-                accessibilityLabel="Diminuisci partecipanti"
-                className={`h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white ${
-                  partecipanti <= 1 ? 'opacity-40' : 'active:bg-sky-50'
-                }`}
-              >
-                <Icon as={RemoveIcon} size="sm" className="text-sky-900" />
-              </Pressable>
-              <Text size="lg" className="w-10 text-center font-bold text-sky-900">
-                {partecipanti}
-              </Text>
-              <Pressable
-                onPress={() => setPartecipanti((prev) => Math.min(maxPartecipanti, prev + 1))}
-                disabled={partecipanti >= maxPartecipanti}
-                accessibilityRole="button"
-                accessibilityLabel="Aumenta partecipanti"
-                className={`h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white ${
-                  partecipanti >= maxPartecipanti ? 'opacity-40' : 'active:bg-sky-50'
-                }`}
-              >
-                <Icon as={AddIcon} size="sm" className="text-sky-900" />
-              </Pressable>
+              <StepperQuantita
+                value={partecipanti}
+                onChange={setPartecipanti}
+                min={1}
+                max={maxPartecipanti}
+                etichetta="partecipanti"
+              />
               <Text size="2xs" className="text-muted-foreground">
                 max {maxPartecipanti}
               </Text>
@@ -345,55 +300,14 @@ export default function NuovaPartitaPadelScreen() {
                   {totaleRacchetteSelezionate}/{partecipanti}
                 </Text>
               </HStack>
-              {racchette.map((racchetta) => {
-                const valore = racchetteQty[racchetta.id] ?? 0;
-                const residuoPartecipanti = partecipanti - (totaleRacchetteSelezionate - valore);
-                const max = Math.max(0, Math.min(racchetta.quantita_disponibile, residuoPartecipanti));
-                return (
-                  <HStack key={racchetta.id} space="sm" className="items-center">
-                    <Text size="md">🎾</Text>
-                    <VStack className="flex-1">
-                      <Text size="sm" className="font-medium">
-                        {racchetta.nome}
-                        {racchetta.disponibile ? '' : ' · nascosta online'}
-                      </Text>
-                      <Text size="2xs" className="text-muted-foreground">
-                        € {formatPrezzo(racchetta.prezzo_noleggio)} a partita · {racchetta.quantita_disponibile}{' '}
-                        pezzi
-                      </Text>
-                    </VStack>
-                    <HStack space="xs" className="items-center">
-                      <Pressable
-                        onPress={() =>
-                          setRacchetteQty((prev) => ({ ...prev, [racchetta.id]: Math.max(0, valore - 1) }))
-                        }
-                        disabled={valore <= 0}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Diminuisci ${racchetta.nome}`}
-                        className={`h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white ${
-                          valore <= 0 ? 'opacity-40' : 'active:bg-sky-50'
-                        }`}
-                      >
-                        <Icon as={RemoveIcon} size="sm" className="text-sky-900" />
-                      </Pressable>
-                      <Text size="md" className="w-6 text-center font-bold text-sky-900">
-                        {valore}
-                      </Text>
-                      <Pressable
-                        onPress={() => setRacchetteQty((prev) => ({ ...prev, [racchetta.id]: valore + 1 }))}
-                        disabled={valore >= max}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Aumenta ${racchetta.nome}`}
-                        className={`h-11 w-11 items-center justify-center rounded-full border-2 border-sky-300 bg-white ${
-                          valore >= max ? 'opacity-40' : 'active:bg-sky-50'
-                        }`}
-                      >
-                        <Icon as={AddIcon} size="sm" className="text-sky-900" />
-                      </Pressable>
-                    </HStack>
-                  </HStack>
-                );
-              })}
+              <RacchetteNoleggioPicker
+                racchette={racchette}
+                quantita={racchetteQty}
+                partecipanti={partecipanti}
+                onChange={(id, next) => setRacchetteQty((prev) => ({ ...prev, [id]: next }))}
+                mostraNascoste
+              />
+
             </VStack>
           ) : null}
 

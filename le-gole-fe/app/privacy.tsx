@@ -1,50 +1,13 @@
-import type { ReactNode } from 'react';
-import { Linking, Pressable, ScrollView } from 'react-native';
+import { Linking, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import type { Href } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Icon, MailIcon } from '@/components/ui/icon';
-import { BackButton } from '../src/components/cliente/BackButton';
-
-// Dati identificativi reali del Titolare del trattamento (non più segnaposto).
-const TITOLARE = {
-  ragioneSociale: 'AME S.r.l.',
-  nomeCommerciale: 'Osteria Le Gole',
-  piva: '01271600577',
-  indirizzo: 'Via Salaria SS4 km 98,865 snc, 02013 Antrodoco (RI)',
-  emailPrivacy: 'osterialegole@icloud.com',
-};
-
-const ULTIMO_AGGIORNAMENTO = '21 settembre 2026';
-
-function SectionHeading({ children }: Readonly<{ children: string }>) {
-  return (
-    <Heading size="md" className="mt-2 text-foreground">
-      {children}
-    </Heading>
-  );
-}
-
-function Paragraph({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <Text size="sm" className="leading-6 text-muted-foreground">
-      {children}
-    </Text>
-  );
-}
-
-function ListItem({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <Text size="sm" className="leading-6 text-muted-foreground">
-      •  {children}
-    </Text>
-  );
-}
+import { ListItem, PaginaLegale, Paragraph, SectionHeading, TITOLARE } from '../src/components/cliente/PaginaLegale';
 
 // Riga etichetta/valore del riquadro "Titolare del trattamento": stessa struttura per tutti i
 // campi, l'email è anche tappabile (apre il client di posta) come i contatti del footer cliente.
@@ -78,23 +41,8 @@ function InfoRow({
 }
 
 export default function PrivacyScreen() {
-  // Rotta di primo livello (app/privacy.tsx, non app/cliente/privacy.tsx): non eredita il
-  // paddingTop dell'inset condiviso da app/cliente/_layout.tsx, quindi va riservato qui —
-  // stesso principio/stessa causa già risolta per l'Area Cliente (nessun header al root che se ne
-  // occupi, sezione 7 di CLAUDE.md).
-  const insets = useSafeAreaInsets();
   return (
-    <Box className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-      <ScrollView className="flex-1" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
-        <VStack space="lg" className="w-full max-w-2xl self-center">
-          <VStack space="xs">
-            <Heading size="2xl" className="text-foreground">
-              Informativa sulla Privacy e Cookie Policy
-            </Heading>
-            <Text size="xs" className="text-muted-foreground">
-              Ultimo aggiornamento: {ULTIMO_AGGIORNAMENTO}
-            </Text>
-          </VStack>
+    <PaginaLegale titolo="Informativa sulla Privacy e Cookie Policy" aggiornamento="28 settembre 2026">
 
           <Box className="w-full rounded-2xl border border-border bg-card p-5">
             <Heading size="sm" className="text-foreground">
@@ -163,6 +111,10 @@ export default function PrivacyScreen() {
             <ListItem>
               Inviarti, se richiesto, comunicazioni tecniche relative alla prenotazione (es. il
               biglietto d'ingresso in PDF).
+            </ListItem>
+            <ListItem>
+              Permetterti di consultare le tue prenotazioni dalla sezione “Le mie
+              prenotazioni”, inserendo lo stesso numero di telefono usato per prenotare.
             </ListItem>
             <ListItem>
               Per il personale: gestire l'accesso al gestionale interno e le comunicazioni
@@ -256,6 +208,18 @@ export default function PrivacyScreen() {
               forma cifrata e mai in chiaro, e l'accesso ai dati amministrativi è riservato al solo
               personale autorizzato tramite credenziali personali.
             </Paragraph>
+            <Paragraph>
+              La sezione “Le mie prenotazioni” non richiede un account: per consultarla basta
+              il numero di telefono usato al momento della prenotazione. Per questo motivo non
+              comunicare il tuo numero a chi non vuoi che veda le tue prenotazioni. Per limitare i
+              rischi, l'elenco mostra solo data, orario, servizio prenotato, importo e il tuo nome
+              abbreviato: non mostra il numero di telefono né le note che hai lasciato. Il numero
+              di telefono compare solo in parte, nella pagina di dettaglio di ciascuna
+              prenotazione, che mostra anche le note. Il numero viene inviato al nostro server in
+              forma cifrata e non compare negli indirizzi delle pagine, e il numero di ricerche
+              possibili da una stessa connessione è limitato, per impedire di provare numeri a
+              caso.
+            </Paragraph>
           </VStack>
 
           <VStack space="xs">
@@ -302,10 +266,6 @@ export default function PrivacyScreen() {
               cima a questa pagina.
             </Paragraph>
           </VStack>
-
-          <BackButton className="mt-2" fallbackHref="/cliente" />
-        </VStack>
-      </ScrollView>
-    </Box>
+    </PaginaLegale>
   );
 }

@@ -267,7 +267,31 @@ export function validateOrarioIngressoIntero(
   return null;
 }
 
-export type OrarioValidationResult = { valid: true; minutes: number } | { valid: false; error: string };
+// Orario di una prenotazione self-service (nuova o riprenotazione): obbligatorio, dentro
+// l'apertura del listino e, se la data è oggi, non nel passato.
+export function validateOrarioPiscina(
+  value: string,
+  inventario: Pick<PiscinaInventario, 'orario_apertura' | 'orario_chiusura'>,
+  data: Date,
+  adesso: Date = new Date()
+): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "L'orario è obbligatorio.";
+  const minutes = parseHHMMToMinutes(trimmed);
+  if (minutes === null) return 'Inserisci un orario valido (HH:MM).';
+
+  const apertura = inventario.orario_apertura.slice(0, 5);
+  const chiusura = inventario.orario_chiusura.slice(0, 5);
+  if (minutes < parseHHMMToMinutes(apertura)! || minutes > parseHHMMToMinutes(chiusura)!) {
+    return `La piscina è aperta dalle ${apertura} alle ${chiusura}.`;
+  }
+  if (isSameDay(data, adesso) && minutes < adesso.getHours() * 60 + adesso.getMinutes()) {
+    return "L'orario non può essere nel passato.";
+  }
+  return null;
+}
+
+export type OrarioValidationResult ={ valid: true; minutes: number } | { valid: false; error: string };
 
 // L'orario di arrivo previsto è obbligatorio e, quando si opera sulla data odierna, non può
 // essere nel passato rispetto all'ora attuale (per le altre date il confronto non ha senso).

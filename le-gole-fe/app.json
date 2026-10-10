@@ -2,13 +2,17 @@
   "expo": {
     "name": "Le Gole",
     "slug": "legole",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "scheme": "legole",
     "orientation": "default",
     "icon": "./assets/icon-appstore.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.osterialegole.legole",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.osterialegole.legole",

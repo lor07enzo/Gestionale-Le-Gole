@@ -153,6 +153,17 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# 'default' resta in memoria (per-processo) come sempre. 'throttle' è su database perché deve
+# essere condivisa tra i worker gunicorn: la usa solo il limite di storico_telefono. La tabella
+# la crea la migrazione prenotazioni/0011, non serve lanciare createcachetable a mano.
+CACHES = {
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+    'throttle': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'throttle_cache',
+    },
+}
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -170,6 +181,11 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '120/min',
         'user': '300/min',
+        # "Le mie prenotazioni" (prenotazioni/throttling.py): contatore per IP e per servizio,
+        # e una ricerca fa una richiesta per servizio. 5 ricerche al minuto e 50 al giorno
+        # bastano anche al Wi-Fi del locale, e rendono inutile provare numeri a raffica.
+        'storico_telefono_minuto': '5/min',
+        'storico_telefono_giorno': '50/day',
     },
     # Generatore dello schema OpenAPI 3 (drf-spectacular). Senza questa riga DRF userebbe il
     # proprio generatore AutoSchema legacy, che produce OpenAPI 2 e ignora ogni @extend_schema.

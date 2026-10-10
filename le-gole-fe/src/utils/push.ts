@@ -1,6 +1,5 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import api from '../services/api';
@@ -21,6 +20,25 @@ import { clearPushToken, getPushToken, savePushToken } from './storage';
 // canale inesistente viene scartata dal sistema senza alcun errore visibile.
 const CANALE_ANDROID = 'prenotazioni';
 
+type ModuloNotifiche = typeof import('expo-notifications');
+
+/**
+ * `expo-notifications` caricato solo dove funziona. Da SDK 53 Expo Go su Android ha rimosso i push
+ * remoti e il modulo **lancia un errore già all'import**: con un import statico in cima al file
+ * l'errore si propagava a `app/_layout.tsx` e ad `AuthContext`, e Expo Router segnalava ogni rotta
+ * come "missing the required default export" — l'app intera non partiva.
+ */
+function notifiche(): ModuloNotifiche | null {
+  // 'storeClient' = Expo Go (valore letterale: l'enum ExecutionEnvironment non esiste nei mock dei test).
+  if (Platform.OS === 'android' && Constants.executionEnvironment === 'storeClient') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-notifications') as ModuloNotifiche;
+  } catch {
+    return null;
+  }
+}
+
 export type DatiNotifica = {
   categoria?: string;
   prenotazioneId?: string;
@@ -34,6 +52,8 @@ export type DatiNotifica = {
  * passa inosservata (il badge del pannello in-app si aggiorna solo al polling successivo).
  */
 export function configuraNotificheInPrimoPiano(): void {
+  const Notifications = notifiche();
+  if (!Notifications) return;
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -76,6 +96,8 @@ export function percorsoDaNotifica(dati: DatiNotifica | undefined | null): strin
  */
 export async function registraDispositivoPush(): Promise<void> {
   if (Platform.OS === 'web' || !Device.isDevice) return;
+  const Notifications = notifiche();
+  if (!Notifications) return;
 
   try {
     if (Platform.OS === 'android') {
@@ -87,7 +109,7 @@ export async function registraDispositivoPush(): Promise<void> {
       });
     }
 
-    const permesso = await richiediPermesso();
+    const permesso = await richiediPermesso(Notifications);
     if (!permesso) return;
 
     // projectId è obbligatorio per getExpoPushTokenAsync da SDK 49: senza, Expo non sa a quale
@@ -108,7 +130,7 @@ export async function registraDispositivoPush(): Promise<void> {
   }
 }
 
-async function richiediPermesso(): Promise<boolean> {
+async function richiediPermesso(Notifications: ModuloNotifiche): Promise<boolean> {
   const { status } = await Notifications.getPermissionsAsync();
   if (status === 'granted') return true;
 
@@ -146,6 +168,8 @@ export async function rimuoviDispositivoPush(): Promise<void> {
  * avviata, quindi il listener non esisteva ancora quando l'evento è stato emesso.
  */
 export function ascoltaTapNotifica(vaiA: (percorso: string) => void): () => void {
+  const Notifications = notifiche();
+  if (!Notifications) return () => {};
   let attivo = true;
 
   Notifications.getLastNotificationResponseAsync()

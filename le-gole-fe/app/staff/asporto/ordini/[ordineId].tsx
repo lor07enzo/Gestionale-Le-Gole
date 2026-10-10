@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Platform, Pressable, ScrollView } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { ScrollView } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { Box } from '@/components/ui/box';
-import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
-import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Spinner } from '@/components/ui/spinner';
-import { ArrowLeftIcon, ChevronRightIcon, Icon, PhoneIcon } from '@/components/ui/icon';
-import { goBackOr } from '../../../../src/utils/navigation';
+import { StaffPageHeader } from '../../../../src/components/staff/StaffPageHeader';
+import { ClienteInfoCard } from '../../../../src/components/staff/ClienteInfoCard';
+import { chiediConferma, mostraErrore } from '../../../../src/utils/dialog';
 import {
   getPrenotazioneAsporto,
   updatePrenotazioneAsporto,
@@ -24,77 +23,11 @@ import {
 
 function DettaglioOrdineHeader({ nome }: Readonly<{ nome: string | undefined }>) {
   return (
-    <HStack space="sm" className="items-center">
-      <Pressable
-        onPress={() => goBackOr('/staff/asporto/ordini')}
-        accessibilityLabel="Torna indietro"
-        className="h-11 w-11 items-center justify-center rounded-full bg-sky-200 active:bg-sky-300"
-      >
-        <Icon as={ArrowLeftIcon} size="lg" className="text-sky-700" />
-      </Pressable>
-      <VStack className="flex-1">
-        <Heading size="xl">Dettaglio ordine</Heading>
-        <Text size="sm" className="text-muted-foreground">
-          {nome ?? 'Anagrafica cliente e riepilogo ordine'}
-        </Text>
-      </VStack>
-    </HStack>
-  );
-}
-
-// Tutte le informazioni del cliente utili da qui: nome, telefono con la stessa CTA "Chiama"
-// già introdotta nella scheda cliente (sezione 5), più un link diretto alla scheda completa (che
-// include a sua volta l'intero storico piscina/asporto del cliente) per chi ne serve ancora di più.
-function ClienteInfoCard({
-  nome,
-  telefono,
-  clienteId,
-}: Readonly<{ nome: string; telefono: string; clienteId: string }>) {
-  return (
-    <VStack space="sm" className="w-full">
-      <Pressable
-        onPress={() => Linking.openURL(`tel:${telefono}`).catch(() => {})}
-        accessibilityRole="link"
-        accessibilityLabel={`Chiama ${telefono}`}
-        className="active:opacity-80"
-      >
-        <Box className="w-full rounded-xl border-2 border-sky-200 bg-white p-4 shadow-sm">
-          <HStack className="items-center justify-between">
-            <VStack>
-              <Text size="md" className="font-semibold text-sky-900">
-                {nome}
-              </Text>
-              <HStack space="xs" className="items-center">
-                <Icon as={PhoneIcon} size="xs" className="text-sky-600" />
-                <Text size="sm" className="text-sky-700">
-                  {telefono}
-                </Text>
-              </HStack>
-            </VStack>
-            <HStack space="xs" className="items-center rounded-full bg-sky-500/15 px-3 py-1.5">
-              <Text size="xs" className="font-bold text-sky-700">
-                Chiama
-              </Text>
-              <Icon as={ChevronRightIcon} size="xs" className="text-sky-700" />
-            </HStack>
-          </HStack>
-        </Box>
-      </Pressable>
-
-      <Pressable
-        onPress={() => router.push(`/staff/clienti/${clienteId}`)}
-        accessibilityRole="button"
-        accessibilityLabel="Vedi scheda cliente completa"
-        className="w-full rounded-xl border border-sky-100 bg-white px-4 py-3 active:bg-sky-50"
-      >
-        <HStack className="items-center justify-between">
-          <Text size="sm" className="font-medium text-sky-700">
-            Vedi scheda cliente completa
-          </Text>
-          <Icon as={ChevronRightIcon} size="sm" className="text-sky-400" />
-        </HStack>
-      </Pressable>
-    </VStack>
+    <StaffPageHeader
+      title="Dettaglio ordine"
+      subtitle={nome ?? 'Anagrafica cliente e riepilogo ordine'}
+      fallbackHref="/staff/asporto/ordini"
+    />
   );
 }
 
@@ -158,12 +91,7 @@ export default function DettaglioOrdineAsportoScreen() {
       const updated = await updatePrenotazioneAsporto(ordine.id, { stato: 'CONFIRMED' });
       setOrdine(updated);
     } catch (err) {
-      const message = extractErrorMessage(err, "Impossibile confermare l'ordine. Riprova.");
-      if (Platform.OS === 'web') {
-        window.alert(message);
-      } else {
-        Alert.alert('Errore', message);
-      }
+      mostraErrore(extractErrorMessage(err, "Impossibile confermare l'ordine. Riprova."));
     } finally {
       setIsConfirming(false);
     }
@@ -179,27 +107,13 @@ export default function DettaglioOrdineAsportoScreen() {
         const updated = await updatePrenotazioneAsporto(ordine.id, { stato: 'CANCELLED' });
         setOrdine(updated);
       } catch (err) {
-        const message2 = extractErrorMessage(err, "Impossibile annullare l'ordine. Riprova.");
-        if (Platform.OS === 'web') {
-          window.alert(message2);
-        } else {
-          Alert.alert('Errore', message2);
-        }
+        mostraErrore(extractErrorMessage(err, "Impossibile annullare l'ordine. Riprova."));
       } finally {
         setIsCancelling(false);
       }
     };
 
-    if (Platform.OS === 'web') {
-      if (window.confirm(message)) {
-        doCancel();
-      }
-      return;
-    }
-    Alert.alert('Annullare ordine?', message, [
-      { text: 'No', style: 'cancel' },
-      { text: 'Annulla ordine', style: 'destructive', onPress: doCancel },
-    ]);
+    chiediConferma('Annullare ordine?', message, 'Annulla ordine', doCancel);
   };
 
   if (!ordineId || isLoading) {

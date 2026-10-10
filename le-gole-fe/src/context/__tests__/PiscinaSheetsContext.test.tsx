@@ -642,6 +642,355 @@ describe('PiscinaSheetsContext — modifica ed conferma prenotazione', () => {
   });
 });
 
+describe('PiscinaSheetsContext — rami di errore e guardie', () => {
+  const errDrf = (data: object) => ({ response: { data } });
+
+  function setupOccupata(mappaOverrides: MappaDataOverrides = {}) {
+    const occ = buildOccupazione({ id: 'occ-1', postazione: 'post-occupata' });
+    return setupMocks({ occupazioneByPostazione: new Map([['post-occupata', occ]]), ...mappaOverrides });
+  }
+
+  async function apriOccupata() {
+    const rendered = await renderSheets();
+    await act(async () => {
+      rendered.result.current.handleMarkerPress(buildPostazione({ id: 'post-occupata' }));
+    });
+    return rendered;
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('handlePickCliente precompila il foglio con i residui e chiude il picker', async () => {
+    setupMocks();
+    const { result } = await renderSheets();
+    await act(async () => {
+      result.current.setIsClientPickerOpen(true);
+      result.current.handlePickCliente(buildPrenotazione());
+    });
+    expect(result.current.sheetForm).toMatchObject({ clienteNome: 'Mario Rossi', lettini: '2', orarioArrivo: '10:00' });
+    expect(result.current.isClientPickerOpen).toBe(false);
+  });
+
+  it('handleMarkerPress senza cliente selezionato apre un foglio vuoto', async () => {
+    setupMocks({}, null);
+    const { result } = await renderSheets();
+    await act(async () => {
+      result.current.handleMarkerPress(buildPostazione({ id: 'libera' }));
+    });
+    expect(result.current.sheetMode).toBe('assign');
+    expect(result.current.sheetForm.clienteNome).toBe('');
+  });
+
+  it('confirmAssign: giorno passato, orario non valido ed errore del backend', async () => {
+    const mappaData = setupMocks({ isPastDate: true });
+    const { result, rerender } = await renderSheets();
+    await act(async () => {
+      result.current.handleMarkerPress(buildPostazione({ id: 'libera' }));
+    });
+    await act(async () => {
+      await result.current.confirmAssign();
+    });
+    expect(result.current.sheetError).toMatch(/giorno passato/);
+
+    mockUseMappaData.mockReturnValue({ ...mappaData, isPastDate: false });
+    await rerender({});
+    await act(async () => {
+      result.current.updateSheetForm({ orarioArrivo: 'boh' });
+    });
+    await act(async () => {
+      await result.current.confirmAssign();
+    });
+    expect(result.current.sheetError).toBe('Orario di arrivo non valido.');
+
+    (mappaData.assignOccupazione as jest.Mock).mockRejectedValue(new Error('409'));
+    await act(async () => {
+      result.current.updateSheetForm({ orarioArrivo: '10:00', lettini: '0', sdraie: '5' });
+    });
+    await act(async () => {
+      await result.current.confirmAssign();
+    });
+    expect(result.current.sheetError).toMatch(/Sdraie superiori/);
+
+    await act(async () => {
+      result.current.updateSheetForm({ sdraie: '0' });
+    });
+    await act(async () => {
+      await result.current.confirmAssign();
+    });
+    expect(result.current.sheetError).toBe('Impossibile assegnare la postazione.');
+  });
+
+  it('confirmAssign lascia selezionato il cliente se ha ancora unità dello stesso tipo', async () => {
+    setupMocks({}, 'pren-1');
+    const selection = mockUseSelection();
+    const { result } = await renderSheets();
+    await act(async () => {
+      result.current.handleMarkerPress(buildPostazione({ id: 'libera' }));
+    });
+    await act(async () => {
+      await result.current.confirmAssign();
+    });
+    // Residuo ombrelloni 2 prima di questa assegnazione: il cliente resta candidato.
+    expect(selection.selectPrenotazioneCandidate).not.toHaveBeenCalledWith(null);
+  });
+
+  it('confirmOccupantEdit salva le modifiche o segnala errori di validazione e backend', async () => {
+    const mappaData = setupOccupata();
+    const { result } = await apriOccupata();
+
+    await act(async () => {
+      result.current.updateSheetForm({ lettini: '9' });
+    });
+    await act(async () => {
+      await result.current.confirmOccupantEdit();
+    });
+    expect(result.current.sheetError).toMatch(/Lettini superiori/);
+
+    await act(async () => {
+      result.current.updateSheetForm({ lettini: '1', orarioArrivo: '' });
+    });
+    await act(async () => {
+      await result.current.confirmOccupantEdit();
+    });
+    expect(result.current.sheetError).toMatch(/obbligatorio/);
+
+    (mappaData.updateOccupazioneEntry as jest.Mock).mockRejectedValueOnce(new Error('500'));
+    await act(async () => {
+      result.current.updateSheetForm({ orarioArrivo: '11:00' });
+    });
+    await act(async () => {
+      await result.current.confirmOccupantEdit();
+    });
+    expect(result.current.sheetError).toBe('Impossibile salvare le modifiche.');
+
+    await act(async () => {
+      await result.current.confirmOccupantEdit();
+    });
+    expect(mappaData.updateOccupazioneEntry).toHaveBeenLastCalledWith('occ-1', {
+      cliente_nome: 'Mario Rossi',
+      numero_lettini: 1,
+      numero_sdraie: 0,
+      orario_arrivo_previsto: '11:00',
+    });
+    expect(result.current.sheetMode).toBeNull();
+  });
+
+  it('su un giorno passato non si modifica né si libera un’occupazione', async () => {
+    const mappaData = setupOccupata({ isPastDate: true });
+    const { result } = await apriOccupata();
+
+    await act(async () => {
+      await result.current.confirmOccupantEdit();
+    });
+    expect(result.current.sheetError).toMatch(/giorno passato/);
+    await act(async () => {
+      await result.current.liberaPostazione();
+    });
+    expect(result.current.sheetError).toMatch(/liberare una postazione di un giorno passato/);
+    expect(mappaData.removeOccupazione).not.toHaveBeenCalled();
+  });
+
+  it('toggleArrivato e liberaPostazione mostrano l’errore del backend', async () => {
+    const mappaData = setupOccupata();
+    (mappaData.updateOccupazioneEntry as jest.Mock).mockRejectedValue(new Error('500'));
+    (mappaData.removeOccupazione as jest.Mock).mockRejectedValue(new Error('500'));
+    const { result } = await apriOccupata();
+
+    await act(async () => {
+      await result.current.toggleArrivato();
+    });
+    expect(result.current.sheetError).toMatch(/stato di arrivo/);
+    await act(async () => {
+      await result.current.liberaPostazione();
+    });
+    expect(result.current.sheetError).toBe('Impossibile liberare la postazione.');
+  });
+
+  it('handleDeletePostazione chiede conferma, elimina e gestisce il rifiuto del backend', async () => {
+    const mappaData = setupMocks();
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const { result } = await renderSheets();
+
+    await act(async () => {
+      result.current.handleDeletePostazione(buildPostazione({ id: 'p9', numero: 9 }));
+    });
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('#9'));
+    expect(mappaData.removePostazione).toHaveBeenCalledWith('p9');
+
+    (mappaData.removePostazione as jest.Mock).mockRejectedValue(new Error('occupata'));
+    await act(async () => {
+      result.current.handleDeletePostazione(buildPostazione({ id: 'p9', numero: 9 }));
+    });
+    await waitFor(() => expect(result.current.sheetError).toMatch(/Impossibile eliminare/));
+  });
+
+  it('handleDeletePostazione è bloccata su un giorno passato', async () => {
+    const mappaData = setupMocks({ isPastDate: true });
+    const { result } = await renderSheets();
+    await act(async () => {
+      result.current.handleDeletePostazione(buildPostazione());
+    });
+    expect(result.current.sheetError).toMatch(/giorno passato/);
+    expect(mappaData.removePostazione).not.toHaveBeenCalled();
+  });
+
+  it('confirmAddPostazione riporta il messaggio del backend', async () => {
+    const mappaData = setupMocks({ postazioni: [] });
+    (mappaData.addPostazione as jest.Mock).mockRejectedValue(errDrf({ numero: ['Numero già usato.'] }));
+    const { result } = await renderSheets();
+    await act(async () => {
+      result.current.openAddPostazioneSheet();
+    });
+    await act(async () => {
+      await result.current.confirmAddPostazione();
+    });
+    expect(result.current.sheetError).toBe('Numero già usato.');
+  });
+
+  it('confirmCreateCliente: giorno passato, orario mancante ed errore del backend', async () => {
+    const mappaData = setupMocks({ isPastDate: true });
+    const { result, rerender } = await renderSheets();
+    await act(async () => {
+      result.current.openNewClienteSheet();
+    });
+    await act(async () => {
+      await result.current.confirmCreateCliente();
+    });
+    expect(result.current.newClienteError).toMatch(/giorno passato/);
+
+    mockUseMappaData.mockReturnValue({ ...mappaData, isPastDate: false });
+    await rerender({});
+    await act(async () => {
+      result.current.updateNewClienteForm({ nome: 'Anna', telefono: '333', orarioArrivo: '' });
+    });
+    await act(async () => {
+      await result.current.confirmCreateCliente();
+    });
+    expect(result.current.newClienteError).toMatch(/obbligatorio/);
+
+    mockCreateCliente.mockRejectedValue(errDrf({ telefono: ['Telefono non valido.'] }));
+    await act(async () => {
+      result.current.updateNewClienteForm({ orarioArrivo: '10:00' });
+    });
+    await act(async () => {
+      await result.current.confirmCreateCliente();
+    });
+    expect(result.current.newClienteError).toBe('Telefono non valido.');
+
+    await act(async () => {
+      result.current.closeNewClienteSheet();
+    });
+    expect(result.current.isNewClienteSheetOpen).toBe(false);
+    expect(result.current.newClienteError).toBeNull();
+  });
+
+  it('confirmCreateCliente rifiuta un ingresso intero dopo la soglia se il ridotto è configurato', async () => {
+    setupMocks({ inventario: buildInventario({ orario_inizio_ridotto: '14:00', prezzo_ingresso_ridotto: '3.00' }) });
+    const { result } = await renderSheets();
+    await act(async () => {
+      result.current.openNewClienteSheet();
+    });
+    await act(async () => {
+      result.current.updateNewClienteForm({ nome: 'Anna', telefono: '333', orarioArrivo: '15:00', ingressi: '2' });
+    });
+    await act(async () => {
+      await result.current.confirmCreateCliente();
+    });
+    expect(result.current.newClienteError).toMatch(/solo l'ingresso ridotto/);
+  });
+
+  it('confirmEditPrenotazione: giorno passato, orario vuoto ed errore del backend', async () => {
+    const mappaData = setupMocks({ isPastDate: true });
+    const { result, rerender } = await renderSheets();
+    await act(async () => {
+      result.current.openEditPrenotazione(buildPrenotazione());
+    });
+    await act(async () => {
+      await result.current.confirmEditPrenotazione();
+    });
+    expect(result.current.editError).toMatch(/giorno passato/);
+
+    mockUseMappaData.mockReturnValue({ ...mappaData, isPastDate: false });
+    await rerender({});
+    await act(async () => {
+      result.current.updateEditForm({ ora: ' ' });
+    });
+    await act(async () => {
+      await result.current.confirmEditPrenotazione();
+    });
+    expect(result.current.editError).toBe('Inserisci un orario valido.');
+
+    (mappaData.editPrenotazione as jest.Mock).mockRejectedValue(errDrf({ ombrellone: ['Esauriti.'] }));
+    await act(async () => {
+      result.current.updateEditForm({ ora: '10:00', ingressiRidotti: '1' });
+    });
+    await act(async () => {
+      await result.current.confirmEditPrenotazione();
+    });
+    expect(result.current.editError).toMatch(/disponibile dalle/);
+
+    await act(async () => {
+      result.current.updateEditForm({ ingressiRidotti: '0' });
+    });
+    await act(async () => {
+      await result.current.confirmEditPrenotazione();
+    });
+    expect(result.current.editError).toBe('Esauriti.');
+
+    await act(async () => {
+      result.current.closeEditPrenotazione();
+    });
+    expect(result.current.editingPrenotazione).toBeNull();
+  });
+
+  it('confirmPrenotazione avvisa se la conferma fallisce', async () => {
+    const mappaData = setupMocks();
+    (mappaData.editPrenotazione as jest.Mock).mockRejectedValue(new Error('500'));
+    const alert = jest.spyOn(window, 'alert').mockImplementation(() => {});
+    const { result } = await renderSheets();
+    await act(async () => {
+      await result.current.confirmPrenotazione(buildPrenotazione({ stato: 'PENDING' }));
+    });
+    expect(alert).toHaveBeenCalledWith('Impossibile confermare la prenotazione.');
+    expect(result.current.confirmingPrenotazioneId).toBeNull();
+  });
+
+  it('handleCancelPrenotazione annulla dopo conferma e deseleziona il candidato', async () => {
+    const mappaData = setupMocks({}, 'pren-1');
+    const selection = mockUseSelection();
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const { result } = await renderSheets();
+
+    await act(async () => {
+      result.current.handleCancelPrenotazione(buildPrenotazione({ id: 'pren-1' }));
+    });
+    await waitFor(() => expect(mappaData.cancelPrenotazione).toHaveBeenCalledWith('pren-1'));
+    await waitFor(() => expect(selection.selectPrenotazioneCandidate).toHaveBeenCalledWith(null));
+  });
+
+  it('handleCancelPrenotazione avvisa se il backend fallisce, e non fa nulla nel passato', async () => {
+    const mappaData = setupMocks();
+    (mappaData.cancelPrenotazione as jest.Mock).mockRejectedValue(new Error('500'));
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const alert = jest.spyOn(window, 'alert').mockImplementation(() => {});
+    const { result, rerender } = await renderSheets();
+
+    await act(async () => {
+      result.current.handleCancelPrenotazione(buildPrenotazione({ id: 'altra' }));
+    });
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Impossibile annullare la prenotazione.'));
+
+    mockUseMappaData.mockReturnValue({ ...mappaData, isPastDate: true });
+    await rerender({});
+    await act(async () => {
+      result.current.handleCancelPrenotazione(buildPrenotazione({ id: 'altra' }));
+    });
+    expect(mappaData.cancelPrenotazione).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('PiscinaSheetsContext — sheetAriaLabel', () => {
   it('riflette la modalità corrente del foglio', async () => {
     setupMocks({ postazioni: [buildPostazione({ id: 'p1', numero: 7 })] });

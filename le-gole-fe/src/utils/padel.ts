@@ -1,5 +1,58 @@
 import type { NoleggioRacchetta, PrenotazionePadel, SlotPadel } from '../services/padel';
-import { formatTime, parseHHMMToMinutes } from './piscinaMappa';
+import { formatTime, isSameDay, parseHHMMToMinutes } from './piscinaMappa';
+
+// Il backend non filtra gli orari già passati (nessun concetto di anticipo minimo per il padel):
+// oggi un orario delle 10:00 resterebbe "disponibile" anche alle 15:00. Lato cliente li si nasconde
+// invece di mostrarli disabilitati, per non introdurre una terza etichetta nel picker condiviso.
+export function slotPadelFuturi(slots: SlotPadel[], data: Date, adesso: Date = new Date()): SlotPadel[] {
+  if (!isSameDay(data, adesso)) return slots;
+  const nowMinuti = adesso.getHours() * 60 + adesso.getMinutes();
+  return slots.filter((slot) => (parseHHMMToMinutes(slot.ora) ?? 0) >= nowMinuti);
+}
+
+export function totaleRacchetteScelte(quantita: Record<string, number>): number {
+  return Object.values(quantita).reduce((somma, qty) => somma + qty, 0);
+}
+
+// Un partecipante in meno può riportare il totale delle racchette scelte sopra il nuovo tetto
+// (al massimo una per giocatore): toglie le eccedenti partendo dalla prima marca.
+export function ricalibraRacchette(quantita: Record<string, number>, partecipanti: number): Record<string, number> {
+  let totale = totaleRacchetteScelte(quantita);
+  if (totale <= partecipanti) return quantita;
+  const next = { ...quantita };
+  for (const id of Object.keys(next)) {
+    while (totale > partecipanti && next[id] > 0) {
+      next[id] -= 1;
+      totale -= 1;
+    }
+    if (totale <= partecipanti) break;
+  }
+  return next;
+}
+
+// Tetto dello stepper di una marca: né più dei pezzi posseduti, né oltre i partecipanti ancora
+// senza racchetta (contando anche quelle già scelte di altre marche).
+export function maxRacchettaSelezionabile(
+  pezziPosseduti: number,
+  partecipanti: number,
+  quantita: Record<string, number>,
+  racchettaId: string
+): number {
+  const valore = quantita[racchettaId] ?? 0;
+  const residuoPartecipanti = partecipanti - (totaleRacchetteScelte(quantita) - valore);
+  return Math.max(0, Math.min(pezziPosseduti, residuoPartecipanti));
+}
+
+// Costo delle racchette scelte, dal catalogo corrente (la prenotazione non esiste ancora).
+export function costoRacchetteScelte(
+  catalogo: Array<{ id: string; prezzo_noleggio: string }>,
+  quantita: Record<string, number>
+): number {
+  return catalogo.reduce((somma, racchetta) => {
+    const qty = quantita[racchetta.id] ?? 0;
+    return somma + qty * (Number.parseFloat(racchetta.prezzo_noleggio) || 0);
+  }, 0);
+}
 
 export function formatDurata(minuti: number): string {
   if (minuti < 60) return `${minuti} min`;
@@ -33,6 +86,18 @@ export function calcolaTotalePadel(
     0
   );
   return partita + palline + racchette;
+}
+
+// Totale di una partita non ancora creata: prezzi dalla configurazione e dal catalogo correnti.
+export function totaleStimatoPadel(
+  configurazione: { prezzo_partita: string; prezzo_noleggio_palline: string },
+  palline: boolean,
+  catalogo: Array<{ id: string; prezzo_noleggio: string }>,
+  racchette: Record<string, number>
+): number {
+  const partita = Number.parseFloat(configurazione.prezzo_partita) || 0;
+  const costoPalline = palline ? Number.parseFloat(configurazione.prezzo_noleggio_palline) || 0 : 0;
+  return partita + costoPalline + costoRacchetteScelte(catalogo, racchette);
 }
 
 export function formatTotaleEuro(totale: number): string {

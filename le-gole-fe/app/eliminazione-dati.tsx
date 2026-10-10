@@ -1,80 +1,29 @@
-import type { ReactNode } from 'react';
-import { Linking, Pressable, ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Linking, Pressable } from 'react-native';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Icon, MailIcon } from '@/components/ui/icon';
-import { BackButton } from '../src/components/cliente/BackButton';
+import {
+  Bold,
+  ListItem,
+  PaginaLegale,
+  Paragraph,
+  SectionHeading,
+  TITOLARE,
+} from '../src/components/cliente/PaginaLegale';
 
 // Pagina richiesta da Google Play (sezione "Sicurezza dei dati": URL di eliminazione account e
 // dati associati). Deve restare pubblica e raggiungibile senza login: un rimando alla sola
 // informativa generica non soddisfa il requisito, che chiede cosa viene eliminato, cosa resta e
-// come si richiede. Dati e formulazioni allineati ad app/privacy.tsx (stesso Titolare, stessa
-// casella, stesse regole di conservazione) per non avere due pagine che si contraddicono.
-const TITOLARE = {
-  nomeCommerciale: 'Osteria Le Gole',
-  ragioneSociale: 'AME S.r.l.',
-  emailPrivacy: 'osterialegole@icloud.com',
-};
-
+// come si richiede. Titolare e tipografia condivisi con app/privacy.tsx (PaginaLegale).
 const OGGETTO_EMAIL = 'Richiesta di eliminazione dei dati';
 const MAILTO = `mailto:${TITOLARE.emailPrivacy}?subject=${encodeURIComponent(OGGETTO_EMAIL)}`;
 
-const ULTIMO_AGGIORNAMENTO = '21 settembre 2026';
-
-function SectionHeading({ children }: Readonly<{ children: string }>) {
-  return (
-    <Heading size="md" className="mt-2 text-foreground">
-      {children}
-    </Heading>
-  );
-}
-
-function Paragraph({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <Text size="sm" className="leading-6 text-muted-foreground">
-      {children}
-    </Text>
-  );
-}
-
-function ListItem({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <Text size="sm" className="leading-6 text-muted-foreground">
-      •  {children}
-    </Text>
-  );
-}
-
-function Bold({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <Text size="sm" className="font-semibold text-foreground">
-      {children}
-    </Text>
-  );
-}
-
 export default function EliminazioneDatiScreen() {
-  // Rotta di primo livello (app/eliminazione-dati.tsx, non app/cliente/...): non eredita il
-  // paddingTop dell'inset condiviso da app/cliente/_layout.tsx, va riservato qui — stessa causa
-  // e stesso rimedio già applicati ad app/privacy.tsx (sezione 7 di CLAUDE.md).
-  const insets = useSafeAreaInsets();
   return (
-    <Box className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-      <ScrollView className="flex-1" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
-        <VStack space="lg" className="w-full max-w-2xl self-center">
-          <VStack space="xs">
-            <Heading size="2xl" className="text-foreground">
-              Eliminazione dei dati
-            </Heading>
-            <Text size="xs" className="text-muted-foreground">
-              Ultimo aggiornamento: {ULTIMO_AGGIORNAMENTO}
-            </Text>
-          </VStack>
-
+    <PaginaLegale titolo="Eliminazione dei dati" aggiornamento="21 settembre 2026">
           <Box className="w-full rounded-2xl border border-sky-200 bg-sky-50 p-5">
             <VStack space="sm">
               <Heading size="sm" className="text-foreground">
@@ -200,10 +149,6 @@ export default function EliminazioneDatiScreen() {
               </Paragraph>
             </VStack>
           </Box>
-
-          <BackButton className="mt-2" fallbackHref="/cliente" />
-        </VStack>
-      </ScrollView>
-    </Box>
+    </PaginaLegale>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image } from 'react-native';
+import { Image, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
 import { goBackOr } from '../src/utils/navigation';
@@ -9,6 +9,8 @@ import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
+import { HStack } from '@/components/ui/hstack';
+import { Icon, InfoIcon } from '@/components/ui/icon';
 
 const logo = require('../assets/logo-le-gole-nero.png');
 
@@ -18,6 +20,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isInfoUsernameOpen, setIsInfoUsernameOpen] = useState(false);
 
   const handleLogin = async () => {
     setError(null);
@@ -49,9 +52,29 @@ export default function LoginScreen() {
 
         <VStack space="md" className="mt-8">
           <VStack space="xs">
-            <Text size="sm" className="font-medium">
-              Username
-            </Text>
+            <HStack space="xs" className="items-center">
+              <Text size="sm" className="font-medium">
+                Username
+              </Text>
+              <Pressable
+                onPress={() => setIsInfoUsernameOpen((open) => !open)}
+                accessibilityRole="button"
+                accessibilityLabel="Informazioni sullo username"
+                accessibilityState={{ expanded: isInfoUsernameOpen }}
+                hitSlop={8}
+                className="h-6 w-6 items-center justify-center rounded-full active:bg-sky-100"
+              >
+                <Icon as={InfoIcon} size="sm" className="text-sky-700" />
+              </Pressable>
+            </HStack>
+            {isInfoUsernameOpen ? (
+              <Box className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                <Text size="xs" className="text-sky-900">
+                  Usa lo stesso username che trovi nell'email ricevuta per impostare la password
+                  (all'inizio del messaggio, dopo «Ciao»).
+                </Text>
+              </Box>
+            ) : null}
             <Input>
               <InputField
                 placeholder="Il tuo username"

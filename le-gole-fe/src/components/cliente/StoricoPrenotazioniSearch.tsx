@@ -9,18 +9,30 @@ import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { PhoneIcon } from '@/components/ui/icon';
 import { getStoricoAsportoPerTelefono, getStoricoPiscinaPerTelefono } from '../../services/prenotazioni';
 import { getStoricoPadelPerTelefono } from '../../services/padel';
+import { haPrenotazioni, salvaStoricoCliente, type StoricoCliente } from '../../utils/storicoSessione';
+
+function messaggioErrore(error: unknown): string {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  if (status === 429) {
+    return 'Hai fatto troppe ricerche in poco tempo. Riprova tra qualche minuto.';
+  }
+  return 'Impossibile completare la ricerca. Riprova.';
+}
 
 // Piccola sezione di ricerca sulla landing "Area Cliente" (app/cliente/index.tsx) — nessun login
 // cliente esiste in questo progetto (sezione 3/7 di CLAUDE.md), quindi il numero di telefono è
 // l'unico "segreto" richiesto per consultare il proprio storico, stesso principio di fiducia già
 // usato per il biglietto/la ricevuta PDF via UUID (sezione 2/15).
 //
-// Il controllo di esistenza avviene QUI, prima di navigare: se nessuna delle due categorie
-// (piscina/asporto) ha risultati per il numero inserito, il messaggio d'errore resta su questa
-// stessa pagina — la pagina dedicata (app/cliente/storico.tsx) presuppone che esista già qualcosa
-// da mostrare, coerente con la richiesta esplicita dell'utente ("se è presente uno storico... si
-// aprirà una pagina dedicata, altrimenti uscirà un messaggio di errore").
-export function StoricoPrenotazioniSearch() {
+// Il controllo di esistenza avviene QUI, prima di navigare: se nessun servizio ha risultati il
+// messaggio d'errore resta su questa pagina. Il risultato viene passato alla pagina storico in
+// memoria (utils/storicoSessione.ts), mai con il telefono nell'URL.
+//
+// `onTrovato`: usato dalla pagina storico stessa quando viene aperta senza una ricerca in memoria
+// (ricaricamento, link salvato) — mostra i risultati sul posto invece di navigare.
+export function StoricoPrenotazioniSearch({
+  onTrovato,
+}: Readonly<{ onTrovato?: (storico: StoricoCliente) => void }> = {}) {
   const [telefono, setTelefono] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,15 +56,21 @@ export function StoricoPrenotazioniSearch() {
         getStoricoAsportoPerTelefono(valore),
         getStoricoPadelPerTelefono(valore),
       ]);
-      if (piscina.length === 0 && asporto.length === 0 && padel.length === 0) {
+      if (!haPrenotazioni({ piscina, asporto, padel })) {
         setError(
           'Nessuna prenotazione trovata per questo numero di telefono. Verifica di aver digitato lo stesso numero usato al momento della prenotazione.'
         );
         return;
       }
-      router.push(`/cliente/storico?telefono=${encodeURIComponent(valore)}` as Href);
-    } catch {
-      setError('Impossibile completare la ricerca. Riprova.');
+      const storico = { telefono: valore, piscina, asporto, padel };
+      salvaStoricoCliente(storico);
+      if (onTrovato) {
+        onTrovato(storico);
+      } else {
+        router.push('/cliente/storico' as Href);
+      }
+    } catch (err) {
+      setError(messaggioErrore(err));
     } finally {
       setIsSearching(false);
     }

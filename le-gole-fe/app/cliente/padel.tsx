@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView } from 'react-native';
+import { Platform, ScrollView } from 'react-native';
 import type { ViewStyle } from 'react-native';
 import { router } from 'expo-router';
 import { Box } from '@/components/ui/box';
@@ -7,36 +7,22 @@ import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Input, InputField } from '@/components/ui/input';
-import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
+import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import {
-  Actionsheet,
-  ActionsheetBackdrop,
-  ActionsheetContent,
-  ActionsheetDragIndicator,
-  ActionsheetDragIndicatorWrapper,
-} from '@/components/ui/actionsheet';
-import {
-  AddIcon,
-  CalendarDaysIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  Icon,
-  LockIcon,
-  PhoneIcon,
-  RemoveIcon,
-} from '@/components/ui/icon';
+import { Icon, LockIcon } from '@/components/ui/icon';
 import { ClienteFooter } from '../../src/components/cliente/ClienteFooter';
 import { BackButton } from '../../src/components/cliente/BackButton';
 import { ConfermaPrenotazionePadel } from '../../src/components/cliente/ConfermaPrenotazionePadel';
-import { CalendarPicker } from '../../src/components/shared/CalendarPicker';
+import { DateNavCliente } from '../../src/components/cliente/DateNavCliente';
+import { DatiClienteCard } from '../../src/components/cliente/DatiClienteCard';
 import { SlotPickerPadel } from '../../src/components/shared/SlotPickerPadel';
+import { StepperQuantita } from '../../src/components/shared/StepperQuantita';
+import { RacchetteNoleggioPicker } from '../../src/components/shared/RacchetteNoleggioPicker';
+import { useScaricaPdf } from '../../src/hooks/useScaricaPdf';
 import { createCliente } from '../../src/services/clienti';
 import {
-  createNoleggioRacchetta,
-  createPrenotazionePadel,
+  createPrenotazionePadelConNoleggi,
   getBigliettoPadelUrl,
   getConfigurazionePadel,
   getDisponibilitaPadel,
@@ -47,7 +33,6 @@ import {
   type RacchettaPadel,
 } from '../../src/services/padel';
 import {
-  addDays,
   formatDisplayDate,
   isSameDay,
   minutesToHHMM,
@@ -55,127 +40,21 @@ import {
   parseHHMMToMinutes,
   toISODate,
 } from '../../src/utils/piscinaMappa';
-import { formatDurata, formatTotaleEuro } from '../../src/utils/padel';
+import {
+  formatDurata,
+  formatTotaleEuro,
+  ricalibraRacchette,
+  slotPadelFuturi,
+  totaleRacchetteScelte,
+  totaleStimatoPadel,
+} from '../../src/utils/padel';
+import { dateToMap } from '../../src/utils/calendar';
 import { formatPrezzo } from '../../src/utils/prezzi';
-import { apriBigliettoPdf } from '../../src/utils/biglietto';
 import { extractErrorMessage } from '../../src/utils/errors';
 
 // Solo web: riserva sempre lo spazio della scrollbar verticale, così il padding destro dello
 // ScrollView non si assottiglia rispetto al sinistro quando il contenuto trabocca.
 const scrollViewStyle = Platform.OS === 'web' ? ({ scrollbarGutter: 'stable' } as unknown as ViewStyle) : undefined;
-
-function DateNav({
-  selectedDate,
-  onChange,
-  fullDates,
-}: Readonly<{ selectedDate: Date; onChange: (date: Date) => void; fullDates: Record<string, boolean> }>) {
-  const isToday = isSameDay(selectedDate, new Date());
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-
-  return (
-    <>
-      <HStack space="sm" className="items-center justify-between rounded-2xl border border-sky-100 bg-white p-2.5 shadow-sm">
-        <Pressable
-          accessibilityLabel="Giorno precedente"
-          disabled={isToday}
-          onPress={() => onChange(addDays(selectedDate, -1))}
-          className={`h-10 w-10 items-center justify-center rounded-full border-2 shadow-sm ${
-            isToday ? 'border-sky-100 bg-sky-50' : 'border-sky-300 bg-white active:bg-sky-50'
-          }`}
-        >
-          <Icon as={ChevronLeftIcon} size="md" className={isToday ? 'text-sky-300' : 'text-sky-900'} />
-        </Pressable>
-
-        <Pressable accessibilityLabel="Apri calendario per scegliere il giorno" onPress={() => setIsCalendarOpen(true)}>
-          <HStack space="xs" className="items-center">
-            <Icon as={CalendarDaysIcon} size="sm" className="text-sky-700" />
-            <Text size="md" className="font-bold capitalize text-sky-900">
-              {isToday ? 'Oggi' : formatDisplayDate(selectedDate)}
-            </Text>
-          </HStack>
-        </Pressable>
-
-        <Pressable
-          accessibilityLabel="Giorno successivo"
-          onPress={() => onChange(addDays(selectedDate, 1))}
-          className="h-10 w-10 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50"
-        >
-          <Icon as={ChevronRightIcon} size="md" className="text-sky-900" />
-        </Pressable>
-      </HStack>
-
-      <Actionsheet isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)}>
-        <ActionsheetBackdrop />
-        <ActionsheetContent aria-label="Scegli il giorno">
-          <ActionsheetDragIndicatorWrapper>
-            <ActionsheetDragIndicator />
-          </ActionsheetDragIndicatorWrapper>
-          <VStack space="md" className="w-full pb-6 pt-1">
-            <Heading size="sm">Scegli il giorno</Heading>
-            <Text size="xs" className="text-muted-foreground">
-              I giorni evidenziati in rosa sono chiusi.
-            </Text>
-            <CalendarPicker
-              selectedDate={selectedDate}
-              onSelect={(date) => {
-                onChange(date);
-                setIsCalendarOpen(false);
-              }}
-              minDate={new Date()}
-              fullDates={fullDates}
-            />
-          </VStack>
-        </ActionsheetContent>
-      </Actionsheet>
-    </>
-  );
-}
-
-function RacchettaStepperRow({
-  racchetta,
-  value,
-  max,
-  onChange,
-}: Readonly<{ racchetta: RacchettaPadel; value: number; max: number; onChange: (next: number) => void }>) {
-  return (
-    <HStack space="sm" className="items-center">
-      <Text size="md">🎾</Text>
-      <VStack className="flex-1">
-        <Text size="sm" className="font-medium">
-          {racchetta.nome}
-        </Text>
-        <Text size="2xs" className="text-muted-foreground">
-          €{formatPrezzo(racchetta.prezzo_noleggio)} a partita
-        </Text>
-      </VStack>
-      <HStack space="xs" className="items-center">
-        <Button
-          size="icon"
-          variant="outline"
-          className="h-11 w-11 rounded-full border-2 border-sky-300 bg-white md:h-12 md:w-12"
-          onPress={() => onChange(Math.max(0, value - 1))}
-          disabled={value <= 0}
-          accessibilityLabel={`Diminuisci ${racchetta.nome}`}
-        >
-          <ButtonIcon as={RemoveIcon} className="text-sky-900" />
-        </Button>
-        <Text size="md" className="w-8 text-center font-bold text-sky-900">
-          {value}
-        </Text>
-        <Button
-          size="icon"
-          variant="outline"
-          className="h-11 w-11 rounded-full border-2 border-sky-300 bg-white md:h-12 md:w-12"
-          onPress={() => onChange(value + 1)}
-          disabled={value >= max}
-          accessibilityLabel={`Aumenta ${racchetta.nome}`}
-        >
-          <ButtonIcon as={AddIcon} className="text-sky-900" />
-        </Button>
-      </HStack>
-    </HStack>
-  );
-}
 
 export default function ClientePadelBookingScreen() {
   const [configurazione, setConfigurazione] = useState<ConfigurazionePadel | null>(null);
@@ -198,7 +77,7 @@ export default function ClientePadelBookingScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [prenotazioneId, setPrenotazioneId] = useState<string | null>(null);
-  const [isDownloadingBiglietto, setIsDownloadingBiglietto] = useState(false);
+  const download = useScaricaPdf('Impossibile scaricare il biglietto. Riprova.');
 
   useEffect(() => {
     Promise.all([getConfigurazionePadel(), listRacchettePadel({ disponibile: true }), getProssimeChiusurePadel()])
@@ -232,55 +111,19 @@ export default function ClientePadelBookingScreen() {
     setOra('');
   }, [selectedDate]);
 
-  // Un partecipante in meno può riportare il totale racchette già scelte sopra il nuovo tetto.
   useEffect(() => {
-    setRacchetteQty((prev) => {
-      let totale = Object.values(prev).reduce((somma, qty) => somma + qty, 0);
-      if (totale <= partecipanti) return prev;
-      const next = { ...prev };
-      for (const id of Object.keys(next)) {
-        while (totale > partecipanti && next[id] > 0) {
-          next[id] -= 1;
-          totale -= 1;
-        }
-        if (totale <= partecipanti) break;
-      }
-      return next;
-    });
+    setRacchetteQty((prev) => ricalibraRacchette(prev, partecipanti));
   }, [partecipanti]);
 
-  const fullByDate = useMemo(() => {
-    const map: Record<string, boolean> = {};
-    chiusureFuture.forEach((iso) => {
-      map[iso] = true;
-    });
-    return map;
-  }, [chiusureFuture]);
-
-  // Il backend non filtra gli orari già passati (nessun concetto di anticipo minimo per il
-  // padel): un orario oggi alle 10:00 resterebbe "disponibile" anche alle 15:00. Nascosto qui
-  // invece che mostrato disabilitato, per non dover introdurre una terza etichetta ("passato")
-  // accanto a "occupato" nel picker condiviso con lo staff.
-  const slotsVisibili = useMemo(() => {
-    if (!disponibilita) return [];
-    if (!isSameDay(selectedDate, new Date())) return disponibilita.slots;
-    const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
-    return disponibilita.slots.filter((slot) => parseHHMMToMinutes(slot.ora)! >= nowMinuti);
-  }, [disponibilita, selectedDate]);
+  const fullByDate = useMemo(() => dateToMap(chiusureFuture), [chiusureFuture]);
+  const slotsVisibili = useMemo(
+    () => (disponibilita ? slotPadelFuturi(disponibilita.slots, selectedDate) : []),
+    [disponibilita, selectedDate]
+  );
 
   const maxPartecipanti = configurazione?.max_partecipanti ?? 4;
-  const totaleRacchetteSelezionate = Object.values(racchetteQty).reduce((somma, qty) => somma + qty, 0);
-
-  const totaleStimato = useMemo(() => {
-    if (!configurazione) return 0;
-    let somma = Number.parseFloat(configurazione.prezzo_partita) || 0;
-    if (palline) somma += Number.parseFloat(configurazione.prezzo_noleggio_palline) || 0;
-    racchette.forEach((racchetta) => {
-      const qty = racchetteQty[racchetta.id] ?? 0;
-      if (qty > 0) somma += qty * (Number.parseFloat(racchetta.prezzo_noleggio) || 0);
-    });
-    return somma;
-  }, [configurazione, palline, racchette, racchetteQty]);
+  const totaleRacchetteSelezionate = totaleRacchetteScelte(racchetteQty);
+  const totaleStimato = configurazione ? totaleStimatoPadel(configurazione, palline, racchette, racchetteQty) : 0;
 
   const handleSubmit = async () => {
     if (!configurazione) return;
@@ -301,27 +144,18 @@ export default function ClientePadelBookingScreen() {
     setIsSubmitting(true);
     try {
       const cliente = await createCliente({ nome: nome.trim(), telefono: telefono.trim() });
-      const partita = await createPrenotazionePadel({
-        cliente_id: cliente.id,
-        data: toISODate(selectedDate),
-        ora,
-        partecipanti,
-        palline_noleggiate: palline,
-        note: note.trim(),
-        stato: 'CONFIRMED',
-      });
-
-      const righeRacchette = Object.entries(racchetteQty).filter(([, qty]) => qty > 0);
-      if (righeRacchette.length > 0) {
-        // Promise.all, non allSettled: un noleggio fallito silenziosamente lascerebbe il cliente
-        // convinto di aver noleggiato una racchetta che invece non risulta da nessuna parte —
-        // stesso principio già seguito per le righe di un ordine asporto.
-        await Promise.all(
-          righeRacchette.map(([racchettaId, quantita]) =>
-            createNoleggioRacchetta({ prenotazione: partita.id, racchetta: racchettaId, quantita })
-          )
-        );
-      }
+      const partita = await createPrenotazionePadelConNoleggi(
+        {
+          cliente_id: cliente.id,
+          data: toISODate(selectedDate),
+          ora,
+          partecipanti,
+          palline_noleggiate: palline,
+          note: note.trim(),
+          stato: 'CONFIRMED',
+        },
+        racchetteQty
+      );
 
       setPrenotazioneId(partita.id);
     } catch (err) {
@@ -331,16 +165,8 @@ export default function ClientePadelBookingScreen() {
     }
   };
 
-  const handleScaricaBiglietto = async () => {
-    if (!prenotazioneId) return;
-    setIsDownloadingBiglietto(true);
-    try {
-      await apriBigliettoPdf(getBigliettoPadelUrl(prenotazioneId), prenotazioneId, 'biglietto-padel');
-    } catch {
-      setError('Impossibile scaricare il biglietto. Riprova.');
-    } finally {
-      setIsDownloadingBiglietto(false);
-    }
+  const handleScaricaBiglietto = () => {
+    if (prenotazioneId) download.scarica(getBigliettoPadelUrl(prenotazioneId), prenotazioneId, 'biglietto-padel');
   };
 
   if (isLoadingConfig) {
@@ -369,10 +195,10 @@ export default function ClientePadelBookingScreen() {
         dataLabel={formatDisplayDate(selectedDate)}
         fasciaOraria={`${ora} - ${oraFine}`}
         partecipanti={partecipanti}
-        isDownloading={isDownloadingBiglietto}
+        isDownloading={download.isDownloading}
         onScaricaBiglietto={handleScaricaBiglietto}
         onTornaHome={() => router.replace('/cliente')}
-        downloadError={error}
+        downloadError={download.error}
       />
     );
   }
@@ -409,7 +235,12 @@ export default function ClientePadelBookingScreen() {
           </Text>
         </VStack>
 
-        <DateNav selectedDate={selectedDate} onChange={setSelectedDate} fullDates={fullByDate} />
+        <DateNavCliente
+          selectedDate={selectedDate}
+          onChange={setSelectedDate}
+          fullDates={fullByDate}
+          calendarCaption="I giorni evidenziati in rosa sono chiusi."
+        />
 
         {disponibilita?.chiuso ? (
           <Box className="w-full rounded-2xl border border-rose-200 bg-rose-50 p-5">
@@ -428,59 +259,14 @@ export default function ClientePadelBookingScreen() {
           </Box>
         ) : (
           <>
-            <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
-              <Heading size="sm">I tuoi dati</Heading>
-
-              <VStack space="xs">
-                <HStack space="xs" className="items-center">
-                  <Text size="sm">👤</Text>
-                  <Text size="sm" className="font-medium">
-                    Nome e cognome
-                  </Text>
-                  <Text size="xs" className="text-destructive">
-                    *
-                  </Text>
-                </HStack>
-                <Input>
-                  <InputField placeholder="Es. Mario Rossi" value={nome} onChangeText={setNome} />
-                </Input>
-              </VStack>
-
-              <VStack space="xs">
-                <HStack space="xs" className="items-center">
-                  <Icon as={PhoneIcon} size="sm" className="text-sky-700" />
-                  <Text size="sm" className="font-medium">
-                    Telefono
-                  </Text>
-                  <Text size="xs" className="text-destructive">
-                    *
-                  </Text>
-                </HStack>
-                <Input>
-                  <InputField
-                    keyboardType="phone-pad"
-                    placeholder="Es. 333 1234567"
-                    value={telefono}
-                    onChangeText={setTelefono}
-                  />
-                </Input>
-                <Text size="2xs" className="text-sky-900/60">
-                  📌 Usa sempre lo stesso numero: ti aiuta a ritrovare prenotazioni e preferenze.
-                </Text>
-              </VStack>
-
-              <VStack space="xs">
-                <HStack space="xs" className="items-center">
-                  <Text size="sm">📝</Text>
-                  <Text size="sm" className="font-medium">
-                    Note (opzionale)
-                  </Text>
-                </HStack>
-                <Input>
-                  <InputField placeholder="Es. richieste particolari..." value={note} onChangeText={setNote} />
-                </Input>
-              </VStack>
-            </VStack>
+            <DatiClienteCard
+              nome={nome}
+              telefono={telefono}
+              note={note}
+              onChangeNome={setNome}
+              onChangeTelefono={setTelefono}
+              onChangeNote={setNote}
+            />
 
             <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
               <Heading size="sm">La tua partita</Heading>
@@ -506,29 +292,13 @@ export default function ClientePadelBookingScreen() {
                   Partecipanti
                 </Text>
                 <HStack space="sm" className="items-center">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-11 w-11 rounded-full border-2 border-sky-300 bg-white md:h-12 md:w-12"
-                    onPress={() => setPartecipanti((prev) => Math.max(1, prev - 1))}
-                    disabled={partecipanti <= 1}
-                    accessibilityLabel="Diminuisci partecipanti"
-                  >
-                    <ButtonIcon as={RemoveIcon} className="text-sky-900" />
-                  </Button>
-                  <Text size="md" className="w-8 text-center font-bold text-sky-900">
-                    {partecipanti}
-                  </Text>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-11 w-11 rounded-full border-2 border-sky-300 bg-white md:h-12 md:w-12"
-                    onPress={() => setPartecipanti((prev) => Math.min(maxPartecipanti, prev + 1))}
-                    disabled={partecipanti >= maxPartecipanti}
-                    accessibilityLabel="Aumenta partecipanti"
-                  >
-                    <ButtonIcon as={AddIcon} className="text-sky-900" />
-                  </Button>
+                  <StepperQuantita
+                    value={partecipanti}
+                    onChange={setPartecipanti}
+                    min={1}
+                    max={maxPartecipanti}
+                    etichetta="partecipanti"
+                  />
                   <Text size="2xs" className="text-muted-foreground">
                     max {maxPartecipanti}
                   </Text>
@@ -556,20 +326,12 @@ export default function ClientePadelBookingScreen() {
                     Al massimo una racchetta per partecipante ({totaleRacchetteSelezionate}/{partecipanti}).
                   </Text>
                 </VStack>
-                {racchette.map((racchetta) => {
-                  const valore = racchetteQty[racchetta.id] ?? 0;
-                  const residuoPartecipanti = partecipanti - (totaleRacchetteSelezionate - valore);
-                  const max = Math.max(0, Math.min(racchetta.quantita_disponibile, residuoPartecipanti));
-                  return (
-                    <RacchettaStepperRow
-                      key={racchetta.id}
-                      racchetta={racchetta}
-                      value={valore}
-                      max={max}
-                      onChange={(next) => setRacchetteQty((prev) => ({ ...prev, [racchetta.id]: next }))}
-                    />
-                  );
-                })}
+                <RacchetteNoleggioPicker
+                  racchette={racchette}
+                  quantita={racchetteQty}
+                  partecipanti={partecipanti}
+                  onChange={(id, next) => setRacchetteQty((prev) => ({ ...prev, [id]: next }))}
+                />
               </VStack>
             ) : null}
 

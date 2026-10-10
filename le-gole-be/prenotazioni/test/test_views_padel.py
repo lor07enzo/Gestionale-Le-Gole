@@ -224,14 +224,14 @@ class TestRecenti:
 
 class TestStoricoTelefono:
     def test_richiede_il_telefono(self, api_client, configurazione_padel):
-        assert api_client.get(STORICO_URL).status_code == 400
+        assert api_client.post(STORICO_URL, {}, format='json').status_code == 400
 
     def test_match_esatto_e_include_le_cancellate(self, api_client, cliente, configurazione_padel):
         PrenotazionePadelFactory(cliente_id=cliente, ora='10:00')
         PrenotazionePadelFactory(cliente_id=cliente, ora='11:00', stato='CANCELLED')
         PrenotazionePadelFactory(ora='12:00')
 
-        response = api_client.get(STORICO_URL, {'telefono': cliente.telefono})
+        response = api_client.post(STORICO_URL, {'telefono': cliente.telefono}, format='json')
 
         assert response.status_code == 200
         assert len(response.data) == 2
@@ -239,7 +239,7 @@ class TestStoricoTelefono:
     def test_telefono_parziale_non_matcha(self, api_client, cliente, configurazione_padel):
         PrenotazionePadelFactory(cliente_id=cliente)
 
-        response = api_client.get(STORICO_URL, {'telefono': cliente.telefono[:4]})
+        response = api_client.post(STORICO_URL, {'telefono': cliente.telefono[:4]}, format='json')
 
         assert response.data == []
 

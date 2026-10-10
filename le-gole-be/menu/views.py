@@ -100,7 +100,9 @@ class ProdottoViewSet(viewsets.ModelViewSet):
     Catalogo prodotti asporto. Lettura pubblica (il cliente deve poter sfogliare il menu senza
     autenticarsi), scrittura riservata allo staff — stesso pattern di PiscinaInventarioViewSet.
     """
-    queryset = Prodotto.objects.all()
+    # Senza, ogni prodotto costava due query in più (categoria_nome e allergeni): con il database
+    # remoto il menu pubblico impiegava secondi a rispondere.
+    queryset = Prodotto.objects.select_related('categoria').prefetch_related('allergeni')
     serializer_class = ProdottoSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     filterset_fields = ['categoria', 'disponibile']

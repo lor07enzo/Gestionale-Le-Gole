@@ -6,9 +6,12 @@ import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { listPiscinaInventari } from '../../services/struttura';
-import { getConfigurazioneAsporto, listProdotti } from '../../services/menu';
-import { getConfigurazionePadel } from '../../services/padel';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  getServiziDisponibili,
+  getServiziDisponibiliInCache,
+  type ServiziDisponibili,
+} from '../../services/servizi';
 
 type ServizioCliente = {
   key: string;
@@ -21,11 +24,13 @@ type ServizioCliente = {
   route?: Href;
 };
 
-function buildServizi(
-  isPiscinaDisponibile: boolean,
-  isAsportoDisponibile: boolean,
-  isPadelDisponibile: boolean
-): ServizioCliente[] {
+const NESSUN_SERVIZIO: ServiziDisponibili = { piscina: false, asporto: false, padel: false };
+
+function buildServizi({
+  piscina: isPiscinaDisponibile,
+  asporto: isAsportoDisponibile,
+  padel: isPadelDisponibile,
+}: ServiziDisponibili): ServizioCliente[] {
   return [
     {
       key: 'PISCINA',
@@ -71,8 +76,12 @@ function buildServizi(
   ];
 }
 
-function ServizioCard({ servizio }: Readonly<{ servizio: ServizioCliente }>) {
+function ServizioCard({
+  servizio,
+  inVerifica,
+}: Readonly<{ servizio: ServizioCliente; inVerifica: boolean }>) {
   const handlePress = () => {
+    if (inVerifica) return;
     if (servizio.disponibile && servizio.route) {
       router.push(servizio.route);
       return;
@@ -128,7 +137,16 @@ function ServizioCard({ servizio }: Readonly<{ servizio: ServizioCliente }>) {
           ) : null}
         </HStack>
 
-        {!servizio.disponibile ? (
+        {inVerifica ? (
+          <HStack space="xs" className="ml-15 mt-3 items-center">
+            <Spinner size="small" color="#94a3b8" />
+            <Text size="xs" className="text-slate-500">
+              Verifica disponibilità…
+            </Text>
+          </HStack>
+        ) : null}
+
+        {!servizio.disponibile && !inVerifica ? (
           <Box
             className={
               servizio.badgeLabel === 'Presto'
@@ -154,23 +172,20 @@ function ServizioCard({ servizio }: Readonly<{ servizio: ServizioCliente }>) {
 }
 
 export function ServiziClienteSection() {
-  const [isPiscinaDisponibile, setIsPiscinaDisponibile] = useState(false);
-  const [isAsportoDisponibile, setIsAsportoDisponibile] = useState(false);
-  const [isPadelDisponibile, setIsPadelDisponibile] = useState(false);
+  // Parte dall'ultima risposta nota, se c'è: tornando sulla home le card sono subito giuste.
+  const [disponibilita, setDisponibilita] = useState<ServiziDisponibili | null>(
+    getServiziDisponibiliInCache
+  );
 
   useEffect(() => {
-    listPiscinaInventari()
-      .then((items) => setIsPiscinaDisponibile(items.some((item) => item.isActive)))
-      .catch(() => setIsPiscinaDisponibile(false));
-    Promise.all([listProdotti(), getConfigurazioneAsporto()])
-      .then(([prodotti, config]) => setIsAsportoDisponibile(config.attivo && prodotti.some((item) => item.disponibile)))
-      .catch(() => setIsAsportoDisponibile(false));
-    getConfigurazionePadel()
-      .then((config) => setIsPadelDisponibile(config.attivo))
-      .catch(() => setIsPadelDisponibile(false));
+    getServiziDisponibili()
+      .then(setDisponibilita)
+      .catch(() => setDisponibilita((prev) => prev ?? NESSUN_SERVIZIO));
   }, []);
 
-  const servizi = buildServizi(isPiscinaDisponibile, isAsportoDisponibile, isPadelDisponibile);
+  // Solo i servizi che dipendono dal backend restano "in verifica"; il Ristorante non ne ha uno.
+  const inVerifica = disponibilita === null;
+  const servizi = buildServizi(disponibilita ?? NESSUN_SERVIZIO);
 
   return (
     // Griglia 1 colonna su telefono, 2 da tablet in su. Prima era `md:flex-row md:flex-wrap` con
@@ -181,7 +196,7 @@ export function ServiziClienteSection() {
     <Box className="-m-2 w-full flex-row flex-wrap">
       {servizi.map((servizio) => (
         <Box key={servizio.key} className="w-full p-2 md:w-1/2">
-          <ServizioCard servizio={servizio} />
+          <ServizioCard servizio={servizio} inVerifica={inVerifica && Boolean(servizio.route)} />
         </Box>
       ))}
     </Box>

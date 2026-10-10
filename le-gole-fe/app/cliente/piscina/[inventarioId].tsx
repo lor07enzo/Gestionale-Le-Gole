@@ -6,28 +6,9 @@ import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Input, InputField } from '@/components/ui/input';
 import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  Actionsheet,
-  ActionsheetBackdrop,
-  ActionsheetContent,
-  ActionsheetDragIndicator,
-  ActionsheetDragIndicatorWrapper,
-} from '@/components/ui/actionsheet';
-import {
-  Icon,
-  AddIcon,
-  CalendarDaysIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ClockIcon,
-  InfoIcon,
-  LockIcon,
-  PhoneIcon,
-  RemoveIcon,
-} from '@/components/ui/icon';
+import { Icon, AddIcon, ClockIcon, InfoIcon, LockIcon, RemoveIcon } from '@/components/ui/icon';
 // Caricato dinamicamente per non farlo entrare nel bundle valutato su ogni pagina.
 const TimePickerModal = lazy(() =>
   import('react-native-paper-dates').then((m) => ({ default: m.TimePickerModal }))
@@ -45,11 +26,12 @@ import { createCliente } from '../../../src/services/clienti';
 import { ClienteFooter } from '../../../src/components/cliente/ClienteFooter';
 import { ConfermaPrenotazionePiscina } from '../../../src/components/cliente/ConfermaPrenotazionePiscina';
 import { BackButton } from '../../../src/components/cliente/BackButton';
-import { CalendarPicker } from '../../../src/components/shared/CalendarPicker';
+import { DateNavCliente } from '../../../src/components/cliente/DateNavCliente';
+import { DatiClienteCard, EtichettaCampo } from '../../../src/components/cliente/DatiClienteCard';
+import { dateToMap } from '../../../src/utils/calendar';
 import { DisponibilitaCards, type DisponibilitaCardItem } from '../../../src/components/shared/DisponibilitaCards';
 import { PiscinaMappaSelettore, type PiscinaSelezione } from '../../../src/components/cliente/PiscinaMappaSelettore';
 import {
-  addDays,
   formatDisplayDate,
   isSameDay,
   minutesToHHMM,
@@ -58,9 +40,10 @@ import {
   toISODate,
   validateOrarioIngressoIntero,
   validateOrarioIngressoRidotto,
+  validateOrarioPiscina,
 } from '../../../src/utils/piscinaMappa';
 import { formatPrezzo } from '../../../src/utils/prezzi';
-import { apriBigliettoPdf } from '../../../src/utils/biglietto';
+import { useScaricaPdf } from '../../../src/hooks/useScaricaPdf';
 import { extractErrorMessage } from '../../../src/utils/errors';
 
 type FormState = {
@@ -93,23 +76,6 @@ function defaultOrario(inventario: PiscinaInventario, selectedDate: Date): strin
   return now;
 }
 
-function validateOrario(value: string, inventario: PiscinaInventario, selectedDate: Date): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return "L'orario è obbligatorio.";
-  const minutes = parseHHMMToMinutes(trimmed);
-  if (minutes === null) return 'Inserisci un orario valido (HH:MM).';
-
-  const apertura = inventario.orario_apertura.slice(0, 5);
-  const chiusura = inventario.orario_chiusura.slice(0, 5);
-  if (minutes < parseHHMMToMinutes(apertura)! || minutes > parseHHMMToMinutes(chiusura)!) {
-    return `La piscina è aperta dalle ${apertura} alle ${chiusura}.`;
-  }
-  if (isSameDay(selectedDate, new Date()) && minutes < parseHHMMToMinutes(nowHHMM())!) {
-    return "L'orario non può essere nel passato.";
-  }
-  return null;
-}
-
 // Distribuisce un totale tra le `n` postazioni scelte il più equamente possibile, resto alle prime.
 function distribuisciSuPostazioni(totale: number, n: number): number[] {
   if (n <= 0) return [];
@@ -123,82 +89,22 @@ function DateNav({
   selectedDate,
   onChange,
 }: Readonly<{ inventarioId: string; selectedDate: Date; onChange: (date: Date) => void }>) {
-  const isToday = isSameDay(selectedDate, new Date());
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [fullByDate, setFullByDate] = useState<Record<string, boolean>>({});
 
   const handleVisibleMonthChange = (anno: number, mese: number) => {
     getGiorniPieniMese({ inventario: inventarioId, anno, mese })
-      .then((date) => {
-        const patch: Record<string, boolean> = {};
-        date.forEach((iso) => {
-          patch[iso] = true;
-        });
-        setFullByDate((prev) => ({ ...prev, ...patch }));
-      })
+      .then((date) => setFullByDate((prev) => ({ ...prev, ...dateToMap(date) })))
       .catch(() => {});
   };
 
   return (
-    <>
-      <HStack space="sm" className="items-center justify-between rounded-2xl border border-sky-100 bg-white p-2.5 shadow-sm">
-        <Pressable
-          accessibilityLabel="Giorno precedente"
-          disabled={isToday}
-          onPress={() => onChange(addDays(selectedDate, -1))}
-          className={`h-10 w-10 items-center justify-center rounded-full border-2 shadow-sm ${
-            isToday ? 'border-sky-100 bg-sky-50' : 'border-sky-300 bg-white active:bg-sky-50'
-          }`}
-        >
-          <Icon as={ChevronLeftIcon} size="md" className={isToday ? 'text-sky-300' : 'text-sky-900'} />
-        </Pressable>
-
-        <Pressable
-          accessibilityLabel="Apri calendario per scegliere il giorno"
-          onPress={() => setIsCalendarOpen(true)}
-        >
-          <HStack space="xs" className="items-center">
-            <Icon as={CalendarDaysIcon} size="sm" className="text-sky-700" />
-            <Text size="md" className="font-bold capitalize text-sky-900">
-              {isToday ? 'Oggi' : formatDisplayDate(selectedDate)}
-            </Text>
-          </HStack>
-        </Pressable>
-
-        <Pressable
-          accessibilityLabel="Giorno successivo"
-          onPress={() => onChange(addDays(selectedDate, 1))}
-          className="h-10 w-10 items-center justify-center rounded-full border-2 border-sky-300 bg-white shadow-sm active:bg-sky-50"
-        >
-          <Icon as={ChevronRightIcon} size="md" className="text-sky-900" />
-        </Pressable>
-      </HStack>
-
-      <Actionsheet isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)}>
-        <ActionsheetBackdrop />
-        <ActionsheetContent aria-label="Scegli il giorno">
-          <ActionsheetDragIndicatorWrapper>
-            <ActionsheetDragIndicator />
-          </ActionsheetDragIndicatorWrapper>
-          <VStack space="md" className="w-full pb-6 pt-1">
-            <Heading size="sm">Scegli il giorno</Heading>
-            <Text size="xs" className="text-muted-foreground">
-              I giorni evidenziati in rosa sono già al completo.
-            </Text>
-            <CalendarPicker
-              selectedDate={selectedDate}
-              onSelect={(date) => {
-                onChange(date);
-                setIsCalendarOpen(false);
-              }}
-              minDate={new Date()}
-              fullDates={fullByDate}
-              onVisibleMonthChange={handleVisibleMonthChange}
-            />
-          </VStack>
-        </ActionsheetContent>
-      </Actionsheet>
-    </>
+    <DateNavCliente
+      selectedDate={selectedDate}
+      onChange={onChange}
+      fullDates={fullByDate}
+      calendarCaption="I giorni evidenziati in rosa sono già al completo."
+      onVisibleMonthChange={handleVisibleMonthChange}
+    />
   );
 }
 
@@ -296,7 +202,7 @@ export default function ClientePiscinaBookingScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [prenotazioneInviata, setPrenotazioneInviata] = useState(false);
   const [prenotazioneId, setPrenotazioneId] = useState<string | null>(null);
-  const [isDownloadingBiglietto, setIsDownloadingBiglietto] = useState(false);
+  const download = useScaricaPdf('Impossibile scaricare il biglietto. Riprova.');
   const [isInfoPrezzoOpen, setIsInfoPrezzoOpen] = useState(false);
   const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
 
@@ -374,7 +280,7 @@ export default function ClientePiscinaBookingScreen() {
       setError('Inserisci nome e telefono.');
       return;
     }
-    const orarioError = validateOrario(form.orario, inventario, selectedDate);
+    const orarioError = validateOrarioPiscina(form.orario, inventario, selectedDate);
     if (orarioError) {
       setError(orarioError);
       return;
@@ -475,18 +381,8 @@ export default function ClientePiscinaBookingScreen() {
       setIsSubmitting(false);
     }
   };
-
-
-  const handleScaricaBiglietto = async () => {
-    if (!prenotazioneId) return;
-    setIsDownloadingBiglietto(true);
-    try {
-      await apriBigliettoPdf(getBigliettoUrl(prenotazioneId), prenotazioneId);
-    } catch {
-      setError('Impossibile scaricare il biglietto. Riprova.');
-    } finally {
-      setIsDownloadingBiglietto(false);
-    }
+  const handleScaricaBiglietto = () => {
+    if (prenotazioneId) download.scarica(getBigliettoUrl(prenotazioneId), prenotazioneId);
   };
 
   if (isLoadingInventario) {
@@ -514,10 +410,10 @@ export default function ClientePiscinaBookingScreen() {
         nomeInventario={inventario.nome}
         dataLabel={formatDisplayDate(selectedDate)}
         orario={form.orario}
-        isDownloading={isDownloadingBiglietto}
+        isDownloading={download.isDownloading}
         onScaricaBiglietto={handleScaricaBiglietto}
         onTornaHome={() => router.replace('/cliente')}
-        downloadError={error}
+        downloadError={download.error}
       />
     );
   }
@@ -561,76 +457,18 @@ export default function ClientePiscinaBookingScreen() {
                 stesso ordine. */}
             <Box className="w-full gap-4 lg:flex-row lg:items-start">
               <VStack space="lg" className="w-full lg:flex-1">
-                <VStack space="md" className="w-full rounded-2xl border border-sky-200 bg-sky-100 p-5">
-                  <Heading size="sm">I tuoi dati</Heading>
-
+                <DatiClienteCard
+                  nome={form.nome}
+                  telefono={form.telefono}
+                  note={form.note}
+                  onChangeNome={setField('nome')}
+                  onChangeTelefono={setField('telefono')}
+                  onChangeNote={setField('note')}
+                >
                   <VStack space="xs">
-                    <HStack space="xs" className="items-center">
-                      <Text size="sm">👤</Text>
-                      <Text size="sm" className="font-medium">
-                        Nome e cognome
-                      </Text>
-                      <Text size="xs" className="text-destructive">
-                        *
-                      </Text>
-                    </HStack>
-                    <Input>
-                      <InputField placeholder="Es. Mario Rossi" value={form.nome} onChangeText={setField('nome')} />
-                    </Input>
-                  </VStack>
-
-                  <VStack space="xs">
-                    <HStack space="xs" className="items-center">
-                      <Icon as={PhoneIcon} size="sm" className="text-sky-700" />
-                      <Text size="sm" className="font-medium">
-                        Telefono
-                      </Text>
-                      <Text size="xs" className="text-destructive">
-                        *
-                      </Text>
-                    </HStack>
-                    <Input>
-                      <InputField
-                        keyboardType="phone-pad"
-                        placeholder="Es. 333 1234567"
-                        value={form.telefono}
-                        onChangeText={setField('telefono')}
-                      />
-                    </Input>
-                    <Text size="2xs" className="text-sky-900/60">
-                      📌 Usa sempre lo stesso numero: ti aiuta a ritrovare prenotazioni e preferenze.
-                    </Text>
-                  </VStack>
-
-                  <VStack space="xs">
-                    <HStack space="xs" className="items-center">
-                      <Text size="sm">📝</Text>
-                      <Text size="sm" className="font-medium">
-                        Note
-                      </Text>
-                      <Text size="xs" className="text-muted-foreground">
-                        (opzionale)
-                      </Text>
-                    </HStack>
-                    <Input>
-                      <InputField
-                        placeholder="Es. allergie, richieste particolari..."
-                        value={form.note}
-                        onChangeText={setField('note')}
-                      />
-                    </Input>
-                  </VStack>
-
-                  <VStack space="xs">
-                    <HStack space="xs" className="items-center">
-                      <Icon as={ClockIcon} size="sm" className="text-sky-700" />
-                      <Text size="sm" className="font-medium">
-                        Orario di arrivo previsto
-                      </Text>
-                      <Text size="xs" className="text-destructive">
-                        *
-                      </Text>
-                    </HStack>
+                    <EtichettaCampo icona={<Icon as={ClockIcon} size="sm" className="text-sky-700" />} obbligatorio>
+                      Orario di arrivo previsto
+                    </EtichettaCampo>
                     <Pressable
                       onPress={() => setIsTimePickerOpen(true)}
                       accessibilityRole="button"
@@ -647,7 +485,7 @@ export default function ClientePiscinaBookingScreen() {
                       {inventario.orario_chiusura.slice(0, 5)}
                     </Text>
                   </VStack>
-                </VStack>
+                </DatiClienteCard>
 
                 <Suspense fallback={null}>
                   <TimePickerModal

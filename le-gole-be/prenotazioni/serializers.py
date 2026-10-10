@@ -366,3 +366,125 @@ class GiornoPienoPiscinaSerializer(serializers.ModelSerializer):
     class Meta:
         model = GiornoPienoPiscina
         fields = '__all__'
+
+# --- Serializer pubblici per "Le mie prenotazioni" (Area Cliente, sezione 7 di CLAUDE.md) ---
+#
+# Gli endpoint self-service storico_telefono/dettaglio_pubblico sono raggiungibili da chiunque
+# conosca un numero di telefono (o l'UUID che quel numero restituisce): non devono riusare i
+# serializer dello staff, che espongono tutto (`fields = '__all__'`). Qui i campi sono elencati
+# uno per uno, così un campo aggiunto domani al modello non diventa pubblico senza deciderlo.
+#
+# Due livelli: l'elenco (via telefono) mostra solo ciò che serve alla card; il dettaglio (via
+# UUID) aggiunge note e cliente_id, quest'ultimo necessario a "Riprenota"/"Riordina" — e che
+# non rivela nulla di più di quanto già restituisca la create pubblica di ClienteViewSet.
+
+
+def nome_abbreviato(nome):
+    """'Mario Rossi' -> 'Mario R.': basta a salutare il cliente, non a identificarlo."""
+    parti = (nome or '').split()
+    if not parti:
+        return ''
+    if len(parti) == 1:
+        return parti[0]
+    return f'{parti[0]} {parti[-1][0].upper()}.'
+
+
+def telefono_mascherato(telefono):
+    """Solo le ultime tre cifre: il cliente riconosce il proprio numero, un estraneo non lo ricava."""
+    telefono = (telefono or '').strip()
+    if len(telefono) <= 3:
+        return '•••'
+    return '•' * (len(telefono) - 3) + telefono[-3:]
+
+
+class _ClientePubblicoMixin(serializers.Serializer):
+    cliente_nome = serializers.SerializerMethodField()
+
+    def get_cliente_nome(self, obj) -> str:
+        return nome_abbreviato(obj.cliente_id.nome)
+
+
+class _DettaglioPubblicoMixin(_ClientePubblicoMixin):
+    cliente_telefono = serializers.SerializerMethodField()
+
+    def get_cliente_telefono(self, obj) -> str:
+        return telefono_mascherato(obj.cliente_id.telefono)
+
+
+_CAMPI_BASE = ['id', 'data', 'ora', 'stato', 'cliente_nome']
+_RISORSE_PISCINA = [
+    'inventario', 'inventario_nome',
+    'ingressi', 'ingressi_ridotti', 'ingressi_bambini', 'ingressi_gratuiti',
+    'ombrellone', 'gazebo', 'lettino', 'sdraia',
+]
+_CAMPI_DETTAGLIO = ['note', 'cliente_id', 'cliente_telefono']
+
+
+class StoricoPiscinaSerializer(_ClientePubblicoMixin, serializers.ModelSerializer):
+    inventario_nome = serializers.CharField(source='inventario.nome', read_only=True)
+
+    class Meta:
+        model = PrenotazionePiscina
+        fields = _CAMPI_BASE + _RISORSE_PISCINA
+
+
+class DettaglioPiscinaPubblicoSerializer(_DettaglioPubblicoMixin, StoricoPiscinaSerializer):
+    class Meta(StoricoPiscinaSerializer.Meta):
+        fields = StoricoPiscinaSerializer.Meta.fields + _CAMPI_DETTAGLIO
+
+
+class StoricoAsportoSerializer(_ClientePubblicoMixin, serializers.ModelSerializer):
+    totale = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = PrenotazioneAsporto
+        fields = _CAMPI_BASE + ['totale']
+
+
+class DettaglioAsportoPubblicoSerializer(_DettaglioPubblicoMixin, StoricoAsportoSerializer):
+    # Le righe dell'ordine. `$ref` per nome e import dentro il metodo: VoceOrdineSerializer vive in
+    # `menu`, e prenotazioni non importa mai `menu` a livello di modulo (sezione 1 di CLAUDE.md).
+    voci = serializers.SerializerMethodField()
+
+    class Meta(StoricoAsportoSerializer.Meta):
+        fields = StoricoAsportoSerializer.Meta.fields + _CAMPI_DETTAGLIO + ['voci']
+
+    @extend_schema_field({'type': 'array', 'items': {'$ref': '#/components/schemas/VoceOrdine'}})
+    def get_voci(self, obj):
+        from menu.serializers import VoceOrdineSerializer
+
+        return VoceOrdineSerializer(obj.voci.select_related('prodotto').all(), many=True).data
+
+
+class StoricoPadelSerializer(_ClientePubblicoMixin, serializers.ModelSerializer):
+    totale = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
+    orario_fine = serializers.TimeField(read_only=True)
+    racchette_totali = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = PrenotazionePadel
+        fields = _CAMPI_BASE + [
+            'orario_fine', 'durata_minuti', 'partecipanti', 'palline_noleggiate',
+            'racchette_totali', 'totale',
+        ]
+
+
+class DettaglioPadelPubblicoSerializer(_DettaglioPubblicoMixin, StoricoPadelSerializer):
+    noleggi = NoleggioRacchettaSerializer(many=True, read_only=True)
+
+    class Meta(StoricoPadelSerializer.Meta):
+        fields = StoricoPadelSerializer.Meta.fields + _CAMPI_DETTAGLIO + [
+            'prezzo_partita', 'prezzo_palline', 'noleggi',
+        ]
+
+
+class StoricoTelefonoRichiestaSerializer(serializers.Serializer):
+    # Nel corpo di una POST, non in query string: un numero in un URL resta nella cronologia del
+    # browser e nei log di accesso di Render/Netlify.
+    telefono = serializers.CharField(
+        max_length=32,
+        help_text=(
+            'Numero di telefono usato per prenotare. Confronto **esatto**, mai parziale: un match '
+            "parziale trasformerebbe l'endpoint in una ricerca libera sull'anagrafica clienti."
+        ),
+    )

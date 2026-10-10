@@ -54,6 +54,11 @@ export function buildWeekGrid(weekStart: Date): CalendarDay[] {
   }));
 }
 
+// Elenco di date ISO (giorni chiusi/pieni restituiti dal backend) → mappa per `fullDates`.
+export function dateToMap(dateIso: string[]): Record<string, boolean> {
+  return Object.fromEntries(dateIso.map((iso) => [iso, true]));
+}
+
 export function formatWeekLabel(weekStart: Date): string {
   const weekEnd = addDays(weekStart, 6);
   const sameMonth =

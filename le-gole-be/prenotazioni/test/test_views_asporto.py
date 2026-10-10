@@ -115,7 +115,7 @@ class TestScaricaRicevuta:
 
 class TestStoricoTelefono:
     def test_richiede_il_parametro_telefono(self, api_client):
-        response = api_client.get(reverse("prenotazione-asporto-storico-telefono"))
+        response = api_client.post(reverse("prenotazione-asporto-storico-telefono"), {}, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_pubblico_e_match_esatto_sul_telefono(self, api_client):
@@ -124,8 +124,8 @@ class TestStoricoTelefono:
         proprio = PrenotazioneAsportoFactory(cliente_id=cliente, data="2026-08-01")
         PrenotazioneAsportoFactory(cliente_id=altro_cliente, data="2026-08-02")
 
-        response = api_client.get(
-            reverse("prenotazione-asporto-storico-telefono"), {"telefono": "3331112222"}
+        response = api_client.post(
+            reverse("prenotazione-asporto-storico-telefono"), {"telefono": "3331112222"}, format="json"
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -133,8 +133,8 @@ class TestStoricoTelefono:
         assert ids == [str(proprio.pk)]
 
     def test_nessun_match_restituisce_lista_vuota(self, api_client):
-        response = api_client.get(
-            reverse("prenotazione-asporto-storico-telefono"), {"telefono": "0000000000"}
+        response = api_client.post(
+            reverse("prenotazione-asporto-storico-telefono"), {"telefono": "0000000000"}, format="json"
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data == []
@@ -143,8 +143,8 @@ class TestStoricoTelefono:
         cliente = ClienteFactory(telefono="3331112222")
         cancellato = PrenotazioneAsportoFactory(cliente_id=cliente, stato="CANCELLED")
 
-        response = api_client.get(
-            reverse("prenotazione-asporto-storico-telefono"), {"telefono": "3331112222"}
+        response = api_client.post(
+            reverse("prenotazione-asporto-storico-telefono"), {"telefono": "3331112222"}, format="json"
         )
 
         ids = [row["id"] for row in response.data]
@@ -155,8 +155,8 @@ class TestStoricoTelefono:
         vecchio = PrenotazioneAsportoFactory(cliente_id=cliente, data="2026-01-01")
         recente = PrenotazioneAsportoFactory(cliente_id=cliente, data="2026-06-01")
 
-        response = api_client.get(
-            reverse("prenotazione-asporto-storico-telefono"), {"telefono": "3331112222"}
+        response = api_client.post(
+            reverse("prenotazione-asporto-storico-telefono"), {"telefono": "3331112222"}, format="json"
         )
 
         ids = [row["id"] for row in response.data]
@@ -172,7 +172,7 @@ class TestDettaglioPubblico:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data["id"] == str(ordine.pk)
-        assert response.data["cliente_nome"] == "Anna Dettaglio"
+        assert response.data["cliente_nome"] == "Anna D."
         assert response.data["note"] == "Senza cipolla"
         assert response.data["voci"] == []
 

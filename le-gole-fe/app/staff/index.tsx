@@ -109,6 +109,16 @@ export default function StaffHomeScreen() {
             />
           </Box>
 
+          {/* Senza href: tessera spenta con badge "In arrivo", nessun backend Sala esiste ancora. */}
+          <Box className="w-full p-2 md:w-1/2">
+            <ServizioStaffCard
+              icon="🍽️"
+              title="Sala"
+              descrizione="Prenotazione tavoli del ristorante"
+              ctaLabel="Apri la sala"
+            />
+          </Box>
+
           {isSuperuser ? (
             <Box className="w-full p-2 md:w-1/2">
               <ServizioStaffCard

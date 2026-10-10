@@ -2,17 +2,9 @@ import { useState } from 'react';
 import { Pressable } from 'react-native';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
-import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import {
-  Actionsheet,
-  ActionsheetBackdrop,
-  ActionsheetContent,
-  ActionsheetDragIndicator,
-  ActionsheetDragIndicatorWrapper,
-} from '@/components/ui/actionsheet';
 import { CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, Icon } from '@/components/ui/icon';
-import { CalendarPicker } from './CalendarPicker';
+import { CalendarioSheet } from './CalendarioSheet';
 import { addDays, formatDisplayDate, isSameDay, toISODate } from '../../utils/piscinaMappa';
 
 type DateNavigatorConCalendarioProps = {
@@ -110,31 +102,17 @@ export function DateNavigatorConCalendario({
         </Pressable>
       </HStack>
 
-      <Actionsheet isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)}>
-        <ActionsheetBackdrop />
-        <ActionsheetContent aria-label="Scegli il giorno">
-          <ActionsheetDragIndicatorWrapper>
-            <ActionsheetDragIndicator />
-          </ActionsheetDragIndicatorWrapper>
-          <VStack space="md" className="w-full pb-6 pt-1">
-            <Heading size="sm">Scegli il giorno</Heading>
-            <Text size="xs" className="text-muted-foreground">
-              {calendarCaption}
-            </Text>
-            <CalendarPicker
-              selectedDate={selectedDate}
-              onSelect={(date) => {
-                onChange(date);
-                setIsCalendarOpen(false);
-              }}
-              minDate={minDate}
-              maxDate={maxDate}
-              countsByDate={conteggi}
-              onVisibleMonthChange={handleVisibleMonthChange}
-            />
-          </VStack>
-        </ActionsheetContent>
-      </Actionsheet>
+      <CalendarioSheet
+        isOpen={isCalendarOpen}
+        onClose={() => setIsCalendarOpen(false)}
+        selectedDate={selectedDate}
+        onSelect={onChange}
+        caption={calendarCaption}
+        minDate={minDate}
+        maxDate={maxDate}
+        countsByDate={conteggi}
+        onVisibleMonthChange={handleVisibleMonthChange}
+      />
     </>
   );
 }

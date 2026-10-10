@@ -9,6 +9,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 from drf_spectacular.utils import extend_schema
 import weasyprint
 
@@ -31,7 +32,15 @@ from .serializers import (
     NoleggioRacchettaSerializer,
     OccupazionePostazioneSerializer,
     GiornoPienoPiscinaSerializer,
+    StoricoPiscinaSerializer,
+    StoricoAsportoSerializer,
+    StoricoPadelSerializer,
+    DettaglioPiscinaPubblicoSerializer,
+    DettaglioAsportoPubblicoSerializer,
+    DettaglioPadelPubblicoSerializer,
+    StoricoTelefonoRichiestaSerializer,
 )
+from .throttling import StoricoTelefonoGiornoThrottle, StoricoTelefonoMinutoThrottle
 from .utils import calcola_disponibilita, calcola_disponibilita_padel
 
 TITOLI_NOTIFICA = {
@@ -50,6 +59,21 @@ def _quando(prenotazione):
     if prenotazione.data == timezone.localdate():
         return f'alle {ora}'
     return f"{prenotazione.data.strftime('%d/%m')} alle {ora}"
+
+
+# throttle_classes su un'@action sostituisce quelle di default invece di aggiungersi: vanno
+# ripetute, altrimenti storico_telefono perderebbe il limite globale anonimo.
+STORICO_TELEFONO_THROTTLES = [
+    *api_settings.DEFAULT_THROTTLE_CLASSES,
+    StoricoTelefonoMinutoThrottle,
+    StoricoTelefonoGiornoThrottle,
+]
+
+
+def _telefono_richiesto(request):
+    richiesta = StoricoTelefonoRichiestaSerializer(data=request.data)
+    richiesta.is_valid(raise_exception=True)
+    return richiesta.validated_data['telefono']
 
 
 def _avvisa_staff(categoria, prenotazione, corpo, **dati):
@@ -218,11 +242,18 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
 
     @extend_schema(
         summary='Storico piscina per numero di telefono (pubblico)',
-        parameters=[openapi.PARAM_TELEFONO],
+        request=StoricoTelefonoRichiestaSerializer,
         filters=False,
-        responses={200: PrenotazionePiscinaSerializer(many=True), 400: openapi.errore("Parametro 'telefono' mancante.")},
+        responses={
+            200: StoricoPiscinaSerializer(many=True),
+            400: openapi.errore("Campo 'telefono' mancante."),
+            429: openapi.errore('Troppe ricerche da questo indirizzo: riprova più tardi.'),
+        },
     )
-    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    @action(
+        detail=False, methods=['post'], permission_classes=[AllowAny],
+        throttle_classes=STORICO_TELEFONO_THROTTLES,
+    )
     def storico_telefono(self, request):
         """
         Storico completo (tutti gli stati, incluse CANCELLED) delle prenotazioni piscina per un
@@ -233,21 +264,21 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
         endpoint in una ricerca libera che permetterebbe di scorrere l'anagrafica clienti per
         frammenti di numero — a differenza di ClienteViewSet.get_queryset() (?search=), riservato
         allo staff proprio perché fa un OR case-insensitive su nome/telefono.
-        GET /api/v1/prenotazioni/piscina/storico_telefono/?telefono=...
+        GET /api/v1/prenotazioni/piscina/storico_telefono/  (POST, corpo {"telefono": ...})
         """
-        telefono = request.query_params.get('telefono', '').strip()
-        if not telefono:
-            return Response({"detail": "Parametro 'telefono' obbligatorio."}, status=400)
+        telefono = _telefono_richiesto(request)
 
         queryset = (
             PrenotazionePiscina.objects.filter(cliente_id__telefono=telefono)
             .select_related('inventario', 'cliente_id')
             .order_by('-data', '-ora')
         )
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return Response(StoricoPiscinaSerializer(queryset, many=True).data)
 
-    @extend_schema(summary='Dettaglio di una prenotazione piscina (pubblico)')
+    @extend_schema(
+        summary='Dettaglio di una prenotazione piscina (pubblico)',
+        responses={200: DettaglioPiscinaPubblicoSerializer},
+    )
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def dettaglio_pubblico(self, request, pk=None):
         """
@@ -260,9 +291,7 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
         è solo il PDF a non avere senso in quel caso.
         GET /api/v1/prenotazioni/piscina/{id}/dettaglio_pubblico/
         """
-        prenotazione = self.get_object()
-        serializer = self.get_serializer(prenotazione)
-        return Response(serializer.data)
+        return Response(DettaglioPiscinaPubblicoSerializer(self.get_object()).data)
 
     @extend_schema(
         summary='Prenotazioni per giorno in un mese (staff)',
@@ -376,7 +405,7 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
 
     @extend_schema(
         summary='Dettaglio di un ordine asporto, righe incluse (pubblico)',
-        responses={200: openapi.DETTAGLIO_ASPORTO},
+        responses={200: DettaglioAsportoPubblicoSerializer},
     )
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def dettaglio_pubblico(self, request, pk=None):
@@ -385,42 +414,40 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
         righe VoceOrdine dell'ordine (annidate in 'voci') — l'unico punto in cui una lettura
         pubblica di VoceOrdine è esposta, deliberatamente ristretta a un singolo ordine già noto
         per UUID: VoceOrdineViewSet.list() resta IsAuthenticated, nessun elenco libero pubblico.
-        Import locale di VoceOrdineSerializer (menu), stesso principio dell'eccezione già
-        documentata in PrenotazioneAsportoSerializer.validate() (sezione 1 di CLAUDE.md).
+        Le righe sono composte da DettaglioAsportoPubblicoSerializer.get_voci (import locale di
+        menu, stesso principio di PrenotazioneAsportoSerializer.validate(), sezione 1).
         GET /api/v1/prenotazioni/asporto/{id}/dettaglio_pubblico/
         """
-        from menu.serializers import VoceOrdineSerializer
-
-        prenotazione = self.get_object()
-        voci = prenotazione.voci.select_related('prodotto').all()
-        data = self.get_serializer(prenotazione).data
-        data['voci'] = VoceOrdineSerializer(voci, many=True).data
-        return Response(data)
+        return Response(DettaglioAsportoPubblicoSerializer(self.get_object()).data)
 
     @extend_schema(
         summary='Storico asporto per numero di telefono (pubblico)',
-        parameters=[openapi.PARAM_TELEFONO],
+        request=StoricoTelefonoRichiestaSerializer,
         filters=False,
-        responses={200: PrenotazioneAsportoSerializer(many=True), 400: openapi.errore("Parametro 'telefono' mancante.")},
+        responses={
+            200: StoricoAsportoSerializer(many=True),
+            400: openapi.errore("Campo 'telefono' mancante."),
+            429: openapi.errore('Troppe ricerche da questo indirizzo: riprova più tardi.'),
+        },
     )
-    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    @action(
+        detail=False, methods=['post'], permission_classes=[AllowAny],
+        throttle_classes=STORICO_TELEFONO_THROTTLES,
+    )
     def storico_telefono(self, request):
         """
         Storico completo (tutti gli stati) degli ordini asporto per un numero di telefono esatto
         — pubblico, stesso identico principio/pattern di PrenotazionePiscinaViewSet.storico_telefono.
-        GET /api/v1/prenotazioni/asporto/storico_telefono/?telefono=...
+        GET /api/v1/prenotazioni/asporto/storico_telefono/  (POST, corpo {"telefono": ...})
         """
-        telefono = request.query_params.get('telefono', '').strip()
-        if not telefono:
-            return Response({"detail": "Parametro 'telefono' obbligatorio."}, status=400)
+        telefono = _telefono_richiesto(request)
 
         queryset = (
             PrenotazioneAsporto.objects.filter(cliente_id__telefono=telefono)
             .select_related('cliente_id')
             .order_by('-data', '-ora')
         )
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return Response(StoricoAsportoSerializer(queryset, many=True).data)
 
     @extend_schema(
         summary='Ordini arrivati di recente (staff)',
@@ -639,7 +666,10 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="padel_{prenotazione.id}.pdf"'
         return response
 
-    @extend_schema(summary='Dettaglio di una partita padel (pubblico)')
+    @extend_schema(
+        summary='Dettaglio di una partita padel (pubblico)',
+        responses={200: DettaglioPadelPubblicoSerializer},
+    )
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def dettaglio_pubblico(self, request, pk=None):
         """
@@ -648,25 +678,30 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
         (consultare una prenotazione cancellata resta lecito, è solo il PDF a non avere senso).
         GET /api/v1/prenotazioni/padel/{id}/dettaglio_pubblico/
         """
-        return Response(self.get_serializer(self.get_object()).data)
+        return Response(DettaglioPadelPubblicoSerializer(self.get_object()).data)
 
     @extend_schema(
         summary='Storico padel per numero di telefono (pubblico)',
-        parameters=[openapi.PARAM_TELEFONO],
+        request=StoricoTelefonoRichiestaSerializer,
         filters=False,
-        responses={200: PrenotazionePadelSerializer(many=True), 400: openapi.errore("Parametro 'telefono' mancante.")},
+        responses={
+            200: StoricoPadelSerializer(many=True),
+            400: openapi.errore("Campo 'telefono' mancante."),
+            429: openapi.errore('Troppe ricerche da questo indirizzo: riprova più tardi.'),
+        },
     )
-    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    @action(
+        detail=False, methods=['post'], permission_classes=[AllowAny],
+        throttle_classes=STORICO_TELEFONO_THROTTLES,
+    )
     def storico_telefono(self, request):
         """
         Storico completo (tutti gli stati) delle prenotazioni padel per un numero di telefono
         esatto — pubblico, stesso identico principio/pattern degli omonimi di piscina e asporto
         (match esatto, mai icontains, per non trasformarlo in una ricerca libera sull'anagrafica).
-        GET /api/v1/prenotazioni/padel/storico_telefono/?telefono=...
+        GET /api/v1/prenotazioni/padel/storico_telefono/  (POST, corpo {"telefono": ...})
         """
-        telefono = request.query_params.get('telefono', '').strip()
-        if not telefono:
-            return Response({"detail": "Parametro 'telefono' obbligatorio."}, status=400)
+        telefono = _telefono_richiesto(request)
 
         queryset = (
             PrenotazionePadel.objects.filter(cliente_id__telefono=telefono)
@@ -674,7 +709,7 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
             .prefetch_related('noleggi__racchetta')
             .order_by('-data', '-ora')
         )
-        return Response(self.get_serializer(queryset, many=True).data)
+        return Response(StoricoPadelSerializer(queryset, many=True).data)
 
     @extend_schema(
         summary='Partite arrivate di recente (staff)',

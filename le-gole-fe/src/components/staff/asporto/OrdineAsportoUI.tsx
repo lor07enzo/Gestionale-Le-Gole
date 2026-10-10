@@ -47,15 +47,17 @@ import {
   formatDateDDMMYYYY,
   formatOrarioInput,
   formatTime,
-  generaSlotOrario,
   parseHHMMToMinutes,
   raggruppaSlotPerOra,
   STATO_PRENOTAZIONE_BADGE,
   STATO_PRENOTAZIONE_LABEL,
-  type BloccoOrario,
 } from '../../../utils/piscinaMappa';
+import { slotTuttiITurni } from '../../../utils/asporto';
 import { formatPrezzo } from '../../../utils/prezzi';
 import { extractErrorMessage } from '../../../utils/errors';
+import { PickerOrarioAsporto } from '../../shared/PickerOrarioAsporto';
+
+const nessunoSpento = () => null;
 
 // Pezzi condivisi tra "Storico Ordini" (app/staff/asporto/ordini.tsx, per giorno) e la scheda
 // cliente (app/staff/clienti/[clienteId].tsx, storico completo su più giorni) — stessa card
@@ -269,99 +271,6 @@ function VoceOrdineRow({
   );
 }
 
-// Stesso picker a due livelli (fasce orarie → slot da 15 minuti) già usato per scegliere
-// l'orario di ritiro altrove nell'app — checkout/riordino self-service (tinta sky/emerald) e
-// creazione manuale walk-in (`app/staff/asporto/ordini/nuovo.tsx`, stessa tinta sky di qui) —
-// così anche la modifica di un ordine esistente ha "la stessa formattazione degli altri orari",
-// su richiesta esplicita dell'utente (2026-08-27). **Nessuno slot è mai disabilitato qui**, a
-// differenza di tutte le altre occorrenze del picker: quelle riguardano sempre un orario non
-// ancora scelto per un ordine nuovo/futuro (ha senso nascondere gli orari già passati o esauriti);
-// questo invece modifica un ordine già esistente, il cui orario attuale è spessissimo già passato
-// nel momento in cui lo staff lo rivede/corregge (l'ordine resta modificabile finché la sua
-// `data` non è nel passato, non finché la sua `ora` lo è) — disabilitare gli orari passati
-// nasconderebbe/disattiverebbe proprio il valore corrente, impedendo di correggere un ordine
-// già scaduto o di lasciarlo con un altro orario ugualmente passato. Il backend resta comunque
-// l'unica validazione reale (`ConfigurazioneAsporto.orario_valido()`, vincolante per chiunque,
-// staff incluso) — qui il picker si limita a proporre solo gli orari dentro i turni configurati.
-function fasciaClassName(isEspansa: boolean, contieneSelezionato: boolean): string {
-  if (isEspansa) return 'border-sky-600 bg-sky-600';
-  if (contieneSelezionato) return 'border-sky-600 bg-white';
-  return 'border-sky-300 bg-white active:bg-sky-50';
-}
-
-function slotClassName(selezionato: boolean): string {
-  return selezionato ? 'border-sky-600 bg-sky-600' : 'border-sky-300 bg-white active:bg-sky-100';
-}
-
-type PickerOrarioModificaProps = {
-  blocchi: BloccoOrario[];
-  oraEspansa: string | null;
-  onToggleEspansa: (ora: string) => void;
-  oraSelezionata: string;
-  onSelectOra: (slot: string) => void;
-};
-
-function PickerOrarioModifica({
-  blocchi,
-  oraEspansa,
-  onToggleEspansa,
-  oraSelezionata,
-  onSelectOra,
-}: Readonly<PickerOrarioModificaProps>) {
-  const slotsFasciaEspansa = blocchi.find((b) => b.ora === oraEspansa)?.slots ?? [];
-
-  return (
-    <VStack space="xs">
-      <HStack space="xs" className="flex-wrap">
-        {blocchi.map((blocco) => {
-          const isEspansa = blocco.ora === oraEspansa;
-          const contieneSelezionato = blocco.slots.includes(oraSelezionata);
-          return (
-            <Pressable
-              key={blocco.ora}
-              onPress={() => onToggleEspansa(blocco.ora)}
-              accessibilityRole="button"
-              accessibilityLabel={`Fascia oraria ${blocco.label}`}
-              accessibilityState={{ expanded: isEspansa, selected: contieneSelezionato }}
-              className={`rounded-full border-2 px-3 py-1.5 ${fasciaClassName(isEspansa, contieneSelezionato)}`}
-            >
-              <Text size="xs" className={`font-medium ${isEspansa ? 'text-white' : 'text-sky-900'}`}>
-                {contieneSelezionato && !isEspansa ? '✓ ' : ''}
-                {blocco.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </HStack>
-
-      {oraEspansa ? (
-        <HStack space="xs" className="flex-wrap rounded-xl border border-sky-100 bg-sky-50/60 p-2">
-          {slotsFasciaEspansa.map((slot) => {
-            const selezionato = oraSelezionata === slot;
-            return (
-              <Pressable
-                key={slot}
-                onPress={() => onSelectOra(slot)}
-                accessibilityRole="button"
-                accessibilityLabel={`Orario di ritiro ${slot}`}
-                className={`rounded-full border-2 px-3 py-1.5 ${slotClassName(selezionato)}`}
-              >
-                <Text size="xs" className={selezionato ? 'font-bold text-white' : 'font-medium text-sky-900'}>
-                  {slot}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </HStack>
-      ) : (
-        <Text size="2xs" className="text-muted-foreground">
-          Tocca una fascia oraria per scegliere l'orario esatto.
-        </Text>
-      )}
-    </VStack>
-  );
-}
-
 export function EditOrdineSheet({
   ordine,
   voci,
@@ -391,7 +300,6 @@ export function EditOrdineSheet({
   // apertura mostri per un istante il fallback testuale prima che l'effetto sotto lo corregga.
   const [isLoadingOrario, setIsLoadingOrario] = useState(true);
   const [orarioLoadError, setOrarioLoadError] = useState(false);
-  const [oraEspansa, setOraEspansa] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ordine) return;
@@ -399,7 +307,6 @@ export function EditOrdineSheet({
     setNote(ordine.note);
     setError(null);
     setConfigurazione(null);
-    setOraEspansa(null);
     setOrarioLoadError(false);
     setIsLoadingOrario(true);
     getConfigurazioneAsporto()
@@ -411,23 +318,10 @@ export function EditOrdineSheet({
   // Entrambi i turni concatenati (nessuno "switch" a un turno alla volta come lato cliente): lo
   // staff deve poter correggere un ordine verso qualunque orario di servizio, non solo quello in
   // corso — stesso principio già seguito in `app/staff/asporto/ordini/nuovo.tsx`.
-  const blocchiOrario = useMemo(() => {
-    if (!configurazione) return [];
-    const slotsTurno1 = generaSlotOrario(formatTime(configurazione.orario_apertura), formatTime(configurazione.orario_chiusura));
-    const slotsTurno2 =
-      configurazione.orario_apertura_2 && configurazione.orario_chiusura_2
-        ? generaSlotOrario(formatTime(configurazione.orario_apertura_2), formatTime(configurazione.orario_chiusura_2))
-        : [];
-    return raggruppaSlotPerOra([...slotsTurno1, ...slotsTurno2]);
-  }, [configurazione]);
-
-  // Espande da sé la fascia che contiene l'orario attuale dell'ordine, appena i blocchi sono
-  // pronti — lo staff vede subito dove si trova il valore corrente invece di doverlo cercare a
-  // tentoni tra le fasce.
-  useEffect(() => {
-    if (blocchiOrario.length === 0) return;
-    setOraEspansa((prev) => prev ?? blocchiOrario.find((b) => b.slots.includes(ora))?.ora ?? null);
-  }, [blocchiOrario, ora]);
+  const blocchiOrario = useMemo(
+    () => (configurazione ? raggruppaSlotPerOra(slotTuttiITurni(configurazione)) : []),
+    [configurazione]
+  );
 
   if (!ordine) {
     return <Actionsheet isOpen={false} onClose={onClose} />;
@@ -524,13 +418,19 @@ export function EditOrdineSheet({
     );
   } else {
     orarioContent = (
-      <PickerOrarioModifica
-        blocchi={blocchiOrario}
-        oraEspansa={oraEspansa}
-        onToggleEspansa={(o) => setOraEspansa((prev) => (prev === o ? null : o))}
-        oraSelezionata={ora}
-        onSelectOra={setOra}
-      />
+      // Nessuno slot spento: si modifica un ordine esistente, il cui orario attuale è spesso già
+      // passato — disabilitarlo impedirebbe proprio di correggerlo. Il backend resta l'autorità.
+      // Si apre già sulla fascia che contiene l'orario attuale.
+      <VStack space="xs">
+        <PickerOrarioAsporto
+          key={ordine.id}
+          blocchi={blocchiOrario}
+          value={ora}
+          onChange={setOra}
+          statoSlot={nessunoSpento}
+          fasciaIniziale={blocchiOrario.find((b) => b.slots.includes(ora))?.ora ?? null}
+        />
+      </VStack>
     );
   }
 

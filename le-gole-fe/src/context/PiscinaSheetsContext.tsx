@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
-import { Alert, Platform } from 'react-native';
 import { createCliente } from '../services/clienti';
+import { chiediConferma, mostraErrore } from '../utils/dialog';
+import { extractErrorMessage } from '../utils/errors';
 import type { Postazione, TipoPostazione } from '../services/struttura';
 import type { PrenotazionePiscina } from '../services/prenotazioni';
 import {
@@ -322,13 +323,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         selectPrenotazioneCandidate(created.id);
       }
       setIsNewClienteSheetOpen(false);
-    } catch (err: any) {
-      const detail = err?.response?.data;
-      const message =
-        detail && typeof detail === 'object'
-          ? Object.values(detail).flat().join(' ')
-          : 'Impossibile creare il cliente e la prenotazione.';
-      setNewClienteError(message || 'Impossibile creare il cliente e la prenotazione.');
+    } catch (err) {
+      setNewClienteError(extractErrorMessage(err, 'Impossibile creare il cliente e la prenotazione.'));
     } finally {
       setIsSubmittingNewCliente(false);
     }
@@ -375,6 +371,19 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     setSheetMode('assign');
   };
 
+  // Lettini/sdraie richiesti per la postazione, entro il residuo della prenotazione collegata.
+  const verificaLettiniSdraie = () => {
+    const lettiniRichiesti = Number.parseInt(sheetForm.lettini, 10) || 0;
+    const sdraieRichieste = Number.parseInt(sheetForm.sdraie, 10) || 0;
+    let errore: string | null = null;
+    if (maxLettini !== null && lettiniRichiesti > maxLettini) {
+      errore = `Lettini superiori a quelli ancora da assegnare per questo cliente (massimo ${maxLettini}).`;
+    } else if (maxSdraie !== null && sdraieRichieste > maxSdraie) {
+      errore = `Sdraie superiori a quelle ancora da assegnare per questo cliente (massimo ${maxSdraie}).`;
+    }
+    return { lettiniRichiesti, sdraieRichieste, errore };
+  };
+
   const confirmAssign = async () => {
     if (!targetPostazione) return;
     if (isPastDate) {
@@ -392,14 +401,9 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError('Orario di arrivo non valido.');
       return;
     }
-    const lettiniRichiesti = Number.parseInt(sheetForm.lettini, 10) || 0;
-    const sdraieRichieste = Number.parseInt(sheetForm.sdraie, 10) || 0;
-    if (maxLettini !== null && lettiniRichiesti > maxLettini) {
-      setSheetError(`Lettini superiori a quelli ancora da assegnare per questo cliente (massimo ${maxLettini}).`);
-      return;
-    }
-    if (maxSdraie !== null && sdraieRichieste > maxSdraie) {
-      setSheetError(`Sdraie superiori a quelle ancora da assegnare per questo cliente (massimo ${maxSdraie}).`);
+    const { lettiniRichiesti, sdraieRichieste, errore } = verificaLettiniSdraie();
+    if (errore) {
+      setSheetError(errore);
       return;
     }
 
@@ -446,14 +450,9 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       setSheetError(orarioCheck.error);
       return;
     }
-    const lettiniRichiesti = Number.parseInt(sheetForm.lettini, 10) || 0;
-    const sdraieRichieste = Number.parseInt(sheetForm.sdraie, 10) || 0;
-    if (maxLettini !== null && lettiniRichiesti > maxLettini) {
-      setSheetError(`Lettini superiori a quelli ancora da assegnare per questo cliente (massimo ${maxLettini}).`);
-      return;
-    }
-    if (maxSdraie !== null && sdraieRichieste > maxSdraie) {
-      setSheetError(`Sdraie superiori a quelle ancora da assegnare per questo cliente (massimo ${maxSdraie}).`);
+    const { lettiniRichiesti, sdraieRichieste, errore } = verificaLettiniSdraie();
+    if (errore) {
+      setSheetError(errore);
       return;
     }
     setIsSubmittingSheet(true);
@@ -527,16 +526,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
       return;
     }
     const message = `La postazione #${postazione.numero} verrà eliminata definitivamente.`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(message)) {
-        confirmDeletePostazione(postazione);
-      }
-      return;
-    }
-    Alert.alert('Eliminare postazione?', message, [
-      { text: 'Annulla', style: 'cancel' },
-      { text: 'Elimina', style: 'destructive', onPress: () => confirmDeletePostazione(postazione) },
-    ]);
+    chiediConferma('Eliminare postazione?', message, 'Elimina', () => confirmDeletePostazione(postazione));
   };
 
   const confirmAddPostazione = async () => {
@@ -579,13 +569,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         });
       }
       closeSheet();
-    } catch (err: any) {
-      const detail = err?.response?.data;
-      const message =
-        detail && typeof detail === 'object'
-          ? Object.values(detail).flat().join(' ')
-          : 'Numero non più disponibile: chiudi e riapri il foglio per ricalcolarlo.';
-      setSheetError(message);
+    } catch (err) {
+      setSheetError(extractErrorMessage(err, 'Numero non più disponibile: chiudi e riapri il foglio per ricalcolarlo.'));
     } finally {
       setIsSubmittingSheet(false);
     }
@@ -662,13 +647,8 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         sdraia: Number.parseInt(editForm.sdraia, 10) || 0,
       });
       closeEditPrenotazione();
-    } catch (err: any) {
-      const detail = err?.response?.data;
-      const message =
-        detail && typeof detail === 'object'
-          ? Object.values(detail).flat().join(' ')
-          : 'Impossibile salvare le modifiche alla prenotazione.';
-      setEditError(message || 'Impossibile salvare le modifiche alla prenotazione.');
+    } catch (err) {
+      setEditError(extractErrorMessage(err, 'Impossibile salvare le modifiche alla prenotazione.'));
     } finally {
       setIsSubmittingEdit(false);
     }
@@ -681,7 +661,7 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
     try {
       await editPrenotazione(p.id, { stato: 'CONFIRMED' });
     } catch {
-      Alert.alert('Errore', 'Impossibile confermare la prenotazione.');
+      mostraErrore('Impossibile confermare la prenotazione.');
     } finally {
       setConfirmingPrenotazioneId(null);
     }
@@ -694,23 +674,14 @@ export function PiscinaSheetsProvider({ children }: Readonly<{ children: ReactNo
         selectPrenotazioneCandidate(null);
       }
     } catch {
-      Alert.alert('Errore', 'Impossibile annullare la prenotazione.');
+      mostraErrore('Impossibile annullare la prenotazione.');
     }
   };
 
   const handleCancelPrenotazione = (p: PrenotazionePiscina) => {
     if (isPastDate) return;
     const message = `La prenotazione di ${p.cliente_nome} verrà annullata. Le postazioni già assegnate torneranno libere sulla mappa; la prenotazione resterà comunque visibile nello storico del cliente come cancellata.`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(message)) {
-        confirmCancelPrenotazione(p);
-      }
-      return;
-    }
-    Alert.alert('Annullare prenotazione?', message, [
-      { text: 'No', style: 'cancel' },
-      { text: 'Annulla prenotazione', style: 'destructive', onPress: () => confirmCancelPrenotazione(p) },
-    ]);
+    chiediConferma('Annullare prenotazione?', message, 'Annulla prenotazione', () => confirmCancelPrenotazione(p));
   };
 
   // aria-label esplicito: il rilevamento automatico del titolo da parte di react-aria ha una

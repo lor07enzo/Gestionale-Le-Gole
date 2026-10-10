@@ -1,16 +1,61 @@
-// Platform.OS risolve a 'web' sotto jest-expo/web: storage.ts usa il ramo localStorage.
+// Platform.OS risolve a 'web' sotto jest-expo/web: storage.ts usa il ramo localStorage, salvo
+// dove il test forza esplicitamente una piattaforma nativa.
+import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import {
+  clearPushToken,
   clearTokens,
   getAccessToken,
   getNotificheLetteIds,
+  getPushToken,
   getRefreshToken,
   saveAccessToken,
   saveNotificheLetteIds,
+  savePushToken,
   saveTokens,
 } from '../storage';
 
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(() => Promise.resolve('dal-keychain')),
+  setItemAsync: jest.fn(() => Promise.resolve()),
+  deleteItemAsync: jest.fn(() => Promise.resolve()),
+}));
+
 beforeEach(() => {
   localStorage.clear();
+  jest.clearAllMocks();
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+describe('push token', () => {
+  it('salva, rilegge e cancella il token dell’installazione', async () => {
+    expect(await getPushToken()).toBeNull();
+    await savePushToken('ExponentPushToken[abc]');
+    expect(await getPushToken()).toBe('ExponentPushToken[abc]');
+    await clearPushToken();
+    expect(await getPushToken()).toBeNull();
+  });
+});
+
+describe('su nativo usa il keychain (expo-secure-store), mai localStorage', () => {
+  beforeEach(() => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+  });
+
+  it('legge, scrive e cancella tramite SecureStore', async () => {
+    expect(await getAccessToken()).toBe('dal-keychain');
+    await saveTokens('a', 'r');
+    await clearTokens();
+
+    expect(SecureStore.getItemAsync).toHaveBeenCalledWith('accessToken');
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith('accessToken', 'a');
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith('refreshToken', 'r');
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('refreshToken');
+    expect(localStorage.getItem('accessToken')).toBeNull();
+  });
 });
 
 describe('token storage', () => {

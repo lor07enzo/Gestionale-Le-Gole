@@ -203,21 +203,31 @@ export function getBigliettoUrl(prenotazioneId: string): string {
   return `${API_BASE_URL}${PRENOTAZIONI_PISCINA_PATH}${prenotazioneId}/scarica_biglietto/`;
 }
 
-// GET /v1/prenotazioni/piscina/storico_telefono/?telefono=... — pubblico, match esatto sul
-// telefono (mai icontains/parziale, per non trasformarlo in una ricerca libera dell'anagrafica
-// clienti). Usato dalla consultazione self-service "Le mie prenotazioni" (Area Cliente).
-export function getStoricoPiscinaPerTelefono(telefono: string): Promise<PrenotazionePiscina[]> {
+// --- "Le mie prenotazioni" (Area Cliente) ---
+// Gli endpoint pubblici rispondono con serializer dedicati, non con quelli dello staff:
+// l'elenco (via telefono) non contiene telefono, note né cliente_id; il dettaglio (via UUID)
+// aggiunge note e cliente_id (serve a "Riprenota") con telefono mascherato e nome abbreviato.
+export type StoricoPiscina = Pick<
+  PrenotazionePiscina,
+  | 'id' | 'data' | 'ora' | 'stato' | 'cliente_nome' | 'inventario' | 'inventario_nome'
+  | 'ingressi' | 'ingressi_ridotti' | 'ingressi_bambini' | 'ingressi_gratuiti'
+  | 'ombrellone' | 'gazebo' | 'lettino' | 'sdraia'
+>;
+export type DettaglioPiscinaPubblico = StoricoPiscina &
+  Pick<PrenotazionePiscina, 'note' | 'cliente_id' | 'cliente_telefono'>;
+
+// POST /v1/prenotazioni/piscina/storico_telefono/ — pubblico, match esatto. Il telefono va nel
+// corpo e non in query string, così non finisce nei log di accesso né nella cronologia.
+export function getStoricoPiscinaPerTelefono(telefono: string): Promise<StoricoPiscina[]> {
   return api
-    .get<PrenotazionePiscina[]>(`${PRENOTAZIONI_PISCINA_PATH}storico_telefono/`, { params: { telefono } })
+    .post<StoricoPiscina[]>(`${PRENOTAZIONI_PISCINA_PATH}storico_telefono/`, { telefono })
     .then((response) => response.data);
 }
 
-// GET /v1/prenotazioni/piscina/{id}/dettaglio_pubblico/ — pubblico, l'UUID funge da segreto,
-// stesso principio di getBigliettoUrl. Usato dalla pagina di dettaglio raggiunta da una card
-// di getStoricoPiscinaPerTelefono.
-export function getDettaglioPubblicoPiscina(id: string): Promise<PrenotazionePiscina> {
+// GET /v1/prenotazioni/piscina/{id}/dettaglio_pubblico/ — pubblico, l'UUID funge da segreto.
+export function getDettaglioPubblicoPiscina(id: string): Promise<DettaglioPiscinaPubblico> {
   return api
-    .get<PrenotazionePiscina>(`${PRENOTAZIONI_PISCINA_PATH}${id}/dettaglio_pubblico/`)
+    .get<DettaglioPiscinaPubblico>(`${PRENOTAZIONI_PISCINA_PATH}${id}/dettaglio_pubblico/`)
     .then((response) => response.data);
 }
 
@@ -374,20 +384,21 @@ export function getRicevutaUrl(prenotazioneId: string): string {
   return `${API_BASE_URL}${PRENOTAZIONI_ASPORTO_PATH}${prenotazioneId}/scarica_ricevuta/`;
 }
 
-// GET /v1/prenotazioni/asporto/storico_telefono/?telefono=... — pubblico, stesso identico
-// pattern/scopo di getStoricoPiscinaPerTelefono (sopra).
-export function getStoricoAsportoPerTelefono(telefono: string): Promise<PrenotazioneAsporto[]> {
+export type StoricoAsporto = Pick<PrenotazioneAsporto, 'id' | 'data' | 'ora' | 'stato' | 'cliente_nome' | 'totale'>;
+
+// POST /v1/prenotazioni/asporto/storico_telefono/ — stesso principio di getStoricoPiscinaPerTelefono.
+export function getStoricoAsportoPerTelefono(telefono: string): Promise<StoricoAsporto[]> {
   return api
-    .get<PrenotazioneAsporto[]>(`${PRENOTAZIONI_ASPORTO_PATH}storico_telefono/`, { params: { telefono } })
+    .post<StoricoAsporto[]>(`${PRENOTAZIONI_ASPORTO_PATH}storico_telefono/`, { telefono })
     .then((response) => response.data);
 }
 
-// PrenotazioneAsporto + le sue VoceOrdine annidate — solo l'azione 'dettaglio_pubblico' le
-// espone (unico punto public-safe: VoceOrdineViewSet.list() resta IsAuthenticated).
-export type PrenotazioneAsportoDettaglio = PrenotazioneAsporto & { voci: VoceOrdine[] };
+// L'ordine con le proprie VoceOrdine annidate — l'unico punto pubblico in cui sono leggibili
+// (VoceOrdineViewSet.list() resta IsAuthenticated).
+export type PrenotazioneAsportoDettaglio = StoricoAsporto &
+  Pick<PrenotazioneAsporto, 'note' | 'cliente_id' | 'cliente_telefono'> & { voci: VoceOrdine[] };
 
-// GET /v1/prenotazioni/asporto/{id}/dettaglio_pubblico/ — pubblico, stesso identico principio di
-// getDettaglioPubblicoPiscina, con in più le righe prodotto dell'ordine.
+// GET /v1/prenotazioni/asporto/{id}/dettaglio_pubblico/ — pubblico, l'UUID funge da segreto.
 export function getDettaglioPubblicoAsporto(id: string): Promise<PrenotazioneAsportoDettaglio> {
   return api
     .get<PrenotazioneAsportoDettaglio>(`${PRENOTAZIONI_ASPORTO_PATH}${id}/dettaglio_pubblico/`)

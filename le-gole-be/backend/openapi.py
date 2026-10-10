@@ -53,18 +53,6 @@ PARAM_MESE = OpenApiParameter(
     description='Mese da conteggiare, 1-12.',
 )
 
-PARAM_TELEFONO = OpenApiParameter(
-    name='telefono',
-    type=str,
-    location=OpenApiParameter.QUERY,
-    required=True,
-    description=(
-        'Numero di telefono del cliente. Il confronto è **esatto**, mai parziale: '
-        'un match parziale renderebbe questo endpoint pubblico una ricerca libera '
-        "sull'intera anagrafica clienti."
-    ),
-)
-
 PARAM_SEARCH_CLIENTE = OpenApiParameter(
     name='search',
     type=str,
@@ -214,34 +202,6 @@ DISPONIBILITA_PADEL = OpenApiResponse(
     ),
 )
 
-# `dettaglio_pubblico` dell'asporto è l'unico endpoint che restituisce la prenotazione **più** le
-# sue righe d'ordine annidate sotto `voci` — composte a mano nella view, quindi invisibili a
-# drf-spectacular, che altrimenti dichiarerebbe il solo PrenotazioneAsporto e lascerebbe credere
-# che `voci` non esista.
-#
-# Composto con due `$ref` invece che con un inline_serializer perché `VoceOrdineSerializer` vive
-# in `menu` e `prenotazioni/views.py` lo importa **dentro** la funzione, mai a livello di modulo
-# (invariante deliberata, sezione 1: la dipendenza inversa prenotazioni → menu resta circoscritta
-# a un solo punto). Un decoratore viene valutato all'import, quindi referenziarlo lì avrebbe
-# richiesto di rompere proprio quell'invariante. I due componenti esistono comunque già nello
-# schema: li generano PrenotazioneAsportoViewSet e menu.VoceOrdineViewSet.
-DETTAGLIO_ASPORTO = OpenApiResponse(
-    response={
-        'allOf': [
-            {'$ref': '#/components/schemas/PrenotazioneAsporto'},
-            {
-                'type': 'object',
-                'properties': {
-                    'voci': {
-                        'type': 'array',
-                        'items': {'$ref': '#/components/schemas/VoceOrdine'},
-                    },
-                },
-            },
-        ],
-    },
-    description="L'ordine con le proprie righe prodotto annidate in `voci`.",
-)
 
 
 LISTA_UUID = OpenApiResponse(

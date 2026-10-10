@@ -90,7 +90,6 @@ class TestAzioniCustom:
     @pytest.mark.parametrize('percorso,attesi', [
         ('/api/v1/prenotazioni/piscina/disponibilita/', {'inventario', 'data'}),
         ('/api/v1/prenotazioni/piscina/conteggi/', {'inventario', 'anno', 'mese'}),
-        ('/api/v1/prenotazioni/piscina/storico_telefono/', {'telefono'}),
         ('/api/v1/prenotazioni/asporto/prenotazioni_per_orario/', {'data'}),
         ('/api/v1/prenotazioni/asporto/conteggi/', {'anno', 'mese'}),
         ('/api/v1/prenotazioni/padel/disponibilita/', {'data'}),
@@ -102,14 +101,25 @@ class TestAzioniCustom:
         obbligatori = {p['name'] for p in parametri if p['in'] == 'query' and p['required']}
         assert obbligatori == attesi
 
-    def test_storico_telefono_non_dichiara_i_filtri_di_lista(self, schema):
+    @pytest.mark.parametrize('servizio,componente', [
+        ('piscina', 'StoricoPiscina'),
+        ('asporto', 'StoricoAsporto'),
+        ('padel', 'StoricoPadel'),
+    ])
+    def test_storico_telefono_e_una_post_senza_dati_personali(self, schema, servizio, componente):
         """
-        La viewset ha `filterset_fields`, ma questa azione non chiama mai `filter_queryset()`:
-        senza `filters=False` lo schema prometterebbe filtri data/stato/cliente_id inesistenti.
+        Il telefono viaggia nel corpo, mai in query string (resterebbe nei log e nella cronologia),
+        e l'elenco risponde con un serializer dedicato che non include telefono, note né cliente_id.
         """
-        parametri = schema['paths']['/api/v1/prenotazioni/piscina/storico_telefono/']['get']['parameters']
-        nomi = {p['name'] for p in parametri if p['in'] == 'query'}
-        assert nomi == {'telefono'}
+        voce = schema['paths'][f'/api/v1/prenotazioni/{servizio}/storico_telefono/']
+        assert 'get' not in voce
+        assert not [p for p in voce['post'].get('parameters', []) if p['in'] == 'query']
+
+        risposta = voce['post']['responses']['200']['content']['application/json']['schema']
+        assert risposta['items']['$ref'].endswith(f'/{componente}')
+        campi = set(schema['components']['schemas'][componente]['properties'])
+        assert campi.isdisjoint({'cliente_id', 'cliente_telefono', 'note', 'creata_da_staff'})
+        assert '429' in voce['post']['responses']
 
     @pytest.mark.parametrize('percorso', [
         '/api/v1/prenotazioni/piscina/{id}/scarica_biglietto/',
@@ -148,6 +158,9 @@ class TestCorpoRichiesta:
         ('/api/v1/users/staff/reset-password/request/', 'post', 'PasswordResetRequest'),
         ('/api/v1/users/staff/reset-password/confirm/', 'post', 'PasswordResetConfirm'),
         ('/api/v1/users/staff/', 'post', 'UtenteCreate'),
+        ('/api/v1/prenotazioni/piscina/storico_telefono/', 'post', 'StoricoTelefonoRichiesta'),
+        ('/api/v1/prenotazioni/asporto/storico_telefono/', 'post', 'StoricoTelefonoRichiesta'),
+        ('/api/v1/prenotazioni/padel/storico_telefono/', 'post', 'StoricoTelefonoRichiesta'),
     ])
     def test_il_corpo_e_quello_del_serializer_realmente_usato(
         self, schema, percorso, metodo, componente

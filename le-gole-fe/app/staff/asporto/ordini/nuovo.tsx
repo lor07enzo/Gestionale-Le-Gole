@@ -5,14 +5,12 @@ import { router, type Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
-import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
 import { Input, InputField, InputIcon, InputSlot } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import {
   AddIcon,
-  ArrowLeftIcon,
   ChevronDownIcon,
   ClockIcon,
   CloseIcon,
@@ -21,7 +19,9 @@ import {
   RemoveIcon,
   SearchIcon,
 } from '@/components/ui/icon';
-import { goBackOr } from '../../../../src/utils/navigation';
+import { StaffPageHeader } from '../../../../src/components/staff/StaffPageHeader';
+import { PickerOrarioAsporto, type StatoSlot } from '../../../../src/components/shared/PickerOrarioAsporto';
+import { descrizioneOrari, isOraInFinestre, residuoPrenotazioni, slotTuttiITurni } from '../../../../src/utils/asporto';
 import { extractErrorMessage } from '../../../../src/utils/errors';
 import { createCliente } from '../../../../src/services/clienti';
 import {
@@ -38,8 +38,6 @@ import {
 } from '../../../../src/services/menu';
 import {
   formatDisplayDate,
-  formatTime,
-  generaSlotOrario,
   nowHHMM,
   parseHHMMToMinutes,
   raggruppaSlotPerOra,
@@ -53,93 +51,11 @@ import { formatPrezzo } from '../../../../src/utils/prezzi';
 // della piscina, qui vive in una pagina dedicata (non un Actionsheet) perché scegliere i prodotti
 // dal catalogo richiede più spazio verticale di un foglio.
 
-// Sotto questo numero di prenotazioni ancora accettabili per un orario, mostriamo il conteggio
-// residuo sotto lo slot — stessa soglia/stesso principio delle pagine cliente asporto (abbassata
-// a 2 il 2026-08-28 insieme al passaggio del limite dai prodotti alle prenotazioni, stesso motivo:
-// numeri molto più piccoli in gioco).
-const SOGLIA_AVVISO_RESIDUO_ORARIO = 2;
-
 // Estratte perché ripetute identiche su 4 sezioni della pagina (rilevato da SonarQube — regola
 // "Define a constant instead of duplicating this literal"): un solo punto da aggiornare se lo
 // stile di titolo/card sezione cambia, invece di quattro.
 const SEZIONE_TITOLO_CLASS = 'font-bold uppercase tracking-wide text-sky-700';
 const SEZIONE_CARD_CLASS = 'w-full rounded-2xl border border-sky-200 bg-white p-4';
-
-// `generaSlotOrario`/`raggruppaSlotPerOra`/`BloccoOrario` sono importate da `utils/piscinaMappa.ts`
-// (2026-08-26, SonarQube — duplicazione): nessun anticipo minimo qui, a differenza delle pagine
-// cliente, applicato invece a valle nel filtro `passato`/`disabilitato` sotto — lo staff ha
-// visibilità diretta sulla cucina (stesso principio per cui bypassa GiornoPienoPiscina/
-// GiornoChiusoAsporto online, sezioni 2/15): un walk-in può benissimo essere ritirato "adesso",
-// quindi un orario coincidente con l'ora corrente resta selezionabile. Solo gli orari già passati
-// (prima di adesso, non prima di adesso+un margine) sono disabilitati — un ordine per un orario
-// già trascorso oggi non avrebbe comunque senso.
-
-// Descrizione leggibile di entrambi i turni insieme (pranzo/cena, sezione 15) — stessa forma di
-// `descrizione_orari()` lato backend (menu/models.py, ConfigurazioneAsporto).
-function descrizioneOrari(configurazione: ConfigurazioneAsporto): string {
-  const turni = [`dalle ${formatTime(configurazione.orario_apertura)} alle ${formatTime(configurazione.orario_chiusura)}`];
-  if (configurazione.orario_apertura_2 && configurazione.orario_chiusura_2) {
-    turni.push(`dalle ${formatTime(configurazione.orario_apertura_2)} alle ${formatTime(configurazione.orario_chiusura_2)}`);
-  }
-  return turni.join(' e ');
-}
-
-// True se `minuti` rientra nel primo turno o, se configurato, nel secondo — stessa logica di
-// `ConfigurazioneAsporto.orario_valido()` lato backend.
-function isOraInFinestre(configurazione: ConfigurazioneAsporto, minuti: number): boolean {
-  const apertura1 = parseHHMMToMinutes(formatTime(configurazione.orario_apertura));
-  const chiusura1 = parseHHMMToMinutes(formatTime(configurazione.orario_chiusura));
-  if (apertura1 !== null && chiusura1 !== null && minuti >= apertura1 && minuti <= chiusura1) return true;
-  if (configurazione.orario_apertura_2 && configurazione.orario_chiusura_2) {
-    const apertura2 = parseHHMMToMinutes(formatTime(configurazione.orario_apertura_2));
-    const chiusura2 = parseHHMMToMinutes(formatTime(configurazione.orario_chiusura_2));
-    if (apertura2 !== null && chiusura2 !== null && minuti >= apertura2 && minuti <= chiusura2) return true;
-  }
-  return false;
-}
-
-// Estratte dai rispettivi JSX (ternari annidati, rilevati da SonarQube — regola "Ternary operators
-// should not be nested") in funzioni pure con un solo livello di if/return ciascuna: stesso
-// risultato visivo, complessità cognitiva più bassa sia qui sia nei due `.map()` che le usano.
-function fasciaClassName(nonSelezionabile: boolean, isEspansa: boolean, contieneSelezionato: boolean): string {
-  if (nonSelezionabile) return 'border-sky-100 bg-white opacity-40';
-  if (isEspansa) return 'border-sky-600 bg-sky-600';
-  if (contieneSelezionato) return 'border-sky-600 bg-white';
-  return 'border-sky-300 bg-white active:bg-sky-50';
-}
-
-function fasciaTextClassName(nonSelezionabile: boolean, isEspansa: boolean): string {
-  if (nonSelezionabile) return 'text-muted-foreground';
-  if (isEspansa) return 'text-white';
-  return 'text-sky-900';
-}
-
-function slotClassName(selezionato: boolean, disabilitato: boolean): string {
-  if (selezionato) return 'border-sky-600 bg-sky-600';
-  if (disabilitato) return 'border-sky-100 bg-white opacity-40';
-  return 'border-sky-300 bg-white active:bg-sky-100';
-}
-
-function slotTextClassName(selezionato: boolean, disabilitato: boolean): string {
-  if (selezionato) return 'font-bold text-white';
-  if (disabilitato) return 'text-muted-foreground';
-  return 'font-medium text-sky-900';
-}
-
-function slotAccessibilityLabel(
-  slot: string,
-  passato: boolean,
-  esaurito: boolean,
-  mostraResiduo: boolean,
-  residuo: number | null
-): string {
-  if (passato) return `Orario di ritiro ${slot}, già passato`;
-  if (esaurito) return `Orario di ritiro ${slot}, esaurito: numero massimo di prenotazioni raggiunto per questo orario`;
-  if (mostraResiduo) {
-    return `Orario di ritiro ${slot}, solo ${residuo} ${residuo === 1 ? 'posto libero' : 'posti liberi'} per questo orario`;
-  }
-  return `Orario di ritiro ${slot}`;
-}
 
 function RequiredLabel({ children }: Readonly<{ children: string }>) {
   return (
@@ -156,22 +72,11 @@ function RequiredLabel({ children }: Readonly<{ children: string }>) {
 
 function NuovoOrdineHeader() {
   return (
-    <HStack space="sm" className="items-center">
-      <Pressable
-        onPress={() => goBackOr('/staff/asporto/ordini')}
-        accessibilityLabel="Torna indietro"
-        className="h-11 w-11 items-center justify-center rounded-full bg-sky-200 active:bg-sky-300"
-      >
-        <Icon as={ArrowLeftIcon} size="lg" className="text-sky-700" />
-      </Pressable>
-      <VStack className="flex-1">
-        <Heading size="xl">Nuovo ordine</Heading>
-        <Text size="sm" className="text-muted-foreground">
-          Usa questa pagina per un cliente al banco o al telefono: l'ordine viene creato già
-          confermato.
-        </Text>
-      </VStack>
-    </HStack>
+    <StaffPageHeader
+      title="Nuovo ordine"
+      subtitle="Usa questa pagina per un cliente al banco o al telefono: l'ordine viene creato già confermato."
+      fallbackHref="/staff/asporto/ordini"
+    />
   );
 }
 
@@ -242,9 +147,6 @@ export default function NuovoOrdineAsportoScreen() {
   // diverso): fissata una sola volta al mount, non un campo del form.
   const [oggi] = useState(() => new Date());
   const [ora, setOra] = useState('');
-  // Fascia oraria espansa nel picker a due livelli — stesso identico principio delle pagine
-  // cliente asporto, nessuna precompilazione: lo staff sceglie sempre esplicitamente uno slot.
-  const [oraEspansa, setOraEspansa] = useState<string | null>(null);
   const [configurazione, setConfigurazione] = useState<ConfigurazioneAsporto | null>(null);
   const [prenotazioniPerOrario, setPrenotazioniPerOrario] = useState<PrenotazioniPerOrario>({});
 
@@ -271,15 +173,10 @@ export default function NuovoOrdineAsportoScreen() {
   // chiusura), lo staff vede sempre gli slot di ENTRAMBI i turni insieme — ha visibilità diretta
   // sulla cucina e può voler registrare un walk-in per la cena anche a metà mattina, senza dover
   // aspettare che il pranzo chiuda.
-  const blocchiOrario = useMemo(() => {
-    if (!configurazione) return [];
-    const slotsTurno1 = generaSlotOrario(formatTime(configurazione.orario_apertura), formatTime(configurazione.orario_chiusura));
-    const slotsTurno2 =
-      configurazione.orario_apertura_2 && configurazione.orario_chiusura_2
-        ? generaSlotOrario(formatTime(configurazione.orario_apertura_2), formatTime(configurazione.orario_chiusura_2))
-        : [];
-    return raggruppaSlotPerOra([...slotsTurno1, ...slotsTurno2]);
-  }, [configurazione]);
+  const blocchiOrario = useMemo(
+    () => (configurazione ? raggruppaSlotPerOra(slotTuttiITurni(configurazione)) : []),
+    [configurazione]
+  );
 
   const prodottiFiltrati = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -372,17 +269,11 @@ export default function NuovoOrdineAsportoScreen() {
     const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
     setIsCarrelloInView(contentOffset.y + layoutMeasurement.height >= contentSize.height - 80);
   };
-  const isSlotEsaurito = (slot: string) => {
-    if (limitePrenotazioniOrario === null) return false;
-    const prenotate = prenotazioniPerOrario[slot] ?? 0;
-    return prenotate >= limitePrenotazioniOrario;
-  };
-  // Residuo dello slot (limite meno quante prenotazioni già presenti) — stesso principio delle
-  // pagine cliente.
-  const residuoSlot = (slot: string): number | null => {
-    if (limitePrenotazioniOrario === null) return null;
-    const prenotate = prenotazioniPerOrario[slot] ?? 0;
-    return limitePrenotazioniOrario - prenotate;
+  const residuoSlot = (slot: string) => residuoPrenotazioni(limitePrenotazioniOrario, prenotazioniPerOrario, slot);
+  const isSlotEsaurito = (slot: string) => (residuoSlot(slot) ?? 1) <= 0;
+  const statoSlot = (slot: string): StatoSlot => {
+    if (parseHHMMToMinutes(slot)! < parseHHMMToMinutes(nowHHMM())!) return 'passato';
+    return isSlotEsaurito(slot) ? 'esaurito' : null;
   };
 
   const setQuantita = (prodottoId: string, next: number) => {
@@ -561,82 +452,15 @@ export default function NuovoOrdineAsportoScreen() {
                 *
               </Text>
             </HStack>
-            {/* Livello 1 — fasce orarie: stesso identico picker a due livelli delle pagine
-                cliente asporto (checkout/riordino), ma senza anticipo minimo — lo staff, a
-                differenza del cliente self-service, può registrare un walk-in per "adesso"
-                (vede direttamente la cucina). Disabilitata solo se OGNI orario al suo interno è
-                già passato (non "troppo vicino", proprio nel passato): un orario di ritiro
-                precedente a questo momento non avrebbe comunque senso per un ordine di oggi. */}
-            <HStack space="xs" className="flex-wrap">
-              {blocchiOrario.map((blocco) => {
-                const isEspansa = blocco.ora === oraEspansa;
-                const contieneSelezionato = blocco.slots.includes(ora);
-                const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
-                const tuttiNonSelezionabili = blocco.slots.every(
-                  (slot) => parseHHMMToMinutes(slot)! < nowMinuti || isSlotEsaurito(slot)
-                );
-                return (
-                  <Pressable
-                    key={blocco.ora}
-                    onPress={() =>
-                      !tuttiNonSelezionabili && setOraEspansa((prev) => (prev === blocco.ora ? null : blocco.ora))
-                    }
-                    disabled={tuttiNonSelezionabili}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Fascia oraria ${blocco.label}${tuttiNonSelezionabili ? ', non più disponibile' : ''}`}
-                    accessibilityState={{ expanded: isEspansa, selected: contieneSelezionato, disabled: tuttiNonSelezionabili }}
-                    className={`rounded-full border-2 px-3 py-1.5 ${fasciaClassName(tuttiNonSelezionabili, isEspansa, contieneSelezionato)}`}
-                  >
-                    <Text size="xs" className={`font-medium ${fasciaTextClassName(tuttiNonSelezionabili, isEspansa)}`}>
-                      {contieneSelezionato && !isEspansa ? '✓ ' : ''}
-                      {blocco.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </HStack>
-
-            {/* Livello 2 — orari ogni 15 minuti dentro la fascia scelta sopra. */}
-            {oraEspansa ? (
-              <HStack space="xs" className="flex-wrap rounded-xl border border-sky-100 bg-sky-50/60 p-2">
-                {(blocchiOrario.find((b) => b.ora === oraEspansa)?.slots ?? []).map((slot) => {
-                  const nowMinuti = parseHHMMToMinutes(nowHHMM())!;
-                  const passato = parseHHMMToMinutes(slot)! < nowMinuti;
-                  const esaurito = !passato && isSlotEsaurito(slot);
-                  const disabilitato = passato || esaurito;
-                  const selezionato = ora === slot;
-                  const residuo = residuoSlot(slot);
-                  const mostraResiduo =
-                    !disabilitato && residuo !== null && residuo <= SOGLIA_AVVISO_RESIDUO_ORARIO;
-                  return (
-                    <Pressable
-                      key={slot}
-                      onPress={() => !disabilitato && setOra(slot)}
-                      disabled={disabilitato}
-                      accessibilityRole="button"
-                      accessibilityLabel={slotAccessibilityLabel(slot, passato, esaurito, mostraResiduo, residuo)}
-                      className={`rounded-full border-2 px-3 py-1.5 ${slotClassName(selezionato, disabilitato)}`}
-                    >
-                      <VStack className="items-center">
-                        <Text size="xs" className={slotTextClassName(selezionato, disabilitato)}>
-                          {slot}
-                          {esaurito ? ' · Esaurito' : ''}
-                        </Text>
-                        {mostraResiduo ? (
-                          <Text size="2xs" className={selezionato ? 'text-white/80' : 'font-medium text-amber-700'}>
-                            {residuo === 1 ? '1 posto libero' : `${residuo} posti liberi`}
-                          </Text>
-                        ) : null}
-                      </VStack>
-                    </Pressable>
-                  );
-                })}
-              </HStack>
-            ) : (
-              <Text size="2xs" className="text-sky-900/50">
-                Tocca una fascia per vedere e scegliere l'orario preciso al suo interno.
-              </Text>
-            )}
+            {/* Stesso picker delle pagine cliente, ma senza anticipo minimo: lo staff vede la
+                cucina e può registrare un walk-in per "adesso". Spenti solo gli orari già passati. */}
+            <PickerOrarioAsporto
+              blocchi={blocchiOrario}
+              value={ora}
+              onChange={setOra}
+              statoSlot={statoSlot}
+              residuoSlot={residuoSlot}
+            />
 
             {configurazione ? (
               <Text size="2xs" className="text-muted-foreground">

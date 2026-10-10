@@ -241,20 +241,30 @@ export function getBigliettoPadelUrl(prenotazioneId: string): string {
   return `${API_BASE_URL}${PRENOTAZIONI_PATH}${prenotazioneId}/scarica_biglietto/`;
 }
 
-// Pubblico, match esatto sul telefono — stesso identico principio di getStoricoPiscinaPerTelefono
-// (il numero di telefono è l'unico "segreto" richiesto, nessun login cliente esiste in questo
-// progetto). Usato dalla consultazione self-service "Le mie prenotazioni".
-export function getStoricoPadelPerTelefono(telefono: string): Promise<PrenotazionePadel[]> {
+// "Le mie prenotazioni": stessi serializer pubblici ridotti di piscina/asporto
+// (services/prenotazioni.ts), niente telefono/note/cliente_id nell'elenco.
+export type StoricoPadel = Pick<
+  PrenotazionePadel,
+  | 'id' | 'data' | 'ora' | 'stato' | 'cliente_nome' | 'orario_fine' | 'durata_minuti'
+  | 'partecipanti' | 'palline_noleggiate' | 'racchette_totali' | 'totale'
+>;
+export type DettaglioPadelPubblico = StoricoPadel &
+  Pick<
+    PrenotazionePadel,
+    'note' | 'cliente_id' | 'cliente_telefono' | 'prezzo_partita' | 'prezzo_palline' | 'noleggi'
+  >;
+
+// POST, telefono nel corpo — stesso principio di getStoricoPiscinaPerTelefono.
+export function getStoricoPadelPerTelefono(telefono: string): Promise<StoricoPadel[]> {
   return api
-    .get<PrenotazionePadel[]>(`${PRENOTAZIONI_PATH}storico_telefono/`, { params: { telefono } })
+    .post<StoricoPadel[]>(`${PRENOTAZIONI_PATH}storico_telefono/`, { telefono })
     .then((response) => response.data);
 }
 
-// Pubblico, l'UUID v4 della prenotazione funge da segreto — stesso principio di
-// getDettaglioPubblicoPiscina. `noleggi` è già annidata dal serializer, nessun tipo dedicato.
-export function getDettaglioPubblicoPadel(id: string): Promise<PrenotazionePadel> {
+// Pubblico, l'UUID v4 della prenotazione funge da segreto.
+export function getDettaglioPubblicoPadel(id: string): Promise<DettaglioPadelPubblico> {
   return api
-    .get<PrenotazionePadel>(`${PRENOTAZIONI_PATH}${id}/dettaglio_pubblico/`)
+    .get<DettaglioPadelPubblico>(`${PRENOTAZIONI_PATH}${id}/dettaglio_pubblico/`)
     .then((response) => response.data);
 }
 
@@ -270,4 +280,19 @@ export function updateNoleggioRacchetta(id: string, quantita: number): Promise<N
 
 export function deleteNoleggioRacchetta(id: string): Promise<void> {
   return api.delete(`${NOLEGGI_PATH}${id}/`).then(() => undefined);
+}
+
+// Crea la partita e poi una riga di noleggio per ogni marca scelta (quantità > 0). Promise.all,
+// non allSettled: un noleggio fallito silenziosamente lascerebbe credere di aver noleggiato una
+// racchetta che invece non risulta da nessuna parte — stesso principio delle righe d'ordine asporto.
+export async function createPrenotazionePadelConNoleggi(
+  payload: CreatePrenotazionePadelPayload,
+  racchette: Record<string, number>
+): Promise<PrenotazionePadel> {
+  const partita = await createPrenotazionePadel(payload);
+  const righe = Object.entries(racchette).filter(([, quantita]) => quantita > 0);
+  await Promise.all(
+    righe.map(([racchetta, quantita]) => createNoleggioRacchetta({ prenotazione: partita.id, racchetta, quantita }))
+  );
+  return partita;
 }

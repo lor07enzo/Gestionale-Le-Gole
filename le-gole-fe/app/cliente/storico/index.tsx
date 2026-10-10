@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView } from 'react-native';
-import { router, useLocalSearchParams, type Href } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
 import { HStack } from '@/components/ui/hstack';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Spinner } from '@/components/ui/spinner';
 import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import {
   Actionsheet,
@@ -31,16 +30,13 @@ import { ClienteFooter } from '../../../src/components/cliente/ClienteFooter';
 import {
   getBigliettoUrl,
   getRicevutaUrl,
-  getStoricoAsportoPerTelefono,
-  getStoricoPiscinaPerTelefono,
-  type PrenotazioneAsporto,
-  type PrenotazionePiscina,
   type StatoPrenotazione,
+  type StoricoAsporto,
+  type StoricoPiscina,
 } from '../../../src/services/prenotazioni';
 import {
   getBigliettoPadelUrl,
-  getStoricoPadelPerTelefono,
-  type PrenotazionePadel,
+  type StoricoPadel,
 } from '../../../src/services/padel';
 import { apriBigliettoPdf } from '../../../src/utils/biglietto';
 import {
@@ -52,6 +48,12 @@ import {
 } from '../../../src/utils/piscinaMappa';
 import { formatFasciaPartita } from '../../../src/utils/padel';
 import { formatPrezzo } from '../../../src/utils/prezzi';
+import { StoricoPrenotazioniSearch } from '../../../src/components/cliente/StoricoPrenotazioniSearch';
+import {
+  leggiStoricoCliente,
+  svuotaStoricoCliente,
+  type StoricoCliente,
+} from '../../../src/utils/storicoSessione';
 
 // Pagina raggiunta dalla ricerca sulla landing Area Cliente (StoricoPrenotazioniSearch,
 // app/cliente/index.tsx) — presuppone che esista già almeno una prenotazione per il numero
@@ -97,9 +99,9 @@ type FiltroCategoria = 'TUTTI' | 'PISCINA' | 'ASPORTO' | 'PADEL';
 type FiltroStato = 'TUTTI' | StatoPrenotazione;
 
 type ItemStorico =
-  | { categoria: 'PISCINA'; id: string; data: string; ora: string; stato: StatoPrenotazione; item: PrenotazionePiscina }
-  | { categoria: 'ASPORTO'; id: string; data: string; ora: string; stato: StatoPrenotazione; item: PrenotazioneAsporto }
-  | { categoria: 'PADEL'; id: string; data: string; ora: string; stato: StatoPrenotazione; item: PrenotazionePadel };
+  | { categoria: 'PISCINA'; id: string; data: string; ora: string; stato: StatoPrenotazione; item: StoricoPiscina }
+  | { categoria: 'ASPORTO'; id: string; data: string; ora: string; stato: StatoPrenotazione; item: StoricoAsporto }
+  | { categoria: 'PADEL'; id: string; data: string; ora: string; stato: StatoPrenotazione; item: StoricoPadel };
 
 const CATEGORIA_META: Record<Exclude<FiltroCategoria, 'TUTTI'>, { emoji: string; label: string }> = {
   PISCINA: { emoji: '🏊', label: 'Piscina' },
@@ -140,15 +142,19 @@ function FiltroChip({
   count,
   onPress,
 }: Readonly<{ label: string; selected: boolean; count: number; onPress: () => void }>) {
+  // A zero non c'è nulla da mostrare: il chip resta visibile (la riga non cambia forma mentre si
+  // sceglie il servizio) ma non è selezionabile, a meno che non sia già il filtro attivo.
+  const disabled = count === 0 && !selected;
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       accessibilityLabel={`${label}, ${count} ${count === 1 ? 'prenotazione' : 'prenotazioni'}${selected ? ', filtro attivo' : ''}`}
       className={`min-h-9 items-center justify-center rounded-full border-2 px-3.5 py-1.5 ${
         selected ? 'border-sky-600 bg-sky-600' : 'border-sky-200 bg-white active:bg-sky-50'
-      }`}
+      } ${disabled ? 'opacity-40' : ''}`}
     >
       <Text size="xs" className={`font-medium ${selected ? 'text-white' : 'text-sky-800'}`}>
         {label} ({count})
@@ -297,9 +303,105 @@ function FiltriSheet({
 // principio anti-`<button>`-dentro-`<button>` già documentato altrove nel progetto, es.
 // NotificaCard/ProdottoRigaCliccabile) — la parte informativa apre il dettaglio, il pulsante
 // sotto il divisore scarica il PDF senza mai navigare.
-function PiscinaCard({ prenotazione }: Readonly<{ prenotazione: PrenotazionePiscina }>) {
+type StoricoCardProps = {
+  categoria: 'PISCINA' | 'ASPORTO' | 'PADEL';
+  titolo: string;
+  data: string;
+  quando: string;
+  stato: StatoPrenotazione;
+  href: string;
+  etichettaDettaglio: string;
+  etichettaDownload: string;
+  onDownload: () => Promise<void>;
+  children?: React.ReactNode;
+};
+
+function StoricoCard({
+  categoria,
+  titolo,
+  data,
+  quando,
+  stato,
+  href,
+  etichettaDettaglio,
+  etichettaDownload,
+  onDownload,
+  children,
+}: Readonly<StoricoCardProps>) {
   const [isDownloading, setIsDownloading] = useState(false);
 
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      await onDownload();
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  return (
+    <Box className="w-full overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
+      <Pressable
+        onPress={() => router.push(href as Href)}
+        accessibilityRole="button"
+        accessibilityLabel={`Vedi dettaglio ${etichettaDettaglio} del ${formatDateDDMMYYYY(data)}`}
+        className="p-4 active:bg-sky-50"
+      >
+        <VStack space="sm">
+          <HStack className="items-start justify-between">
+            <VStack>
+              <Text size="sm" className="font-semibold text-sky-900">
+                {titolo}
+              </Text>
+              <HStack space="xs" className="items-center">
+                <Icon as={ClockIcon} size="2xs" className="text-sky-600" />
+                <Text size="xs" className="text-sky-900/70">
+                  {quando}
+                </Text>
+              </HStack>
+            </VStack>
+            <VStack space="xs" className="items-end">
+              <StatoBadge stato={stato} />
+              <CategoriaBadge categoria={categoria} />
+            </VStack>
+          </HStack>
+
+          {children}
+
+          <HStack className="items-center justify-end">
+            <Text size="xs" className="font-semibold text-sky-600">
+              Vedi dettaglio
+            </Text>
+            <Icon as={ChevronRightIcon} size="xs" className="text-sky-600" />
+          </HStack>
+        </VStack>
+      </Pressable>
+
+      {stato === 'CANCELLED' ? null : (
+        <Box className="border-t border-sky-100 p-3">
+          <Button
+            size="sm"
+            variant="outline"
+            className="self-start border-2 border-sky-300 bg-white"
+            onPress={handleDownload}
+            disabled={isDownloading}
+          >
+            {isDownloading ? (
+              <ButtonSpinner />
+            ) : (
+              <>
+                <ButtonIcon as={DownloadIcon} className="text-sky-700" />
+                <ButtonText className="text-sky-700">{etichettaDownload}</ButtonText>
+              </>
+            )}
+          </Button>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function PiscinaCard({ prenotazione }: Readonly<{ prenotazione: StoricoPiscina }>) {
   // Icone ingresso costruite in linea, non tramite la condivisa `formatIngressiSummary()` —
   // quella mostra deliberatamente "🎟️ 0" anche a zero ingressi interi (coerenza tabellare in
   // altri punti del progetto, es. ClientiDelGiornoSheet.tsx staff), fuorviante qui invece: stesso
@@ -318,298 +420,94 @@ function PiscinaCard({ prenotazione }: Readonly<{ prenotazione: PrenotazionePisc
     .filter((v): v is string => v !== null)
     .join(' ');
 
-  const handleDownload = async () => {
-    setIsDownloading(true);
-    try {
-      await apriBigliettoPdf(getBigliettoUrl(prenotazione.id), prenotazione.id);
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
   return (
-    <Box className="w-full overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
-      <Pressable
-        onPress={() => router.push(`/cliente/storico/piscina/${prenotazione.id}` as Href)}
-        accessibilityRole="button"
-        accessibilityLabel={`Vedi dettaglio prenotazione piscina del ${formatDateDDMMYYYY(prenotazione.data)}`}
-        className="p-4 active:bg-sky-50"
-      >
-        <VStack space="sm">
-          <HStack className="items-start justify-between">
-            <VStack>
-              <Text size="sm" className="font-semibold text-sky-900">
-                {prenotazione.inventario_nome}
-              </Text>
-              <HStack space="xs" className="items-center">
-                <Icon as={ClockIcon} size="2xs" className="text-sky-600" />
-                <Text size="xs" className="text-sky-900/70">
-                  {formatDateDDMMYYYY(prenotazione.data)} · {formatTime(prenotazione.ora)}
-                </Text>
-              </HStack>
-            </VStack>
-            <VStack space="xs" className="items-end">
-              <StatoBadge stato={prenotazione.stato} />
-              <CategoriaBadge categoria="PISCINA" />
-            </VStack>
-          </HStack>
-
-          {risorse ? (
-            <Text size="xs" className="text-sky-900/80">
-              {risorse}
-            </Text>
-          ) : null}
-
-          {prenotazione.note ? (
-            <Text size="xs" className="italic text-sky-900/70">
-              📝 {prenotazione.note}
-            </Text>
-          ) : null}
-
-          <HStack className="items-center justify-end">
-            <Text size="xs" className="font-semibold text-sky-600">
-              Vedi dettaglio
-            </Text>
-            <Icon as={ChevronRightIcon} size="xs" className="text-sky-600" />
-          </HStack>
-        </VStack>
-      </Pressable>
-
-      {prenotazione.stato !== 'CANCELLED' ? (
-        <Box className="border-t border-sky-100 p-3">
-          <Button
-            size="sm"
-            variant="outline"
-            className="self-start border-2 border-sky-300 bg-white"
-            onPress={handleDownload}
-            disabled={isDownloading}
-          >
-            {isDownloading ? (
-              <ButtonSpinner />
-            ) : (
-              <>
-                <ButtonIcon as={DownloadIcon} className="text-sky-700" />
-                <ButtonText className="text-sky-700">Scarica biglietto</ButtonText>
-              </>
-            )}
-          </Button>
-        </Box>
+    <StoricoCard
+      categoria="PISCINA"
+      titolo={prenotazione.inventario_nome}
+      data={prenotazione.data}
+      quando={`${formatDateDDMMYYYY(prenotazione.data)} · ${formatTime(prenotazione.ora)}`}
+      stato={prenotazione.stato}
+      href={`/cliente/storico/piscina/${prenotazione.id}`}
+      etichettaDettaglio="prenotazione piscina"
+      etichettaDownload="Scarica biglietto"
+      onDownload={() => apriBigliettoPdf(getBigliettoUrl(prenotazione.id), prenotazione.id)}
+    >
+      {risorse ? (
+        <Text size="xs" className="text-sky-900/80">
+          {risorse}
+        </Text>
       ) : null}
-    </Box>
+    </StoricoCard>
   );
 }
 
-function AsportoCard({ ordine }: Readonly<{ ordine: PrenotazioneAsporto }>) {
-  const [isDownloading, setIsDownloading] = useState(false);
-
-  const handleDownload = async () => {
-    setIsDownloading(true);
-    try {
-      await apriBigliettoPdf(getRicevutaUrl(ordine.id), ordine.id, 'ricevuta');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
+function TotaleRiga({ totale }: Readonly<{ totale: string }>) {
   return (
-    <Box className="w-full overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
-      <Pressable
-        onPress={() => router.push(`/cliente/storico/asporto/${ordine.id}` as Href)}
-        accessibilityRole="button"
-        accessibilityLabel={`Vedi dettaglio ordine asporto del ${formatDateDDMMYYYY(ordine.data)}`}
-        className="p-4 active:bg-sky-50"
-      >
-        <VStack space="sm">
-          <HStack className="items-start justify-between">
-            <VStack>
-              <Text size="sm" className="font-semibold text-sky-900">
-                Ritiro asporto
-              </Text>
-              <HStack space="xs" className="items-center">
-                <Icon as={ClockIcon} size="2xs" className="text-sky-600" />
-                <Text size="xs" className="text-sky-900/70">
-                  {formatDateDDMMYYYY(ordine.data)} · {formatTime(ordine.ora)}
-                </Text>
-              </HStack>
-            </VStack>
-            <VStack space="xs" className="items-end">
-              <StatoBadge stato={ordine.stato} />
-              <CategoriaBadge categoria="ASPORTO" />
-            </VStack>
-          </HStack>
-
-          <Text size="xs" className="font-semibold text-sky-900">
-            Totale: €{formatPrezzo(ordine.totale)}
-          </Text>
-
-          {ordine.note ? (
-            <Text size="xs" className="italic text-sky-900/70">
-              📝 {ordine.note}
-            </Text>
-          ) : null}
-
-          <HStack className="items-center justify-end">
-            <Text size="xs" className="font-semibold text-sky-600">
-              Vedi dettaglio
-            </Text>
-            <Icon as={ChevronRightIcon} size="xs" className="text-sky-600" />
-          </HStack>
-        </VStack>
-      </Pressable>
-
-      {ordine.stato !== 'CANCELLED' ? (
-        <Box className="border-t border-sky-100 p-3">
-          <Button
-            size="sm"
-            variant="outline"
-            className="self-start border-2 border-sky-300 bg-white"
-            onPress={handleDownload}
-            disabled={isDownloading}
-          >
-            {isDownloading ? (
-              <ButtonSpinner />
-            ) : (
-              <>
-                <ButtonIcon as={DownloadIcon} className="text-sky-700" />
-                <ButtonText className="text-sky-700">Scarica ricevuta</ButtonText>
-              </>
-            )}
-          </Button>
-        </Box>
-      ) : null}
-    </Box>
+    <Text size="xs" className="font-semibold text-sky-900">
+      Totale: €{formatPrezzo(totale)}
+    </Text>
   );
 }
 
-function PadelCard({ partita }: Readonly<{ partita: PrenotazionePadel }>) {
-  const [isDownloading, setIsDownloading] = useState(false);
-
-  const handleDownload = async () => {
-    setIsDownloading(true);
-    try {
-      await apriBigliettoPdf(getBigliettoPadelUrl(partita.id), partita.id, 'biglietto-padel');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
+function AsportoCard({ ordine }: Readonly<{ ordine: StoricoAsporto }>) {
   return (
-    <Box className="w-full overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
-      <Pressable
-        onPress={() => router.push(`/cliente/storico/padel/${partita.id}` as Href)}
-        accessibilityRole="button"
-        accessibilityLabel={`Vedi dettaglio partita padel del ${formatDateDDMMYYYY(partita.data)}`}
-        className="p-4 active:bg-sky-50"
-      >
-        <VStack space="sm">
-          <HStack className="items-start justify-between">
-            <VStack>
-              <Text size="sm" className="font-semibold text-sky-900">
-                Campo da padel
-              </Text>
-              <HStack space="xs" className="items-center">
-                <Icon as={ClockIcon} size="2xs" className="text-sky-600" />
-                <Text size="xs" className="text-sky-900/70">
-                  {formatDateDDMMYYYY(partita.data)} · {formatFasciaPartita(partita.ora, partita.orario_fine)}
-                </Text>
-              </HStack>
-            </VStack>
-            <VStack space="xs" className="items-end">
-              <StatoBadge stato={partita.stato} />
-              <CategoriaBadge categoria="PADEL" />
-            </VStack>
-          </HStack>
+    <StoricoCard
+      categoria="ASPORTO"
+      titolo="Ritiro asporto"
+      data={ordine.data}
+      quando={`${formatDateDDMMYYYY(ordine.data)} · ${formatTime(ordine.ora)}`}
+      stato={ordine.stato}
+      href={`/cliente/storico/asporto/${ordine.id}`}
+      etichettaDettaglio="ordine asporto"
+      etichettaDownload="Scarica ricevuta"
+      onDownload={() => apriBigliettoPdf(getRicevutaUrl(ordine.id), ordine.id, 'ricevuta')}
+    >
+      <TotaleRiga totale={ordine.totale} />
+    </StoricoCard>
+  );
+}
 
-          <Text size="xs" className="text-sky-900/80">
-            {partita.partecipanti} {partita.partecipanti === 1 ? 'giocatore' : 'giocatori'}
-            {partita.palline_noleggiate ? ' · 🎾 palline' : ''}
-            {partita.racchette_totali > 0 ? ` · ${partita.racchette_totali} racchette` : ''}
-          </Text>
-
-          <Text size="xs" className="font-semibold text-sky-900">
-            Totale: €{formatPrezzo(partita.totale)}
-          </Text>
-
-          {partita.note ? (
-            <Text size="xs" className="italic text-sky-900/70">
-              📝 {partita.note}
-            </Text>
-          ) : null}
-
-          <HStack className="items-center justify-end">
-            <Text size="xs" className="font-semibold text-sky-600">
-              Vedi dettaglio
-            </Text>
-            <Icon as={ChevronRightIcon} size="xs" className="text-sky-600" />
-          </HStack>
-        </VStack>
-      </Pressable>
-
-      {partita.stato !== 'CANCELLED' ? (
-        <Box className="border-t border-sky-100 p-3">
-          <Button
-            size="sm"
-            variant="outline"
-            className="self-start border-2 border-sky-300 bg-white"
-            onPress={handleDownload}
-            disabled={isDownloading}
-          >
-            {isDownloading ? (
-              <ButtonSpinner />
-            ) : (
-              <>
-                <ButtonIcon as={DownloadIcon} className="text-sky-700" />
-                <ButtonText className="text-sky-700">Scarica biglietto</ButtonText>
-              </>
-            )}
-          </Button>
-        </Box>
-      ) : null}
-    </Box>
+function PadelCard({ partita }: Readonly<{ partita: StoricoPadel }>) {
+  return (
+    <StoricoCard
+      categoria="PADEL"
+      titolo="Campo da padel"
+      data={partita.data}
+      quando={`${formatDateDDMMYYYY(partita.data)} · ${formatFasciaPartita(partita.ora, partita.orario_fine)}`}
+      stato={partita.stato}
+      href={`/cliente/storico/padel/${partita.id}`}
+      etichettaDettaglio="partita padel"
+      etichettaDownload="Scarica biglietto"
+      onDownload={() => apriBigliettoPdf(getBigliettoPadelUrl(partita.id), partita.id, 'biglietto-padel')}
+    >
+      <Text size="xs" className="text-sky-900/80">
+        {partita.partecipanti} {partita.partecipanti === 1 ? 'giocatore' : 'giocatori'}
+        {partita.palline_noleggiate ? ' · 🎾 palline' : ''}
+        {partita.racchette_totali > 0 ? ` · ${partita.racchette_totali} racchette` : ''}
+      </Text>
+      <TotaleRiga totale={partita.totale} />
+    </StoricoCard>
   );
 }
 
 export default function StoricoPrenotazioniScreen() {
-  const { telefono } = useLocalSearchParams<{ telefono: string }>();
-  const [piscina, setPiscina] = useState<PrenotazionePiscina[]>([]);
-  const [asporto, setAsporto] = useState<PrenotazioneAsporto[]>([]);
-  const [padel, setPadel] = useState<PrenotazionePadel[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Nessun telefono nell'URL: il risultato della ricerca arriva in memoria da
+  // StoricoPrenotazioniSearch. Senza (ricaricamento, link salvato) la pagina ripropone la ricerca.
+  const [storicoCliente, setStoricoCliente] = useState<StoricoCliente | null>(leggiStoricoCliente);
+  const piscina = storicoCliente?.piscina ?? [];
+  const asporto = storicoCliente?.asporto ?? [];
+  const padel = storicoCliente?.padel ?? [];
   const [filtroCategoria, setFiltroCategoria] = useState<FiltroCategoria>('TUTTI');
   const [filtroStato, setFiltroStato] = useState<FiltroStato>('TUTTI');
   const [isFiltriOpen, setIsFiltriOpen] = useState(false);
   const [isStoricoOpen, setIsStoricoOpen] = useState(false);
 
-  useEffect(() => {
-    if (!telefono) {
-      setIsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setIsLoading(true);
-    setError(null);
-    Promise.all([
-      getStoricoPiscinaPerTelefono(telefono),
-      getStoricoAsportoPerTelefono(telefono),
-      getStoricoPadelPerTelefono(telefono),
-    ])
-      .then(([piscinaData, asportoData, padelData]) => {
-        if (cancelled) return;
-        setPiscina(piscinaData);
-        setAsporto(asportoData);
-        setPadel(padelData);
-      })
-      .catch(() => {
-        if (!cancelled) setError('Impossibile caricare lo storico. Riprova più tardi.');
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [telefono]);
+  const cambiaNumero = () => {
+    svuotaStoricoCliente();
+    setStoricoCliente(null);
+    setFiltroCategoria('TUTTI');
+    setFiltroStato('TUTTI');
+  };
 
   const nomeCliente = piscina[0]?.cliente_nome ?? asporto[0]?.cliente_nome ?? padel[0]?.cliente_nome ?? null;
 
@@ -631,21 +529,24 @@ export default function StoricoPrenotazioniScreen() {
     });
   }, [piscina, asporto, padel]);
 
-  // Conteggi calcolati sull'intero elenco unificato, non incrociati con l'altro filtro già
-  // attivo — stesso principio "conteggio sul catalogo intero, non ricalcolato dinamicamente" già
-  // seguito per i filtri del menu asporto cliente (sezione 15).
+  // Servizio contato sull'intero elenco; Stato contato solo sulle prenotazioni del servizio
+  // scelto, così i numeri dicono quante se ne vedranno davvero toccando quel chip.
   const conteggiCategoria: Record<FiltroCategoria, number> = {
     TUTTI: tutte.length,
     PISCINA: piscina.length,
     ASPORTO: asporto.length,
     PADEL: padel.length,
   };
-  const conteggiStato: Record<FiltroStato, number> = {
-    TUTTI: tutte.length,
-    PENDING: tutte.filter((i) => i.stato === 'PENDING').length,
-    CONFIRMED: tutte.filter((i) => i.stato === 'CONFIRMED').length,
-    CANCELLED: tutte.filter((i) => i.stato === 'CANCELLED').length,
-  };
+  const contaStati = (elenco: ItemStorico[]): Record<FiltroStato, number> => ({
+    TUTTI: elenco.length,
+    PENDING: elenco.filter((i) => i.stato === 'PENDING').length,
+    CONFIRMED: elenco.filter((i) => i.stato === 'CONFIRMED').length,
+    CANCELLED: elenco.filter((i) => i.stato === 'CANCELLED').length,
+  });
+  const conteggiStatoTotali = contaStati(tutte);
+  const conteggiStato = contaStati(
+    filtroCategoria === 'TUTTI' ? tutte : tutte.filter((i) => i.categoria === filtroCategoria)
+  );
 
   const filtrate = useMemo(
     () =>
@@ -678,7 +579,7 @@ export default function StoricoPrenotazioniScreen() {
   // non farebbero altro che duplicare "Tutti (N)".
   const categorieConRisultati = (['PISCINA', 'ASPORTO', 'PADEL'] as const).filter((c) => conteggiCategoria[c] > 0);
   const mostraFiltroCategoria = categorieConRisultati.length > 1;
-  const statiConRisultati = (['PENDING', 'CONFIRMED', 'CANCELLED'] as const).filter((s) => conteggiStato[s] > 0);
+  const statiConRisultati = (['PENDING', 'CONFIRMED', 'CANCELLED'] as const).filter((s) => conteggiStatoTotali[s] > 0);
   const mostraFiltroStato = statiConRisultati.length > 1;
 
   const numeroFiltriAttivi = (filtroCategoria !== 'TUTTI' ? 1 : 0) + (filtroStato !== 'TUTTI' ? 1 : 0);
@@ -701,14 +602,14 @@ export default function StoricoPrenotazioniScreen() {
     setFiltroStato('TUTTI');
   };
 
-  if (!telefono) {
+  if (!storicoCliente) {
     return (
       <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
         <VStack space="lg" className="w-full">
-          <Text size="sm" className="text-center text-destructive">
-            Numero di telefono mancante.
-          </Text>
+          <Heading size="xl">📖 Le mie prenotazioni</Heading>
+          <StoricoPrenotazioniSearch onTrovato={setStoricoCliente} />
           <BackButton fallbackHref="/cliente" />
+          <ClienteFooter />
         </VStack>
       </ScrollView>
     );
@@ -720,21 +621,20 @@ export default function StoricoPrenotazioniScreen() {
       <VStack space="lg" className="w-full">
         <VStack space="xs">
           <Heading size="xl">📖 Le mie prenotazioni</Heading>
-          <Text size="sm" className="text-muted-foreground">
-            {nomeCliente ? `${nomeCliente} · ` : ''}
-            {telefono}
-          </Text>
+          <HStack space="sm" className="flex-wrap items-center">
+            <Text size="sm" className="text-muted-foreground">
+              {nomeCliente ? `${nomeCliente} · ` : ''}
+              {storicoCliente.telefono}
+            </Text>
+            <Pressable onPress={cambiaNumero} accessibilityRole="button" className="min-h-9 justify-center">
+              <Text size="sm" className="font-semibold text-sky-700 underline">
+                Cerca un altro numero
+              </Text>
+            </Pressable>
+          </HStack>
         </VStack>
 
-        {isLoading ? (
-          <HStack className="items-center justify-center py-10">
-            <Spinner size="large" />
-          </HStack>
-        ) : error ? (
-          <Text size="sm" className="text-center text-destructive">
-            {error}
-          </Text>
-        ) : tutte.length === 0 ? (
+        {tutte.length === 0 ? (
           <VStack
             space="sm"
             className="items-center rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-5 py-8"
