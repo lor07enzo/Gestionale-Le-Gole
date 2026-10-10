@@ -966,7 +966,7 @@ export default function ClienteDetailScreen() {
 
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
-        doCancel();
+        void doCancel();
       }
       return;
     }
@@ -1033,7 +1033,7 @@ export default function ClienteDetailScreen() {
 
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
-        doCancel();
+        void doCancel();
       }
       return;
     }
@@ -1095,7 +1095,7 @@ export default function ClienteDetailScreen() {
 
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
-        doCancel();
+        void doCancel();
       }
       return;
     }

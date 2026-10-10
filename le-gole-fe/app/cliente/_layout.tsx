@@ -33,7 +33,7 @@ export default function ClienteLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([import('react-native-paper'), import('react-native-paper-dates')]).then(
+    void Promise.all([import('react-native-paper'), import('react-native-paper-dates')]).then(
       ([paperModule, paperDatesModule]) => {
         if (!translationRegistered) {
           paperDatesModule.registerTranslation('it', paperDatesModule.it);

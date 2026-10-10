@@ -185,7 +185,7 @@ function StaffManagementSectionInner() {
     const message = `L'account "${member.username}" verrà eliminato definitivamente.`;
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
-        confirmDelete(member);
+        void confirmDelete(member);
       }
       return;
     }

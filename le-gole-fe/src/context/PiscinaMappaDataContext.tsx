@@ -182,7 +182,7 @@ export function PiscinaMappaDataProvider({
       }
     }
 
-    fetchMappaData();
+    void fetchMappaData();
 
     return () => {
       cancelled = true;

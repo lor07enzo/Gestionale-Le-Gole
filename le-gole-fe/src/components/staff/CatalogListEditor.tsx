@@ -78,7 +78,7 @@ export function CatalogListEditor<T extends ListEditorItem>({
     const message = deleteConfirmMessage(item);
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
-        confirmDelete(item);
+        void confirmDelete(item);
       }
       return;
     }

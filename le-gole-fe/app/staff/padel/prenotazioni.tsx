@@ -81,7 +81,7 @@ export default function PrenotazioniPadelScreen() {
 
     // allSettled: la griglia degli orari è un di più, il suo fallimento non deve nascondere anche
     // l'elenco delle partite (e viceversa).
-    Promise.allSettled([listPrenotazioniPadel({ data }), getDisponibilitaPadel({ data })])
+    void Promise.allSettled([listPrenotazioniPadel({ data }), getDisponibilitaPadel({ data })])
       .then(([partiteResult, disponibilitaResult]) => {
         if (cancelled) return;
         if (partiteResult.status === 'fulfilled') {

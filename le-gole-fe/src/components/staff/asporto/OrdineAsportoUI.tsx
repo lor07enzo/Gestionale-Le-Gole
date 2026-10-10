@@ -357,7 +357,7 @@ export function EditOrdineSheet({
 
     const message = `Rimuovere "${voce.prodotto_nome}" dall'ordine?`;
     if (Platform.OS === 'web') {
-      if (window.confirm(message)) doRemove();
+      if (window.confirm(message)) void doRemove();
       return;
     }
     Alert.alert('Rimuovere prodotto?', message, [

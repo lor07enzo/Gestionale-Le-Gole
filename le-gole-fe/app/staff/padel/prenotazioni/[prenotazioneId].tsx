@@ -106,7 +106,7 @@ export default function DettaglioPartitaPadelScreen() {
     };
 
     if (Platform.OS === 'web') {
-      if (window.confirm(messaggio)) annulla();
+      if (window.confirm(messaggio)) void annulla();
       return;
     }
     Alert.alert('Annullare la partita?', messaggio, [

@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setSessionExpiredHandler(() => setUser(null));
 
-    (async () => {
+    void (async () => {
       const token = await getAccessToken();
       if (!token) {
         setIsLoading(false);

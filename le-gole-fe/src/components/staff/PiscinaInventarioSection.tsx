@@ -348,7 +348,7 @@ export function PiscinaInventarioSection() {
     // invokes the button callbacks, so web needs its own confirm path.
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
-        confirmDelete(item);
+        void confirmDelete(item);
       }
       return;
     }

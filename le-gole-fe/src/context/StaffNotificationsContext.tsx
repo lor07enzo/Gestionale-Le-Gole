@@ -71,7 +71,7 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       const stored = await getNotificheLetteIds();
       if (!cancelled) setReadIds(new Set(stored));
     })();
@@ -157,7 +157,7 @@ export function StaffNotificationsProvider({ children }: { children: ReactNode }
     // Rilegge lo storage al momento della scrittura invece di salvare la copia in memoria di
     // questa scheda: con due schede aperte, la seconda sovrascriveva per intero la lettura
     // dell'altra. Resta una race più stretta se due marcature avvengono nello stesso istante.
-    (async () => {
+    void (async () => {
       const current = await getNotificheLetteIds();
       if (current.includes(id)) return;
       await saveNotificheLetteIds([...current, id]);

@@ -797,7 +797,7 @@ export function useMenuAsportoCatalogo({ scrollViewRef }: UseMenuAsportoCatalogo
     const message = `"${item.nome}" verrà eliminato definitivamente.`;
     if (Platform.OS === 'web') {
       if (window.confirm(message)) {
-        confirmDelete(item);
+        void confirmDelete(item);
       }
       return;
     }
