@@ -272,6 +272,18 @@ DEFAULT_FROM_EMAIL = "Le Gole <noreply@osterialegole.com>" # Deve corrispondere 
 # altrimenti chiunque conosca un push token potrebbe spedire notifiche a quel dispositivo.
 EXPO_ACCESS_TOKEN = env.str('EXPO_ACCESS_TOKEN', default='')
 
+# Aggiornamento obbligatorio dell'app nativa (backend/views.py, VersioneAppView). Un'app con
+# `expo.version` inferiore a APP_VERSIONE_MINIMA mostra una schermata bloccante che rimanda allo
+# store. Default '0.0.0' = nessun blocco. Va alzata solo DOPO che la nuova versione è davvero
+# pubblicata su entrambi gli store, altrimenti si bloccano utenti che non possono ancora aggiornare.
+APP_VERSIONE_MINIMA = env.str('APP_VERSIONE_MINIMA', default='0.0.0')
+APP_STORE_URL_ANDROID = env.str(
+    'APP_STORE_URL_ANDROID',
+    default='https://play.google.com/store/apps/details?id=com.osterialegole.legole',
+)
+# Vuoto finché l'app non è sull'App Store: senza un link il blocco su iOS non scatta.
+APP_STORE_URL_IOS = env.str('APP_STORE_URL_IOS', default='')
+
 # Cloudinary: storage per i file media (es. Prodotto.immagine, menu/models.py) — il filesystem di
 # Render è effimero (si svuota ad ogni deploy, sezione 12), quindi le immagini non possono vivere
 # lì. Credenziali sempre da env, mai hardcoded (stesso principio di RESEND_API_KEY sopra).

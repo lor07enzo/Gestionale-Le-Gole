@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { Box } from '@/components/ui/box';
@@ -49,6 +49,21 @@ const PIZZA_CATEGORIA_NOME = 'Pizze';
 const SOGLIA_PIZZE_ANTICIPO_ESTESO = 10;
 const ANTICIPO_MINUTI_STANDARD = 15;
 const ANTICIPO_MINUTI_ESTESO = 30;
+
+// Sfondo della barra filtri come colore letterale (stesso valore di `--background`): su nativo la
+// classe `bg-background` non è affidabile (sezione 4 di CLAUDE.md) e una barra trasparente lascia
+// vedere le righe del menu che le scorrono sotto.
+const BARRA_FILTRI_BG = '#eae0c8';
+
+// Callback di errore di `measureLayout`: se la misura non riesce non c'è nulla da fare, il
+// prossimo scroll o cambio di layout la ritenta.
+const IGNORA_MISURA_FALLITA = () => {
+  /* nessuna azione */
+};
+
+type MeasurableNode = {
+  measureLayout?: (relativeToRef: unknown, onSuccess: (x: number, y: number) => void, onFail: () => void) => void;
+};
 type FormState = {
   nome: string;
   telefono: string;
@@ -685,10 +700,95 @@ export default function ClienteAsportoScreen() {
     // aggiornerebbe comunque lo stesso stato, ma solo a scroll concluso) — stesso principio
     // "feedback subito al tocco" già seguito altrove nell'app.
     setActiveCategoriaId(categoriaId);
-    if (Platform.OS !== 'web') return;
     suppressObserverUntilRef.current = Date.now() + 700;
+    if (Platform.OS !== 'web') {
+      scrollNativeVerso(categoriaNodeById.current.get(categoriaId));
+      return;
+    }
     const node = categoriaNodeById.current.get(categoriaId) as { scrollIntoView?: (opts: unknown) => void } | undefined;
     node?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Percorso nativo della barra filtri — stessa correzione già applicata al catalogo staff
+  // (MenuAsportoSection.tsx, sezione 15): `scrollIntoView`, `IntersectionObserver` e
+  // `position: sticky` esistono solo sul web, quindi su nativo il tocco su una categoria non
+  // scorreva, il chip attivo non seguiva lo scroll e la barra spariva scorrendo. La barra qui è
+  // annidata troppo in profondità per `stickyHeaderIndices` (vuole un figlio diretto della
+  // ScrollView): una sua copia viene sovrapposta in cima quando quella originale esce dallo schermo.
+  const scrollViewRef = useRef<ScrollView>(null);
+  const barraNodeRef = useRef<unknown>(null);
+  const barraYRef = useRef<number | null>(null);
+  const barraAltezzaRef = useRef(56);
+  const categoriaYCache = useRef<Map<string, number>>(new Map());
+  const [barraFissa, setBarraFissa] = useState(false);
+
+  // Stabile (useCallback): una ref-callback ricreata a ogni render viene richiamata da React con
+  // `null` e poi col nodo a OGNI aggiornamento — se qui azzerasse la Y misurata, il primo cambio
+  // di stato durante lo scroll (es. il chip attivo) la cancellerebbe e la copia fissa della barra
+  // non comparirebbe più. La Y si azzera solo se il nodo sparisce davvero.
+  const registerBarra = useCallback((node: unknown) => {
+    barraNodeRef.current = node;
+    if (!node) barraYRef.current = null;
+  }, []);
+
+  const misuraBarraNative = () => {
+    const scrollView = scrollViewRef.current;
+    if (Platform.OS === 'web' || !scrollView) return;
+    (barraNodeRef.current as MeasurableNode | null)?.measureLayout?.(
+      scrollView,
+      (_x, y) => {
+        barraYRef.current = y;
+      },
+      IGNORA_MISURA_FALLITA
+    );
+  };
+
+  const scrollNativeVerso = (node: unknown) => {
+    const scrollView = scrollViewRef.current;
+    const misurabile = node as MeasurableNode | undefined;
+    if (!misurabile?.measureLayout || !scrollView) return;
+    misurabile.measureLayout(
+      scrollView,
+      (_x, y) => scrollView.scrollTo({ y: Math.max(y - barraAltezzaRef.current - 8, 0), animated: true }),
+      IGNORA_MISURA_FALLITA
+    );
+  };
+
+  // Ricalcolata quando il contenuto cambia altezza (`onContentSizeChange`): il segnale che il layout
+  // si è appena assestato, invece di un timeout arbitrario.
+  const handleContentSizeChangeNative = () => {
+    if (Platform.OS === 'web') return;
+    const scrollView = scrollViewRef.current;
+    if (!scrollView) return;
+    misuraBarraNative();
+    categoriaYCache.current.clear();
+    categoriaNodeById.current.forEach((node, id) => {
+      (node as MeasurableNode | undefined)?.measureLayout?.(
+        scrollView,
+        (_x, y) => categoriaYCache.current.set(id, y),
+        IGNORA_MISURA_FALLITA
+      );
+    });
+  };
+
+  const handleScrollNative = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    if (Platform.OS === 'web') return;
+    const scrollY = event.nativeEvent.contentOffset.y;
+    if (barraYRef.current === null) misuraBarraNative();
+    const fissa = barraYRef.current !== null && scrollY > barraYRef.current;
+    if (fissa !== barraFissa) setBarraFissa(fissa);
+
+    if (Date.now() < suppressObserverUntilRef.current || categoriaYCache.current.size === 0) return;
+    const soglia = scrollY + barraAltezzaRef.current + 20;
+    let candidateId: string | null = null;
+    let candidateY = Number.NEGATIVE_INFINITY;
+    for (const [id, y] of categoriaYCache.current) {
+      if (y <= soglia && y > candidateY) {
+        candidateY = y;
+        candidateId = id;
+      }
+    }
+    if (candidateId !== null && candidateId !== activeCategoriaId) setActiveCategoriaId(candidateId);
   };
 
   // Filtro di navigazione categorie evidenziato in base a dove si trova lo scroll — non solo un
@@ -756,7 +856,10 @@ export default function ClienteAsportoScreen() {
     cartSectionRef.current = node;
   };
   const scrollToCarrello = () => {
-    if (Platform.OS !== 'web') return;
+    if (Platform.OS !== 'web') {
+      scrollNativeVerso(cartSectionRef.current);
+      return;
+    }
     const node = cartSectionRef.current as { scrollIntoView?: (opts: unknown) => void } | undefined;
     node?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   };
@@ -886,9 +989,102 @@ export default function ClienteAsportoScreen() {
     );
   }
 
+  const etichettaFiltri = numeroFiltriAttivi > 0 ? `Filtri, ${numeroFiltriAttivi} attivi` : 'Filtri';
+
+  // Contenuto della barra filtri, usato sia in linea sia nella copia sovrapposta su nativo.
+  const contenutoBarra = (
+    <HStack space="sm" className="items-center">
+      <Pressable
+        onPress={() => setIsFiltriOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={etichettaFiltri}
+        className="relative h-11 w-11 items-center justify-center rounded-full border-2 border-sky-200 bg-white active:bg-sky-50 md:h-12 md:w-12"
+      >
+        <Icon as={SlidersIcon} size="sm" className="text-sky-700" />
+        {numeroFiltriAttivi > 0 ? (
+          // Dimensioni e font inline, mai via classe: su nativo `text-2xs` non esiste e il
+          // line-height ereditato è più alto del cerchio (stesso fix di NotificaCountBadge).
+          <Box
+            className="absolute items-center justify-center rounded-full border-2 border-white bg-sky-600"
+            style={{ top: -5, right: -5, height: 20, minWidth: 20, paddingHorizontal: numeroFiltriAttivi > 9 ? 3 : 0 }}
+          >
+            <Text
+              size="2xs"
+              allowFontScaling={false}
+              className="font-bold text-white"
+              style={{ fontSize: 11, includeFontPadding: false, textAlignVertical: 'center' }}
+            >
+              {numeroFiltriAttivi}
+            </Text>
+          </Box>
+        ) : null}
+      </Pressable>
+      {gruppi.length > 1 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          className="flex-1"
+          contentContainerClassName="items-center gap-2 py-1"
+        >
+          {gruppi.map((gruppo) => {
+            const isActive = gruppo.categoria.id === activeCategoriaId;
+            return (
+              <Box key={gruppo.categoria.id} ref={registerChipRef(gruppo.categoria.id)}>
+                <Pressable
+                  onPress={() => scrollToCategoria(gruppo.categoria.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Vai alla categoria ${gruppo.categoria.nome}`}
+                  accessibilityState={{ selected: isActive }}
+                  className={`rounded-full border-2 px-3.5 py-1.5 ${
+                    isActive
+                      ? 'border-sky-600 bg-sky-600'
+                      : 'border-sky-200 bg-white active:bg-sky-50'
+                  }`}
+                >
+                  <Text
+                    size="xs"
+                    className={`font-bold ${isActive ? 'text-white' : 'text-sky-700'}`}
+                  >
+                    {gruppo.categoria.nome}
+                  </Text>
+                </Pressable>
+              </Box>
+            );
+          })}
+        </ScrollView>
+      ) : (
+        <Box className="flex-1" />
+      )}
+      {/* `lg:hidden`: da tablet landscape in su il carrello è già sempre visibile
+          nella colonna laterale agganciata (sotto), questo pulsante "vai al
+          carrello" diventerebbe un'azione ridondante verso qualcosa già in vista —
+          stesso principio "un pulsante di scorciatoia sparisce quando la sua
+          destinazione è già in vista" già seguito per il carrello asporto staff
+          (sezione 15). */}
+      {cartLines.length > 0 ? (
+        <Pressable
+          onPress={scrollToCarrello}
+          accessibilityLabel="Vai al carrello"
+          className="flex-row items-center gap-1.5 rounded-full bg-sky-600 px-3 py-2 active:bg-sky-700 lg:hidden"
+        >
+          <Text size="xs" className="font-semibold text-white">
+            🛒 {totaleArticoli} · €{totalePrezzo.toFixed(2).replace('.', ',')}
+          </Text>
+        </Pressable>
+      ) : null}
+    </HStack>
+  );
+
   return (
     <>
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 md:px-8 md:py-10">
+    <ScrollView
+      ref={scrollViewRef}
+      className="flex-1 bg-background"
+      contentContainerClassName="px-4 py-6 md:px-8 md:py-10"
+      onScroll={handleScrollNative}
+      scrollEventThrottle={100}
+      onContentSizeChange={handleContentSizeChangeNative}
+    >
       <VStack space="lg" className="w-full">
         <VStack space="xs">
           <Heading size="xl">Asporto</Heading>
@@ -1031,77 +1227,15 @@ export default function ClienteAsportoScreen() {
                     (sotto), non più contro il bordo del viewport: `lg:mx-0 lg:px-0` annulla il
                     trucco a quella soglia, altrimenti il margine negativo sconfinerebbe nel gap
                     verso la colonna carrello. */}
-                <Box className="web:sticky web:top-0 z-10 -mx-4 bg-background px-4 py-1 md:-mx-8 md:px-8 lg:mx-0 lg:px-0">
-                  <HStack space="sm" className="items-center">
-                    <Pressable
-                      onPress={() => setIsFiltriOpen(true)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Filtri${numeroFiltriAttivi > 0 ? `, ${numeroFiltriAttivi} attivi` : ''}`}
-                      className="relative h-11 w-11 items-center justify-center rounded-full border-2 border-sky-200 bg-white active:bg-sky-50 md:h-12 md:w-12"
-                    >
-                      <Icon as={SlidersIcon} size="sm" className="text-sky-700" />
-                      {numeroFiltriAttivi > 0 ? (
-                        <Box className="absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded-full border border-white bg-sky-600">
-                          <Text size="2xs" className="font-bold text-white">
-                            {numeroFiltriAttivi}
-                          </Text>
-                        </Box>
-                      ) : null}
-                    </Pressable>
-                    {gruppi.length > 1 ? (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        className="flex-1"
-                        contentContainerClassName="items-center gap-2 py-1"
-                      >
-                        {gruppi.map((gruppo) => {
-                          const isActive = gruppo.categoria.id === activeCategoriaId;
-                          return (
-                            <Box key={gruppo.categoria.id} ref={registerChipRef(gruppo.categoria.id)}>
-                              <Pressable
-                                onPress={() => scrollToCategoria(gruppo.categoria.id)}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Vai alla categoria ${gruppo.categoria.nome}`}
-                                accessibilityState={{ selected: isActive }}
-                                className={`rounded-full border-2 px-3.5 py-1.5 ${
-                                  isActive
-                                    ? 'border-sky-600 bg-sky-600 shadow-sm'
-                                    : 'border-sky-200 bg-white active:bg-sky-50'
-                                }`}
-                              >
-                                <Text
-                                  size="xs"
-                                  className={`font-bold ${isActive ? 'text-white' : 'text-sky-700'}`}
-                                >
-                                  {gruppo.categoria.nome}
-                                </Text>
-                              </Pressable>
-                            </Box>
-                          );
-                        })}
-                      </ScrollView>
-                    ) : (
-                      <Box className="flex-1" />
-                    )}
-                    {/* `lg:hidden`: da tablet landscape in su il carrello è già sempre visibile
-                        nella colonna laterale agganciata (sotto), questo pulsante "vai al
-                        carrello" diventerebbe un'azione ridondante verso qualcosa già in vista —
-                        stesso principio "un pulsante di scorciatoia sparisce quando la sua
-                        destinazione è già in vista" già seguito per il carrello asporto staff
-                        (sezione 15). */}
-                    {cartLines.length > 0 ? (
-                      <Pressable
-                        onPress={scrollToCarrello}
-                        accessibilityLabel="Vai al carrello"
-                        className="flex-row items-center gap-1.5 rounded-full bg-sky-600 px-3 py-2 active:bg-sky-700 lg:hidden"
-                      >
-                        <Text size="xs" className="font-semibold text-white">
-                          🛒 {totaleArticoli} · €{totalePrezzo.toFixed(2).replace('.', ',')}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                  </HStack>
+                <Box
+                  ref={registerBarra}
+                  className="web:sticky web:top-0 z-10 -mx-4 px-4 py-1 md:-mx-8 md:px-8 lg:mx-0 lg:px-0"
+                  style={{ backgroundColor: BARRA_FILTRI_BG }}
+                  {...(Platform.OS !== 'web'
+                    ? { onLayout: (e: { nativeEvent: { layout: { height: number } } }) => { barraAltezzaRef.current = e.nativeEvent.layout.height; misuraBarraNative(); } }
+                    : {})}
+                >
+                  {contenutoBarra}
                 </Box>
 
                 {/* Riepilogo filtri attivi — riga scorrevole di chip rimovibili, visibile solo se
@@ -1371,6 +1505,26 @@ export default function ClienteAsportoScreen() {
         <ClienteFooter />
       </VStack>
     </ScrollView>
+    {/* Solo nativo: copia della barra filtri agganciata in cima quando quella in linea è uscita
+        dallo schermo — su web ci pensa `web:sticky`. Un semplice View assoluto, non un Modal:
+        un Modal aprirebbe una finestra separata che su Android può bloccare lo scroll sottostante. */}
+    {Platform.OS !== 'web' && barraFissa ? (
+      <Box
+        className="px-4 py-1 md:px-8"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          backgroundColor: BARRA_FILTRI_BG,
+          borderBottomWidth: 1,
+          borderBottomColor: '#e5e5e5',
+        }}
+      >
+        {contenutoBarra}
+      </Box>
+    ) : null}
     <FiltriSheet
       isOpen={isFiltriOpen}
       onClose={() => setIsFiltriOpen(false)}

@@ -40,7 +40,7 @@ from .serializers import (
     DettaglioPadelPubblicoSerializer,
     StoricoTelefonoRichiestaSerializer,
 )
-from .throttling import StoricoTelefonoGiornoThrottle, StoricoTelefonoMinutoThrottle
+from .throttling import StoricoTelefonoThrottle
 from .utils import calcola_disponibilita, calcola_disponibilita_padel
 
 TITOLI_NOTIFICA = {
@@ -65,8 +65,7 @@ def _quando(prenotazione):
 # ripetute, altrimenti storico_telefono perderebbe il limite globale anonimo.
 STORICO_TELEFONO_THROTTLES = [
     *api_settings.DEFAULT_THROTTLE_CLASSES,
-    StoricoTelefonoMinutoThrottle,
-    StoricoTelefonoGiornoThrottle,
+    StoricoTelefonoThrottle,
 ]
 
 
@@ -98,7 +97,9 @@ class PrenotazionePiscinaViewSet(viewsets.ModelViewSet):
     """
     CRUD Prenotazioni Piscina.
     """
-    queryset = PrenotazionePiscina.objects.all()
+    # select_related: cliente_nome/cliente_telefono/inventario_nome altrimenti costano due query
+    # per riga — con il database remoto (Supabase) è la differenza tra pochi decimi e secondi.
+    queryset = PrenotazionePiscina.objects.select_related('cliente_id', 'inventario')
     serializer_class = PrenotazionePiscinaSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['data', 'stato', 'cliente_id']
@@ -339,7 +340,9 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
     filtrabile per 'prenotazione') — stesso pattern con cui OccupazionePostazione è separata da
     PrenotazionePiscina, sotto.
     """
-    queryset = PrenotazioneAsporto.objects.all()
+    # `totale` somma le voci di ogni ordine: senza prefetch sarebbero una query per riga (più
+    # una per il cliente). Vedi backend/test/test_numero_query.py.
+    queryset = PrenotazioneAsporto.objects.select_related('cliente_id').prefetch_related('voci')
     serializer_class = PrenotazioneAsportoSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['data', 'stato', 'cliente_id']
@@ -445,6 +448,7 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
         queryset = (
             PrenotazioneAsporto.objects.filter(cliente_id__telefono=telefono)
             .select_related('cliente_id')
+            .prefetch_related('voci')
             .order_by('-data', '-ora')
         )
         return Response(StoricoAsportoSerializer(queryset, many=True).data)
@@ -470,6 +474,7 @@ class PrenotazioneAsportoViewSet(viewsets.ModelViewSet):
             PrenotazioneAsporto.objects.exclude(stato='CANCELLED')
             .filter(creata_da_staff=False)
             .select_related('cliente_id')
+            .prefetch_related('voci')
             .order_by('-created_at')[:limit]
         )
         serializer = self.get_serializer(queryset, many=True)
@@ -559,7 +564,7 @@ class PrenotazionePadelViewSet(viewsets.ModelViewSet):
     Durata e prezzi non arrivano mai dal client: sono uno snapshot della configurazione corrente
     copiato in perform_create() (vedi PrenotazionePadel).
     """
-    queryset = PrenotazionePadel.objects.all()
+    queryset = PrenotazionePadel.objects.select_related('cliente_id').prefetch_related('noleggi__racchetta')
     serializer_class = PrenotazionePadelSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['data', 'stato', 'cliente_id']
@@ -781,7 +786,7 @@ class NoleggioRacchettaViewSet(viewsets.ModelViewSet):
     il cliente self-service crea prima la prenotazione, poi una riga per ogni marca scelta.
     `create` è pubblica, il resto riservato allo staff. Filtrabile per `prenotazione`/`racchetta`.
     """
-    queryset = NoleggioRacchetta.objects.all()
+    queryset = NoleggioRacchetta.objects.select_related('racchetta')
     serializer_class = NoleggioRacchettaSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['prenotazione', 'racchetta']

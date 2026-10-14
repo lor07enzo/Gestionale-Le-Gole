@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { Href, Stack, router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AggiornamentoObbligatorio } from '../src/components/shared/AggiornamentoObbligatorio';
 import { AuthProvider } from '../src/context/AuthContext';
 import { ascoltaTapNotifica, configuraNotificheInPrimoPiano } from '../src/utils/push';
 
@@ -29,6 +30,7 @@ export default function RootLayout() {
           <AuthProvider>
             <Stack screenOptions={{ headerShown: false }} />
           </AuthProvider>
+          <AggiornamentoObbligatorio />
         </GluestackUIProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

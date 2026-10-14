@@ -213,9 +213,9 @@ class PrenotazionePadelSerializer(serializers.ModelSerializer):
         {'type': 'array', 'items': {'$ref': '#/components/schemas/NoleggioRacchetta'}}
     )
     def get_noleggi(self, obj):
-        return NoleggioRacchettaSerializer(
-            obj.noleggi.select_related('racchetta').all(), many=True
-        ).data
+        # `.all()` e non `.select_related(...)`: un nuovo queryset scavalcherebbe il
+        # prefetch_related('noleggi__racchetta') delle viewset, tornando a una query per partita.
+        return NoleggioRacchettaSerializer(obj.noleggi.all(), many=True).data
 
     def validate(self, data):
         # Un PATCH parziale invia solo i campi cambiati: per quelli omessi ricadiamo sui valori

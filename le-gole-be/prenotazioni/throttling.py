@@ -1,8 +1,19 @@
+import time
+
 from django.core.cache import caches
-from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.settings import api_settings
+from rest_framework.throttling import BaseThrottle
+
+_SECONDI = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
 
 
-class _StoricoTelefonoThrottle(SimpleRateThrottle):
+def _parse_rate(rate):
+    """'5/min' -> (5, 60), stesso formato dei tassi DRF."""
+    numero, periodo = rate.split('/')
+    return int(numero), _SECONDI[periodo[0]]
+
+
+class StoricoTelefonoThrottle(BaseThrottle):
     """
     Limite dedicato a storico_telefono, per IP e per servizio (piscina, asporto e padel hanno
     ciascuno il proprio contatore). Una ricerca da "Le mie prenotazioni" manda le tre richieste
@@ -15,22 +26,48 @@ class _StoricoTelefonoThrottle(SimpleRateThrottle):
 
     Usa la cache 'throttle' (su database) e non quella di default: la LocMemCache è per-processo,
     quindi con più worker gunicorn ognuno conterebbe per conto suo e il limite reale sarebbe un
-    multiplo di quello dichiarato. Solo questo limite paga la query in più; quello globale resta
-    in memoria.
+    multiplo di quello dichiarato.
+
+    Il limite al minuto e quello al giorno stanno in un'unica chiave: con due throttle separati
+    ogni ricerca pagava due letture e due scritture sulla cache su database (12 query per
+    richiesta, verso un database remoto). Così sono una lettura e una scrittura.
     """
+
+    scope_minuto = 'storico_telefono_minuto'
+    scope_giorno = 'storico_telefono_giorno'
+    cache_format = 'throttle_storico_telefono_%(servizio)s_%(ident)s'
+    timer = time.time
+
+    def __init__(self):
+        rates = api_settings.DEFAULT_THROTTLE_RATES
+        self.limiti = [_parse_rate(rates[self.scope_minuto]), _parse_rate(rates[self.scope_giorno])]
+        self.attesa = None
 
     @property
     def cache(self):
         return caches['throttle']
 
     def get_cache_key(self, request, view):
-        scope = f'{self.scope}_{getattr(view, "basename", "")}'
-        return self.cache_format % {'scope': scope, 'ident': self.get_ident(request)}
+        return self.cache_format % {
+            'servizio': getattr(view, 'basename', ''),
+            'ident': self.get_ident(request),
+        }
 
+    def allow_request(self, request, view):
+        chiave = self.get_cache_key(request, view)
+        adesso = self.timer()
+        finestra_massima = max(durata for _, durata in self.limiti)
+        storia = [t for t in self.cache.get(chiave, []) if t > adesso - finestra_massima]
 
-class StoricoTelefonoMinutoThrottle(_StoricoTelefonoThrottle):
-    scope = 'storico_telefono_minuto'
+        for numero, durata in self.limiti:
+            recenti = [t for t in storia if t > adesso - durata]
+            if len(recenti) >= numero:
+                self.attesa = durata - (adesso - min(recenti))
+                return False
 
+        storia.append(adesso)
+        self.cache.set(chiave, storia, finestra_massima)
+        return True
 
-class StoricoTelefonoGiornoThrottle(_StoricoTelefonoThrottle):
-    scope = 'storico_telefono_giorno'
+    def wait(self):
+        return self.attesa

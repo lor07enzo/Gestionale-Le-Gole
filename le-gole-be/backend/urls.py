@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from backend.views import ServiziDisponibiliView
+from backend.views import ServiziDisponibiliView, VersioneAppView
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
@@ -14,6 +14,7 @@ urlpatterns = [
     path('api/v1/prenotazioni/', include('prenotazioni.urls')),
     path('api/v1/menu/', include('menu.urls')),
     path('api/v1/servizi-disponibili/', ServiziDisponibiliView.as_view(), name='servizi-disponibili'),
+    path('api/v1/versione-app/', VersioneAppView.as_view(), name='versione-app'),
     # Documentazione API (sezione 17). Lo schema e le due UI sono pubblici: descrivono solo la
     # FORMA degli endpoint, mai dati reali, e una parte consistente dell'API e' gia' pubblica di
     # suo (flusso self-service). Chiuderli dietro autenticazione renderebbe la documentazione

@@ -233,6 +233,15 @@ export function listVociOrdine(params: { prenotazione: string }): Promise<VoceOr
   return api.get<VoceOrdine[]>(VOCI_ORDINE_PATH, { params }).then((response) => response.data);
 }
 
+// GET /v1/menu/voci-ordine/?prenotazione__cliente_id={id} — riservata allo staff: le righe di
+// tutti gli ordini di un cliente in una sola richiesta (scheda cliente), da raggruppare per
+// `prenotazione` lato client.
+export function listVociOrdineCliente(clienteId: string): Promise<VoceOrdine[]> {
+  return api
+    .get<VoceOrdine[]>(VOCI_ORDINE_PATH, { params: { prenotazione__cliente_id: clienteId } })
+    .then((response) => response.data);
+}
+
 // PATCH /v1/menu/voci-ordine/{id}/ — riservata allo staff (modifica quantità/nota di una riga).
 export function updateVoceOrdine(id: string, payload: UpdateVoceOrdinePayload): Promise<VoceOrdine> {
   return api.patch<VoceOrdine>(`${VOCI_ORDINE_PATH}${id}/`, payload).then((response) => response.data);

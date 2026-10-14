@@ -42,7 +42,7 @@ import {
   type PrenotazionePadel,
 } from '../../../src/services/padel';
 import { getPiscinaInventario, type PiscinaInventario } from '../../../src/services/struttura';
-import { listVociOrdine, type VoceOrdine } from '../../../src/services/menu';
+import { listVociOrdineCliente, type VoceOrdine } from '../../../src/services/menu';
 import { goBackOr } from '../../../src/utils/navigation';
 import {
   formatDateDDMMYYYY,
@@ -913,11 +913,14 @@ export default function ClienteDetailScreen() {
             return b.ora.localeCompare(a.ora);
           })
         );
-        const entries = await Promise.all(
-          ordiniOrdinati.map((o) => listVociOrdine({ prenotazione: o.id }).then((voci) => [o.id, voci] as const))
-        );
+        // Una sola richiesta per le righe di tutti gli ordini, raggruppate qui per ordine
+        // (prima era una richiesta per ordine).
+        const voci = ordiniOrdinati.length > 0 ? await listVociOrdineCliente(clienteId) : [];
         if (cancelled) return;
-        setVociByOrdine(Object.fromEntries(entries));
+        const raggruppate: Record<string, VoceOrdine[]> = {};
+        for (const ordine of ordiniOrdinati) raggruppate[ordine.id] = [];
+        for (const voce of voci) (raggruppate[voce.prenotazione] ??= []).push(voce);
+        setVociByOrdine(raggruppate);
       })
       .catch(() => {
         if (!cancelled) setError('Impossibile caricare la scheda cliente. Riprova.');

@@ -151,10 +151,12 @@ class VoceOrdineViewSet(viewsets.ModelViewSet):
     PrenotazionePiscina: il cliente self-service crea prima l'ordine, poi una riga per ogni
     prodotto scelto.
     """
-    queryset = VoceOrdine.objects.all()
+    queryset = VoceOrdine.objects.select_related('prodotto')
     serializer_class = VoceOrdineSerializer
     permission_classes = [IsAuthenticated]
-    filterset_fields = ['prenotazione', 'prodotto']
+    # `prenotazione__cliente_id`: la scheda cliente staff carica le righe di TUTTI gli ordini
+    # del cliente in una richiesta, invece di una richiesta per ordine.
+    filterset_fields = ['prenotazione', 'prodotto', 'prenotazione__cliente_id']
 
     def get_permissions(self):
         # 'create' è pubblica per il flusso self-service (stesso pattern di

@@ -52,10 +52,12 @@ const CASI: Caso[] = [
   ['getProssimeChiusureAsporto', () => menu.getProssimeChiusureAsporto(), 'get', '/v1/menu/giorni-chiusi-asporto/prossime/'],
   ['createVoceOrdine', () => menu.createVoceOrdine(P), 'post', '/v1/menu/voci-ordine/'],
   ['listVociOrdine', () => menu.listVociOrdine({ prenotazione: 'o1' }), 'get', '/v1/menu/voci-ordine/'],
+  ['listVociOrdineCliente', () => menu.listVociOrdineCliente('c1'), 'get', '/v1/menu/voci-ordine/'],
   ['updateVoceOrdine', () => menu.updateVoceOrdine('v1', P), 'patch', '/v1/menu/voci-ordine/v1/'],
   ['deleteVoceOrdine', () => menu.deleteVoceOrdine('v1'), 'delete', '/v1/menu/voci-ordine/v1/'],
 
   ['getServiziDisponibili', () => servizi.getServiziDisponibili(), 'get', '/v1/servizi-disponibili/'],
+  ['getVersioneApp', () => servizi.getVersioneApp(), 'get', '/v1/versione-app/'],
   ['getConfigurazionePadel', () => padel.getConfigurazionePadel(), 'get', '/v1/struttura/configurazione-padel/'],
   ['updateConfigurazionePadel', () => padel.updateConfigurazionePadel(P), 'patch', '/v1/struttura/configurazione-padel/'],
   ['listGiorniChiusiPadel', () => padel.listGiorniChiusiPadel(), 'get', '/v1/struttura/giorni-chiusi-padel/'],

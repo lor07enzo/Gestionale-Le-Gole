@@ -1,6 +1,7 @@
 import pytest
 from django.urls import reverse
 from rest_framework import status
+from rest_framework.settings import api_settings
 
 from prenotazioni.serializers import nome_abbreviato, telefono_mascherato
 from prenotazioni.test.factories import (
@@ -9,7 +10,6 @@ from prenotazioni.test.factories import (
     PrenotazionePadelFactory,
     PrenotazionePiscinaFactory,
 )
-from prenotazioni.throttling import StoricoTelefonoGiornoThrottle, StoricoTelefonoMinutoThrottle
 from users.test.factories import ClienteFactory
 
 pytestmark = pytest.mark.django_db
@@ -115,21 +115,30 @@ def test_dettaglio_padel_include_i_noleggi_e_gli_snapshot(api_client, prenotazio
 
 class TestLimiteDedicato:
     def test_ogni_servizio_ha_il_proprio_contatore(self, api_client, monkeypatch, configurazione_padel):
-        monkeypatch.setattr(StoricoTelefonoMinutoThrottle, 'rate', raising=False, value='1/min')
+        monkeypatch.setitem(api_settings.DEFAULT_THROTTLE_RATES, 'storico_telefono_minuto', '1/min')
 
         risposte = [_cerca(api_client, s).status_code for s in ('piscina', 'asporto', 'padel', 'piscina')]
 
         assert risposte == [200, 200, 200, 429]
 
     def test_limite_giornaliero(self, api_client, monkeypatch):
-        monkeypatch.setattr(StoricoTelefonoGiornoThrottle, 'rate', raising=False, value='2/day')
+        monkeypatch.setitem(api_settings.DEFAULT_THROTTLE_RATES, 'storico_telefono_giorno', '2/day')
 
         risposte = [_cerca(api_client, 'asporto').status_code for _ in range(3)]
 
         assert risposte == [200, 200, 429]
 
+    def test_risposta_429_indica_quando_riprovare(self, api_client, monkeypatch):
+        monkeypatch.setitem(api_settings.DEFAULT_THROTTLE_RATES, 'storico_telefono_minuto', '1/min')
+        _cerca(api_client, 'piscina')
+
+        response = _cerca(api_client, 'piscina')
+
+        assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        assert 0 < int(response['Retry-After']) <= 60
+
     def test_non_tocca_gli_altri_endpoint_pubblici(self, api_client, monkeypatch, prenotazioni):
-        monkeypatch.setattr(StoricoTelefonoMinutoThrottle, 'rate', raising=False, value='1/min')
+        monkeypatch.setitem(api_settings.DEFAULT_THROTTLE_RATES, 'storico_telefono_minuto', '1/min')
         _cerca(api_client, 'asporto')
         assert _cerca(api_client, 'asporto').status_code == 429
 

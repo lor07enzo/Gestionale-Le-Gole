@@ -37,8 +37,11 @@ USER appuser
 
 EXPOSE 8000
 
-# gunicorn (non il dev server Django), migrazioni applicate ad ogni avvio. GUNICORN_WORKERS
+# gunicorn (non il dev server Django), migrazioni applicate ad ogni avvio. --threads (worker
+# gthread): le richieste passano quasi tutto il tempo ad aspettare il database remoto, quindi
+# più thread per processo servono in parallelo le 4-6 chiamate che una pagina fa insieme invece
+# di metterle in coda dietro a pochi worker sincroni. GUNICORN_WORKERS/GUNICORN_THREADS
 # opzionale, override via docker-compose.yml. Bind su ${PORT:-8000}: Render assegna la porta
 # dinamicamente, altrove resta 8000. --no-control-socket: senza, gunicorn 25+ prova a scrivere
 # in $HOME/.gunicorn (appuser, sola lettura) e fallisce con "Permission denied".
-CMD ["sh", "-c", "python manage.py migrate && gunicorn backend.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-3} --timeout 60 --no-control-socket"]
+CMD ["sh", "-c", "python manage.py migrate && gunicorn backend.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-3} --threads ${GUNICORN_THREADS:-4} --timeout 60 --no-control-socket"]

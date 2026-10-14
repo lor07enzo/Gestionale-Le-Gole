@@ -151,7 +151,7 @@ function CategoriaTabs({
               accessibilityLabel={`Filtra per ${c.label}${c.disponibile ? '' : ' (in arrivo)'}`}
               onPress={() => onChange(c.key)}
               className={`items-center justify-center rounded-xl px-0.5 py-1.5 ${
-                isActive ? 'bg-white shadow-sm' : ''
+                isActive ? 'bg-white' : ''
               }`}
             >
               <Text size="xs">{c.icon}</Text>

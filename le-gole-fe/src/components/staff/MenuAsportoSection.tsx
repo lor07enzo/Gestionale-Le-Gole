@@ -1007,7 +1007,7 @@ export function useMenuAsportoCatalogo({ scrollViewRef }: UseMenuAsportoCatalogo
                   accessibilityRole="button"
                   accessibilityLabel={`Vai alla categoria ${gruppo.categoria.nome}`}
                   className={`flex-row items-center gap-1.5 rounded-full border px-3 py-1.5 ${
-                    isActive ? 'border-sky-600 bg-sky-600 shadow-sm' : 'border-sky-300 bg-white active:bg-sky-50'
+                    isActive ? 'border-sky-600 bg-sky-600' : 'border-sky-300 bg-white active:bg-sky-50'
                   }`}
                 >
                   <Text size="xs" className={`font-medium ${isActive ? 'text-white' : 'text-sky-900'}`}>

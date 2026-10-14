@@ -55,6 +55,13 @@ services:
       # solo se sul progetto Expo viene attivata la "push security".
       - key: EXPO_ACCESS_TOKEN
         sync: false
+      # Aggiornamento obbligatorio dell'app (endpoint /api/v1/versione-app/). Se assente vale
+      # 0.0.0 = nessun blocco. Alzarla solo quando la nuova versione è pubblicata sugli store.
+      - key: APP_VERSIONE_MINIMA
+        sync: false
+      # Vuoto finché l'app non è sull'App Store: senza link il blocco su iOS non scatta.
+      - key: APP_STORE_URL_IOS
+        sync: false
       # Da impostare manualmente su https://osterialegole.com/activate e /reset-password.
       - key: FRONTEND_ACTIVATION_URL
         sync: false
