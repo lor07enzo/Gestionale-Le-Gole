@@ -7,10 +7,10 @@ import { Box } from '@/components/ui/box';
 import { VStack } from '@/components/ui/vstack';
 import { Heading } from '@/components/ui/heading';
 import { Text } from '@/components/ui/text';
-import { Input, InputField } from '@/components/ui/input';
+import { Input, InputField, InputIcon, InputSlot } from '@/components/ui/input';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
 import { HStack } from '@/components/ui/hstack';
-import { Icon, InfoIcon } from '@/components/ui/icon';
+import { EyeIcon, EyeOffIcon, Icon, InfoIcon } from '@/components/ui/icon';
 
 const logo = require('../assets/logo-le-gole-nero.png');
 
@@ -21,6 +21,7 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInfoUsernameOpen, setIsInfoUsernameOpen] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   const handleLogin = async () => {
     setError(null);
@@ -80,6 +81,10 @@ export default function LoginScreen() {
                 placeholder="Il tuo username"
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="username"
+                textContentType="username"
+                importantForAutofill="yes"
+                returnKeyType="next"
                 value={username}
                 onChangeText={setUsername}
               />
@@ -93,10 +98,25 @@ export default function LoginScreen() {
             <Input>
               <InputField
                 placeholder="La tua password"
-                secureTextEntry
+                secureTextEntry={!isPasswordVisible}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="current-password"
+                textContentType="password"
+                importantForAutofill="yes"
+                returnKeyType="go"
+                onSubmitEditing={handleLogin}
                 value={password}
                 onChangeText={setPassword}
               />
+              <InputSlot
+                className="pr-3"
+                onPress={() => setIsPasswordVisible((v) => !v)}
+                accessibilityRole="button"
+                accessibilityLabel={isPasswordVisible ? 'Nascondi password' : 'Mostra password'}
+              >
+                <InputIcon as={isPasswordVisible ? EyeOffIcon : EyeIcon} />
+              </InputSlot>
             </Input>
           </VStack>
 

@@ -178,6 +178,10 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
     ),
+    # Numero di proxy davanti al backend (Render). Senza, DRF identifica il client con l'intero
+    # header X-Forwarded-For, che il client puo' inventare per aggirare ogni limite. Non
+    # impostato = comportamento di sempre (nessun proxy fidato, adatto al locale/Docker).
+    'NUM_PROXIES': int(env('NUM_PROXIES', default='') or 0) or None,
     'DEFAULT_THROTTLE_RATES': {
         'anon': '120/min',
         'user': '300/min',

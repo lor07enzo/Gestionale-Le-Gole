@@ -55,6 +55,11 @@ services:
       # solo se sul progetto Expo viene attivata la "push security".
       - key: EXPO_ACCESS_TOKEN
         sync: false
+      # Numero di proxy davanti al backend (es. 1 per il solo proxy di Render). Da
+      # verificare prima di impostarlo: un valore sbagliato fa condividere i limiti a tutti
+      # i client o li lascia aggirabili con un X-Forwarded-For inventato.
+      - key: NUM_PROXIES
+        sync: false
       # Aggiornamento obbligatorio dell'app (endpoint /api/v1/versione-app/). Se assente vale
       # 0.0.0 = nessun blocco. Alzarla solo quando la nuova versione è pubblicata sugli store.
       - key: APP_VERSIONE_MINIMA

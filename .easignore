@@ -1,4 +1,4 @@
-# Cosa NON caricare su EAS Build (sezione 4 punto 13 di CLAUDE.md).
+# Cosa NON caricare su EAS Build (skill le-gole-deploy-rilascio, sezione "App native").
 # Se questo file esiste, eas-cli ignora del tutto i .gitignore: ogni esclusione
 # necessaria va ripetuta qui. Serve perché su Windows eas-cli non applica i
 # .gitignore delle sottocartelle, e senza questo file l'archivio includeva
@@ -14,6 +14,7 @@ le-gole-be/
 docker-compose.yml
 render.yaml
 sonar-project.properties
+docs/
 .gitguardian.yaml
 
 # Dipendenze e artefatti generati del frontend
