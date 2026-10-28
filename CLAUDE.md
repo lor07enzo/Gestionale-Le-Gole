@@ -2,7 +2,7 @@
 
 Gestionale prenotazioni per Osteria Le Gole: backend Django/DRF (`le-gole-be/`) + app Expo/React Native per web, Android e iOS (`le-gole-fe/`). Area **Cliente** pubblica senza login (self-service) e area **Staff** con JWT.
 
-**Stato (ottobre 2026):** piscina, asporto e padel completi end-to-end (backend, staff, cliente, PDF, storico "Le mie prenotazioni", notifiche in-app e push); documentazione API OpenAPI/Swagger; aggiornamento obbligatorio dell'app. App Android in test chiuso su Play (v1.2.2), web in produzione su `osterialegole.com`. **Da fare:** Sala/Tavoli (nessun modello: tessere "In arrivo"), primo rilascio iOS (manca l'account Apple), `NUM_PROXIES=2` da impostare su Render (verificato; con 1 i limiti sono condivisi), chiave FCM server su EAS se non ancora caricata, revoca del vecchio personal token Expo.
+**Stato (ottobre 2026):** piscina, asporto e padel completi end-to-end (backend, staff, cliente, PDF, storico "Le mie prenotazioni", notifiche in-app e push); documentazione API OpenAPI/Swagger; aggiornamento obbligatorio dell'app. App Android in test chiuso su Play (v1.2.2, `APP_VERSIONE_MINIMA=1.2.2` attiva su Render), web in produzione su `osterialegole.com`. **Da fare:** Sala/Tavoli (nessun modello: tessere "In arrivo"), primo rilascio iOS (manca l'account Apple), `NUM_PROXIES=2` attivo su Render (con 1 i limiti sono condivisi), chiave FCM server su EAS se non ancora caricata, revoca del vecchio personal token Expo.
 
 ## Skill di progetto (`.claude/skills/`) — caricale prima di lavorare nell'area
 | Skill | Quando |

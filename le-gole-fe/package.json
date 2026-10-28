@@ -53,7 +53,6 @@
     "eas-cli": "^21.4.0",
     "jest": "^30.5.2",
     "jest-expo": "^56.0.5",
-    "netlify-cli": "^27.1.1",
     "playwright": "^1.62.1",
     "serve": "^14.2.6",
     "tailwindcss": "^4.2.0",
@@ -68,7 +67,7 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "verify:web-build": "node scripts/verify-web-build.js",
-    "deploy:web": "expo export -p web && node scripts/fix-html-lang.js && node scripts/inject-cloudflare-analytics.js && node scripts/verify-web-build.js && netlify deploy --prod --dir=dist --no-build"
+    "deploy:web": "expo export -p web && node scripts/fix-html-lang.js && node scripts/inject-cloudflare-analytics.js && node scripts/verify-web-build.js && npx netlify-cli deploy --prod --dir=dist --no-build"
   },
   "private": true,
   "overrides": {

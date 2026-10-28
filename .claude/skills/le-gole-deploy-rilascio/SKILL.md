@@ -38,6 +38,7 @@ Ogni deploy in produzione o pubblicazione su store è visibile a tutti: **chiedi
 - R8 attivo (`expo-build-properties`): un crash solo in release si corregge con `android.extraProguardRules`, non disattivando R8. Tenere allineate le versioni Expo (`npx expo install --check`).
 - Icone: `icon-appstore.png` (1024, RGB senza alpha), `icon-adaptive-android.png` (logo al 60%, safe zone), `favicon.png`, `notification-icon.png` (bianca su trasparente, quadrata 96). Logo nero/bianco per UI chiara/scura.
 - iOS: `supportsTablet: false`, `ITSAppUsesNonExemptEncryption: false`; manca ancora account Apple Developer e primo build.
+- EAS esegue `npm ci --include=dev`: niente tool pesanti nelle devDependencies. `netlify-cli` (→ `ipx` → `sharp`) faceva fallire la build iOS (sharp compilato da sorgente); ora si usa `npx netlify-cli`.
 - Avvisi Play Console su API edge-to-edge deprecate vengono da librerie terze: nessuna azione.
 - `expo-dev-client` aggiunto per i development build (push e deep link non funzionano in Expo Go).
 
